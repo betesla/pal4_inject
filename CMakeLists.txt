@@ -1,0 +1,92 @@
+cmake_minimum_required(VERSION 3.19)
+project(pal4_inject LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+option(PAL4_INJECT_BUILD_TESTS "Build PAL4 inject tests" ON)
+
+if(NOT WIN32)
+    message(FATAL_ERROR "pal4_inject requires Windows.")
+endif()
+
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
+    message(FATAL_ERROR "pal4_inject requires a 32-bit / Win32 generator.")
+endif()
+
+set(PAL4_INJECT_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
+add_library(pal4_inject_common STATIC
+    src/common/hook_inventory.cpp
+    src/common/input_logic.cpp
+    src/common/input_queue.cpp
+    src/common/launcher.cpp
+    src/common/protocol.cpp
+    src/common/types.cpp
+)
+target_include_directories(pal4_inject_common
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${PAL4_INJECT_REPO_ROOT}/rebuild/include
+)
+target_link_libraries(pal4_inject_common PUBLIC advapi32 user32)
+
+add_library(pal4_inject_runtime_core STATIC
+    src/runtime/bootstrap.cpp
+    src/runtime/cegui_bindings.cpp
+    src/runtime/hook_manager.cpp
+    src/runtime/input_hooks.cpp
+    src/runtime/ipc_server.cpp
+    src/runtime/runtime_state.cpp
+)
+target_include_directories(pal4_inject_runtime_core
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${PAL4_INJECT_REPO_ROOT}/rebuild/include
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+)
+target_link_libraries(pal4_inject_runtime_core PUBLIC pal4_inject_common advapi32 user32)
+
+add_library(pal4_runtime_x86 SHARED
+    src/runtime/dll_main.cpp
+)
+target_link_libraries(pal4_runtime_x86 PRIVATE pal4_inject_runtime_core)
+set_target_properties(pal4_runtime_x86 PROPERTIES
+    OUTPUT_NAME "pal4_runtime_x86"
+)
+
+add_executable(pal4_injector_launcher
+    src/launcher/main.cpp
+)
+target_link_libraries(pal4_injector_launcher PRIVATE pal4_inject_common)
+
+if(PAL4_INJECT_BUILD_TESTS)
+    enable_testing()
+    add_executable(pal4_inject_tests
+        tests/inject_tests_main.cpp
+    )
+    target_include_directories(pal4_inject_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    )
+    target_link_libraries(pal4_inject_tests PRIVATE pal4_inject_runtime_core)
+    add_test(NAME pal4_inject_tests COMMAND pal4_inject_tests)
+endif()
+
+foreach(target
+    pal4_inject_common
+    pal4_inject_runtime_core
+    pal4_runtime_x86
+    pal4_injector_launcher
+    pal4_inject_tests
+)
+    if(TARGET ${target})
+        if(MSVC)
+            target_compile_options(${target} PRIVATE /W4 /permissive- /FS)
+        else()
+            target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+        target_compile_definitions(${target} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    endif()
+endforeach()
