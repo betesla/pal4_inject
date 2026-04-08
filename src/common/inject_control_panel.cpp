@@ -12,8 +12,7 @@ std::vector<InjectControlPanelRow> BuildInjectControlPanelRows() {
         rows.push_back({
             descriptor.id,
             ToString(descriptor.id),
-            descriptor.id != HookId::pal4_main_wndproc &&
-                descriptor.id != HookId::handle_player_input_events,
+            descriptor.id != HookId::handle_player_input_events,
         });
     }
     return rows;

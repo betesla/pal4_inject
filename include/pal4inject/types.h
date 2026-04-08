@@ -31,6 +31,7 @@ enum class HookId : std::uint8_t {
     initialize_direct_input,
     gi_talk,
     cegui_renderer_constructor_2,
+    cegui_system_initialize,
     setup_minimap_texture,
     camera_update_matrix,
     pal4_main_wndproc,

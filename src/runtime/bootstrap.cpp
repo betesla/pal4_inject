@@ -11,6 +11,7 @@
 #include "crash_handler.h"
 #include "hook_manager.h"
 #include "inject_control_window.h"
+#include "pal4inject/dpi_awareness.h"
 #include "ipc_server.h"
 #include "pal4inject/launcher.h"
 #include "runtime_state.h"
@@ -80,6 +81,15 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
     AppendBootstrapLog("bootstrap_names_configured");
 
     std::string error;
+    DpiAwarenessMode dpi_mode = DpiAwarenessMode::unknown;
+    const bool dpi_ok = ApplyProcessDpiAwareness(&dpi_mode, &error);
+    if (!dpi_ok) {
+        state.SetLastError(error);
+        AppendBootstrapLog(std::string("apply_process_dpi_awareness failed: ") + error);
+    } else {
+        AppendBootstrapLog(std::string("apply_process_dpi_awareness ok mode=") + ToString(dpi_mode));
+    }
+
     const bool crash_capture_ok = InstallCrashCapture(&error);
     if (!crash_capture_ok) {
         state.SetLastError(error);

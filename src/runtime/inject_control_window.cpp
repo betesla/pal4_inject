@@ -171,18 +171,35 @@ void SetHookModeFromUi(const HookId id, const HookMode mode) {
         std::string("inject_control:") + ToString(id) + "=" + ToString(mode));
 }
 
+bool IsComboInteractionActive(const HWND combo) {
+    if (!combo || !IsWindow(combo)) {
+        return false;
+    }
+    if (SendMessageA(combo, CB_GETDROPPEDSTATE, 0, 0) != 0) {
+        return true;
+    }
+    const HWND focus = GetFocus();
+    return focus == combo;
+}
+
 void RefreshPanelContent(const HWND hwnd) {
     const auto statuses = GetRuntimeState().CopyHookStatuses();
     for (auto& runtime : PanelRows()) {
         const auto* status = FindStatus(statuses, runtime.row.id);
         const bool installed = status && status->installed;
-        EnableWindow(runtime.combo, runtime.row.allow_mode_change && installed);
+        const bool combo_interaction_active = IsComboInteractionActive(runtime.combo);
+        // Leave the user's live combo interaction alone while the timer refresh runs.
+        if (!combo_interaction_active) {
+            EnableWindow(runtime.combo, runtime.row.allow_mode_change && installed);
+        }
         if (status) {
-            const int expected_index = FindInjectControlPanelModeIndex(status->mode);
-            const int current_index = static_cast<int>(
-                SendMessageA(runtime.combo, CB_GETCURSEL, 0, 0));
-            if (current_index != expected_index) {
-                SendMessageA(runtime.combo, CB_SETCURSEL, expected_index, 0);
+            if (!combo_interaction_active) {
+                const int expected_index = FindInjectControlPanelModeIndex(status->mode);
+                const int current_index = static_cast<int>(
+                    SendMessageA(runtime.combo, CB_GETCURSEL, 0, 0));
+                if (current_index != expected_index) {
+                    SendMessageA(runtime.combo, CB_SETCURSEL, expected_index, 0);
+                }
             }
 
             std::string status_text = installed ? "installed" : "not installed";
@@ -438,6 +455,20 @@ void StopInjectControlWindow() {
     g_control_hwnd = nullptr;
     g_owner_game_hwnd = nullptr;
     g_follow_game_window = true;
+}
+
+bool IsInjectControlWindowRelated(const HWND hwnd) {
+    if (!hwnd || !g_control_hwnd || !IsWindow(g_control_hwnd) || !IsWindow(hwnd)) {
+        return false;
+    }
+    if (hwnd == g_control_hwnd) {
+        return true;
+    }
+    if (IsChild(g_control_hwnd, hwnd)) {
+        return true;
+    }
+    const HWND root_owner = GetAncestor(hwnd, GA_ROOTOWNER);
+    return root_owner == g_control_hwnd;
 }
 
 }  // namespace pal4::inject

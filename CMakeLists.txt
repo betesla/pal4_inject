@@ -22,6 +22,7 @@ add_library(pal4_inject_common STATIC
     src/common/camera_unlock_patch.cpp
     src/common/cegui_widescreen.cpp
     src/common/crash_capture.cpp
+    src/common/dpi_awareness.cpp
     src/common/hook_inventory.cpp
     src/common/inject_control_panel.cpp
     src/common/input_logic.cpp
@@ -50,6 +51,7 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/ipc_server.cpp
     src/runtime/minimap_hooks.cpp
     src/runtime/runtime_state.cpp
+    src/runtime/window_focus_hooks.cpp
 )
 target_include_directories(pal4_inject_runtime_core
     PUBLIC

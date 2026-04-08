@@ -25,7 +25,7 @@ constexpr std::array<EnumName<HookMode>, 4> kHookModes{{
     {HookMode::replace_strict, "replace_strict"},
 }};
 
-constexpr std::array<EnumName<HookId>, 12> kHookIds{{
+constexpr std::array<EnumName<HookId>, 13> kHookIds{{
     {HookId::process_ui_event, "process_ui_event"},
     {HookId::handle_ui_message, "handle_ui_message"},
     {HookId::simulate_key_press_and_release, "simulate_key_press_and_release"},
@@ -34,6 +34,7 @@ constexpr std::array<EnumName<HookId>, 12> kHookIds{{
     {HookId::initialize_direct_input, "initialize_direct_input"},
     {HookId::gi_talk, "gi_talk"},
     {HookId::cegui_renderer_constructor_2, "cegui_renderer_constructor_2"},
+    {HookId::cegui_system_initialize, "cegui_system_initialize"},
     {HookId::setup_minimap_texture, "setup_minimap_texture"},
     {HookId::camera_update_matrix, "camera_update_matrix"},
     {HookId::pal4_main_wndproc, "pal4_main_wndproc"},

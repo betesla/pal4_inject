@@ -17,6 +17,7 @@ inline constexpr std::uint32_t kUpdateInputDeviceState = 0x407910;
 inline constexpr std::uint32_t kInitializeDirectInput = 0x407640;
 inline constexpr std::uint32_t kGiTalkScriptCallback = 0x5DFB10;
 inline constexpr std::uint32_t kCeguiRendererConstructor2 = 0x413580;
+inline constexpr std::uint32_t kCeguiSystemInitialize = 0x410450;
 inline constexpr std::uint32_t kSetupMinimapTexture = 0x40DE10;
 inline constexpr std::uint32_t kCameraUpdateMatrix = 0x5EA190;
 inline constexpr std::uint32_t kPal4MainWndProc = 0x40A170;

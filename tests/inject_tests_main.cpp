@@ -18,6 +18,7 @@
 
 #include "pal4inject/hook_inventory.h"
 #include "pal4inject/ida_addresses.h"
+#include "pal4inject/dpi_awareness.h"
 #include "pal4inject/inject_control_panel.h"
 #include "pal4inject/input_logic.h"
 #include "pal4inject/input_queue.h"
@@ -55,11 +56,12 @@ void TestResolveRuntimeAddress() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 12);
+    assert(inventory.size() == 13);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
     bool found_cegui_renderer_ctor = false;
+    bool found_cegui_system_init = false;
     bool found_setup_minimap_texture = false;
     bool found_camera_update_matrix = false;
     bool found_reserved_wndproc = false;
@@ -86,9 +88,15 @@ void TestHookInventory() {
             assert(hook.patch_span == 8);
             assert(hook.ida_ea == pal4::inject::ida::kCeguiRendererConstructor2);
         }
+        if (hook.id == HookId::cegui_system_initialize) {
+            found_cegui_system_init = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 13);
+            assert(hook.ida_ea == pal4::inject::ida::kCeguiSystemInitialize);
+        }
         if (hook.id == HookId::setup_minimap_texture) {
             found_setup_minimap_texture = true;
-            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
             assert(hook.patch_span == 8);
             assert(hook.ida_ea == pal4::inject::ida::kSetupMinimapTexture);
         }
@@ -107,9 +115,18 @@ void TestHookInventory() {
     assert(found_handle_ui_message);
     assert(found_gi_talk);
     assert(found_cegui_renderer_ctor);
+    assert(found_cegui_system_init);
     assert(found_setup_minimap_texture);
     assert(found_camera_update_matrix);
     assert(found_reserved_wndproc);
+}
+
+void TestDpiAwarenessStrings() {
+    assert(std::string(pal4::inject::ToString(pal4::inject::DpiAwarenessMode::unknown)) == "unknown");
+    assert(std::string(pal4::inject::ToString(pal4::inject::DpiAwarenessMode::per_monitor_aware_v2)) == "per_monitor_aware_v2");
+    assert(std::string(pal4::inject::ToString(pal4::inject::DpiAwarenessMode::per_monitor_aware)) == "per_monitor_aware");
+    assert(std::string(pal4::inject::ToString(pal4::inject::DpiAwarenessMode::system_aware)) == "system_aware");
+    assert(std::string(pal4::inject::ToString(pal4::inject::DpiAwarenessMode::already_set)) == "already_set");
 }
 
 void TestProtocolRoundTrip() {
@@ -158,16 +175,17 @@ void TestProtocolRoundTrip() {
 
 void TestInjectControlPanelModel() {
     const auto rows = pal4::inject::BuildInjectControlPanelRows();
-    assert(rows.size() == 12);
+    assert(rows.size() == 13);
     assert(rows.front().id == HookId::process_ui_event);
     assert(rows.front().allow_mode_change);
     assert(rows[7].id == HookId::cegui_renderer_constructor_2);
-    assert(rows[8].id == HookId::setup_minimap_texture);
-    assert(rows[9].id == HookId::camera_update_matrix);
-    assert(rows[10].id == HookId::pal4_main_wndproc);
-    assert(!rows[10].allow_mode_change);
-    assert(rows[11].id == HookId::handle_player_input_events);
-    assert(!rows[11].allow_mode_change);
+    assert(rows[8].id == HookId::cegui_system_initialize);
+    assert(rows[9].id == HookId::setup_minimap_texture);
+    assert(rows[10].id == HookId::camera_update_matrix);
+    assert(rows[11].id == HookId::pal4_main_wndproc);
+    assert(rows[11].allow_mode_change);
+    assert(rows[12].id == HookId::handle_player_input_events);
+    assert(!rows[12].allow_mode_change);
 
     const auto modes = pal4::inject::BuildInjectControlPanelModes();
     assert(modes.size() == 4);
@@ -946,6 +964,7 @@ void MaybeRunIntegrationSmoke() {
 int main() {
     TestResolveRuntimeAddress();
     TestHookInventory();
+    TestDpiAwarenessStrings();
     TestInjectControlPanelModel();
     TestProtocolRoundTrip();
     TestInputLogic();
