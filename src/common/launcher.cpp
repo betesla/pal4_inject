@@ -337,17 +337,41 @@ bool SendPipeCommand(
             break;
         }
 
-        char buffer[4096];
-        DWORD read = 0;
-        if (!ReadFile(pipe, buffer, sizeof(buffer) - 1, &read, nullptr)) {
+        response->clear();
+        for (;;) {
+            char buffer[4096];
+            DWORD read = 0;
+            if (!ReadFile(pipe, buffer, sizeof(buffer), &read, nullptr)) {
+                const DWORD read_error = GetLastError();
+                if (read_error == ERROR_MORE_DATA) {
+                    response->append(buffer, buffer + read);
+                } else {
+                    if (error) {
+                        *error = "ReadFile(pipe) failed: " + FormatWindowsError(read_error);
+                    }
+                    break;
+                }
+            } else {
+                response->append(buffer, buffer + read);
+            }
+
+            DWORD bytes_available = 0;
+            if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &bytes_available, nullptr)) {
+                if (error) {
+                    *error = "PeekNamedPipe failed: " + FormatWindowsError(GetLastError());
+                }
+                break;
+            }
+            if (bytes_available == 0) {
+                break;
+            }
+        }
+        if (response->empty()) {
             if (error) {
-                *error = "ReadFile(pipe) failed: " + FormatWindowsError(GetLastError());
+                *error = "ReadFile(pipe) returned an empty response";
             }
             break;
         }
-
-        buffer[read] = '\0';
-        *response = buffer;
         ok = true;
     } while (false);
 

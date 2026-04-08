@@ -9,7 +9,11 @@
 #endif
 #include <windows.h>
 
+#include "cegui_renderer_hooks.h"
+#include "camera_hooks.h"
 #include "cegui_bindings.h"
+#include "minimap_hooks.h"
+#include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
 #include "pal4inject/input_logic.h"
 #include "runtime_state.h"
@@ -54,6 +58,7 @@ using SimulateKeyPressAndReleaseFn = bool (__thiscall*)(void*, WPARAM);
 using ProcessInputsFn = int (__cdecl*)();
 using UpdateInputDeviceStateFn = int (__thiscall*)(void*);
 using InitializeDirectInputFn = int (__thiscall*)(void*, HINSTANCE, int, int);
+using GiTalkFn = char (__cdecl*)(void*, void*);
 using MapVirtualKeyToUiKeyFn = int (__thiscall*)(void*, unsigned int);
 using EnableMouseCaptureFn = void (__thiscall*)(unsigned char*);
 using DisableMouseCaptureFn = void (__thiscall*)(unsigned char*);
@@ -88,6 +93,21 @@ SimulateKeyPressAndReleaseFn g_original_simulate_key_press_and_release = nullptr
 ProcessInputsFn g_original_process_inputs = nullptr;
 UpdateInputDeviceStateFn g_original_update_input_device_state = nullptr;
 InitializeDirectInputFn g_original_initialize_direct_input = nullptr;
+GiTalkFn g_original_gi_talk = nullptr;
+
+constexpr unsigned char kInjectedTalkTextGbk[] = {
+    0xD2, 0xD1, 0xD7, 0xA2, 0xC8, 0xEB, 0x00,
+};
+
+struct GiTalkStringArg {
+    std::uint32_t reserved = 0;
+    const char* text = nullptr;
+};
+
+GiTalkStringArg g_injected_gi_talk_arg = {
+    0,
+    reinterpret_cast<const char*>(kInjectedTalkTextGbk),
+};
 
 std::string FormatWindowsError(const DWORD code) {
     char* buffer = nullptr;
@@ -135,6 +155,20 @@ Fn ResolveRuntimeFunction(const std::uint32_t ida_ea) {
         return nullptr;
     }
     return reinterpret_cast<Fn>(ida::ResolveRuntimeAddress(base, ida_ea));
+}
+
+void* ResolveRuntimeData(const std::uint32_t ida_ea) {
+    const auto base = MainModuleBase();
+    if (base == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<void*>(ida::ResolveRuntimeAddress(base, ida_ea));
+}
+
+int* ReadGameConfigPointer() {
+    auto* config_ptr_address =
+        static_cast<int**>(ResolveRuntimeData(ida::kGameConfigGlobal));
+    return config_ptr_address ? *config_ptr_address : nullptr;
 }
 
 void LogHookEvent(const std::string_view text) {
@@ -377,6 +411,18 @@ ProcessUiDispatchResult DispatchInjectedUiPlan(
         };
         float transformed[2]{};
         transform_mouse_coordinates(static_cast<float*>(self), transformed, raw_coords);
+        if (const int* config = ReadGameConfigPointer()) {
+            const auto widescreen_plan = BuildCeguiWidescreenPlan(config[0], config[1]);
+            if (GetRuntimeState().GetHookMode(HookId::cegui_renderer_constructor_2) != HookMode::observe_only &&
+                GetRuntimeState().GetHookMode(HookId::cegui_renderer_constructor_2) != HookMode::mirror_compare) {
+                ApplyCeguiWidescreenMouseTransform(
+                    widescreen_plan,
+                    raw_coords[0],
+                    raw_coords[1],
+                    &transformed[0],
+                    &transformed[1]);
+            }
+        }
         result.handled = bindings.inject_mouse_position(system, transformed[0], transformed[1]);
         return result;
     }
@@ -693,6 +739,40 @@ int __fastcall Hook_InitializeDirectInput(
         : 0;
 }
 
+char __cdecl Hook_GiTalk(void* text_arg, void* voice_key_arg) {
+    auto& state = GetRuntimeState();
+    state.IncrementHookCall(HookId::gi_talk);
+    state.SetLastUiEvent("giTalk");
+
+    const HookMode mode = state.GetHookMode(HookId::gi_talk);
+    if (mode == HookMode::observe_only || mode == HookMode::mirror_compare) {
+        LogHookEvent(
+            std::string("hook=gi_talk mode=") + ToString(mode) +
+            " path=fallback_original");
+        return g_original_gi_talk
+            ? g_original_gi_talk(text_arg, voice_key_arg)
+            : 0;
+    }
+
+    std::ostringstream out;
+    out
+        << "hook=gi_talk"
+        << " original_text_arg=" << FormatPointer(text_arg)
+        << " voice_key_arg=" << FormatPointer(voice_key_arg)
+        << " rewritten_text=GBK:D2D1D7A2C8EB";
+    LogHookEvent(out.str());
+
+    if (!g_original_gi_talk) {
+        state.SetHookError(HookId::gi_talk, "original giTalk trampoline is null");
+        state.SetLastError("original giTalk trampoline is null");
+        return 0;
+    }
+
+    return g_original_gi_talk(
+        &g_injected_gi_talk_arg,
+        voice_key_arg);
+}
+
 void* GetReplacementForHook(const HookId id) {
     switch (id) {
     case HookId::process_ui_event:
@@ -707,8 +787,16 @@ void* GetReplacementForHook(const HookId id) {
         return reinterpret_cast<void*>(&Hook_UpdateInputDeviceState);
     case HookId::initialize_direct_input:
         return reinterpret_cast<void*>(&Hook_InitializeDirectInput);
+    case HookId::gi_talk:
+        return reinterpret_cast<void*>(&Hook_GiTalk);
     default:
-        return nullptr;
+        if (void* replacement = GetCeguiRendererReplacementForHook(id)) {
+            return replacement;
+        }
+        if (void* replacement = GetMinimapReplacementForHook(id)) {
+            return replacement;
+        }
+        return GetCameraReplacementForHook(id);
     }
 }
 
@@ -735,7 +823,13 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
         g_original_initialize_direct_input =
             reinterpret_cast<InitializeDirectInputFn>(trampoline);
         break;
+    case HookId::gi_talk:
+        g_original_gi_talk = reinterpret_cast<GiTalkFn>(trampoline);
+        break;
     default:
+        SetCeguiRendererOriginalTrampoline(id, trampoline);
+        SetMinimapOriginalTrampoline(id, trampoline);
+        SetCameraOriginalTrampoline(id, trampoline);
         break;
     }
 }

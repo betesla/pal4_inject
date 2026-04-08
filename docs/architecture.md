@@ -11,15 +11,19 @@
   - 远程写入 `pal4_runtime_x86.dll` 路径
   - `CreateRemoteThread(LoadLibraryW)`
   - 等待 named event
-  - 通过 named pipe 读取 `read_ui_state`
-  - 确认 `bootstrap_ready=1` 后恢复主线程
+  - 默认在 ready event 后恢复主线程
+  - 测试侧再通过 named pipe 读取 `read_ui_state`
 - `pal4_runtime_x86.dll`
   - `DllMain` 只拉起 bootstrap thread
-  - bootstrap thread 负责：
+- bootstrap thread 负责：
     - 记录主模块基址
+    - 安装 crash capture（VEH + unhandled exception filter）
     - 初始化 Hook inventory / runtime state
     - 启动 named pipe server
+    - 启动原生 Win32 inject control panel
     - 安装 v1 Hook
+- 应用相机 pitch 相对窗口 / vertical mouse scale 补丁（当前窗口为 `±89`）
+- 通过 `Camera_UpdateMatrix` hook 把最终 second angle 夹回安全区 `[0,89] U [271,360)`，避免越过 `90` 度后的视角翻面
     - 置位 ready event
 
 ## Module Split
@@ -28,23 +32,41 @@
     - 公共 enum / struct string conversion
   - `hook_inventory.cpp`
     - IDA-backed hook metadata
+  - `camera_pitch_guard.cpp`
+    - second-angle 归一化与绝对安全区夹紧
   - `input_logic.cpp`
     - 可测试的 `ProcessUIEvent` 纯消息翻译逻辑
   - `protocol.cpp`
     - named pipe 文本协议编解码
   - `launcher.cpp`
     - 进程创建、远程注入、ready 检查、pipe 请求
+  - `crash_capture.cpp`
+    - 异常码筛选、crash summary 格式化、artifact 命名
+  - `inject_control_panel.cpp`
+    - 控制面板行模型与 mode 列表
 - `src/runtime`
   - `runtime_state.cpp`
-    - bootstrap / pipe / hook call count / last UI event / last error
+    - bootstrap / pipe / hook call count / last UI event / last error / crash artifacts
   - `hook_manager.cpp`
     - x86 inline detour、trampoline、prologue 校验、卸载
   - `cegui_bindings.cpp`
     - CEGUIBase 导出解析
+  - `cegui_renderer_hooks.cpp`
+    - shared `CEGUI_Renderer_Constructor_2` widescreen pillarbox patch
+    - object-local synthetic vtable for centered wide-aspect rendering
+  - `minimap_hooks.cpp`
+    - `SetupMinimapTexture` widescreen remap so minimap image follows the centered UI frame
   - `input_hooks.cpp`
     - `ProcessUIEvent` 替换与 observe-only wrapper
+  - `camera_hooks.cpp`
+    - `Camera_UpdateMatrix` absolute pitch guard
+  - `crash_handler.cpp`
+    - VEH / unhandled exception handler、crash report、minidump
+  - `inject_control_window.cpp`
+    - 原生 Win32 控制面板、hook mode 下拉框、`Ctrl+F10` 隐藏/显示
   - `ipc_server.cpp`
     - `ping / hook_status / enqueue_ui_message / simulate_key / read_ui_state / read_paliv_state / set_hook_mode / shutdown`
+    - `read_ui_state` 同时导出 crash capture 状态和最近一次 artifact 路径
   - `bootstrap.cpp`
     - bootstrap 主流程
 
@@ -56,6 +78,10 @@
   - `ProcessInputs`
   - `UpdateInputDeviceState`
   - `InitializeDirectInput`
+  - `giTalk` 脚本执行入口
+  - `CEGUI_Renderer_Constructor_2`
+  - `SetupMinimapTexture`
+  - `Camera_UpdateMatrix`
 - 只做 inventory、不默认安装：
   - `PAL4_Main_WndProc`
   - `HandlePlayerInputEvents`
@@ -68,6 +94,24 @@
     - 滚轮
     - `WM_MOUSELEAVE`
   - 其余消息仍回落到原始 trampoline
+- `giTalk`
+  - 不 hook `0x5D8DA0` 注册壳
+  - 当前 hook 的是已注册脚本回调 `ProxyClass_Vtable12 @ 0x5DFB10`
+  - 只重写显示文本参数为 `已注入` 的 GBK 字节串
+  - 保留第二个音频 key 参数，避免把语音资源路径一起改坏
+- wide-aspect UI
+  - 对共享 renderer ctor 路径上的宽屏分辨率，注入 runtime 会改成“按高度等比缩放 + 左右 pillarbox + 居中”
+  - 通过 object-local synthetic vtable 只改当前 renderer 对象的 `doRender` / `getRenderRect`
+  - 不直接改 `CEGUIBase.dll` 的全局 vtable，也不假设 renderer 对象有 `1280x800` 变体那么大的内存布局
+  - minimap 贴图区域额外通过 `SetupMinimapTexture` hook 按同一套 wide plan 重算 `x / y / width / height`
+- inject control panel
+  - 不依赖 PAL4 自己的 CEGUI widget 体系
+  - 采用单独的原生 Win32 tool window，避免在 PAL4 UI 资源未完全稳定前把新的调试面板绑死在游戏 CEGUI 上
+  - 当前通过 `RuntimeState::SetHookMode` 直接控制 hook mode
+- crash capture
+  - 不尝试拦截并吞掉异常
+  - 只负责在进程终止前写出 crash report / minidump
+  - 默认 artifact 位置在 `%TEMP%`
 
 ## Testing Strategy
 - 单元测试默认只跑纯逻辑与协议测试。

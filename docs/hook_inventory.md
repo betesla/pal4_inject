@@ -23,6 +23,22 @@
 - `InitializeDirectInput @ 0x407640`
   - mode: `observe_only`
   - patch span: `5`
+- `giTalk script callback @ 0x5DFB10`
+  - mode: `replace_with_fallback`
+  - patch span: `8`
+  - reason: `0x5D8DA0 giTalk` 是注册壳；真正吃对白文本参数的是已注册回调 `ProxyClass_Vtable12 @ 0x5DFB10`
+- `CEGUI_Renderer_Constructor_2 @ 0x413580`
+  - mode: `replace_with_fallback`
+  - patch span: `8`
+  - reason: 对共享 renderer ctor 路径上的宽屏分辨率补上“按高度等比缩放 + 左右 pillarbox + 居中”的 UI 渲染语义，避免 16:9 直接横向拉伸 UI
+- `SetupMinimapTexture @ 0x40DE10`
+  - mode: `replace_with_fallback`
+  - patch span: `8`
+  - reason: 小地图纹理区域原本仍按整屏宽度缩放与定位；宽屏下需要按同一套 pillarbox plan 重算位置和尺寸，避免内容溢出居中后的 UI 边框
+- `Camera_UpdateMatrix @ 0x5EA190`
+  - mode: `replace_with_fallback`
+  - patch span: `7`
+  - reason: 在矩阵重建前统一夹紧最终 second angle 到安全区 `[0,89] U [271,360)`，避免 second angle 穿过 `90` 度后的视角翻面
 
 ## Reserved Hooks
 - `PAL4_Main_WndProc @ 0x40A170`

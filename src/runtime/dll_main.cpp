@@ -4,6 +4,8 @@
 #include <windows.h>
 
 #include "bootstrap.h"
+#include "crash_handler.h"
+#include "inject_control_window.h"
 
 namespace {
 
@@ -22,6 +24,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
             CloseHandle(thread);
         }
     } else if (reason == DLL_PROCESS_DETACH) {
+        pal4::inject::UninstallCrashCapture();
         if (g_ready_event_handle) {
             CloseHandle(g_ready_event_handle);
             g_ready_event_handle = nullptr;

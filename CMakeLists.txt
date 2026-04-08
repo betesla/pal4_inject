@@ -18,7 +18,12 @@ endif()
 set(PAL4_INJECT_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 add_library(pal4_inject_common STATIC
+    src/common/camera_pitch_guard.cpp
+    src/common/camera_unlock_patch.cpp
+    src/common/cegui_widescreen.cpp
+    src/common/crash_capture.cpp
     src/common/hook_inventory.cpp
+    src/common/inject_control_panel.cpp
     src/common/input_logic.cpp
     src/common/input_queue.cpp
     src/common/launcher.cpp
@@ -34,10 +39,16 @@ target_link_libraries(pal4_inject_common PUBLIC advapi32 user32)
 
 add_library(pal4_inject_runtime_core STATIC
     src/runtime/bootstrap.cpp
+    src/runtime/cegui_renderer_hooks.cpp
+    src/runtime/camera_hooks.cpp
+    src/runtime/camera_unlock.cpp
     src/runtime/cegui_bindings.cpp
+    src/runtime/crash_handler.cpp
     src/runtime/hook_manager.cpp
+    src/runtime/inject_control_window.cpp
     src/runtime/input_hooks.cpp
     src/runtime/ipc_server.cpp
+    src/runtime/minimap_hooks.cpp
     src/runtime/runtime_state.cpp
 )
 target_include_directories(pal4_inject_runtime_core

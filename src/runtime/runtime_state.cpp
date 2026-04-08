@@ -40,6 +40,12 @@ void RuntimeState::SetUiDispatchReady(const bool ready) {
     state_cv_.notify_all();
 }
 
+void RuntimeState::SetCrashHandlerReady(const bool ready) {
+    std::scoped_lock lock(mutex_);
+    crash_handler_ready_ = ready;
+    state_cv_.notify_all();
+}
+
 bool RuntimeState::BootstrapReady() const {
     std::scoped_lock lock(mutex_);
     return bootstrap_ready_;
@@ -58,6 +64,11 @@ bool RuntimeState::PipeReady() const {
 bool RuntimeState::UiDispatchReady() const {
     std::scoped_lock lock(mutex_);
     return ui_dispatch_ready_;
+}
+
+bool RuntimeState::CrashHandlerReady() const {
+    std::scoped_lock lock(mutex_);
+    return crash_handler_ready_;
 }
 
 void RuntimeState::SetMainModuleBase(const std::uintptr_t base) {
@@ -148,6 +159,32 @@ void RuntimeState::SetLastError(const std::string_view text) {
     state_cv_.notify_all();
 }
 
+void RuntimeState::SetCrashArtifacts(
+    const std::string_view summary,
+    const std::string_view report_path,
+    const std::string_view dump_path) {
+    std::scoped_lock lock(mutex_);
+    last_crash_summary_ = summary;
+    last_crash_report_path_ = report_path;
+    last_crash_dump_path_ = dump_path;
+    state_cv_.notify_all();
+}
+
+bool RuntimeState::TrySetCrashArtifacts(
+    const std::string_view summary,
+    const std::string_view report_path,
+    const std::string_view dump_path) {
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        return false;
+    }
+    last_crash_summary_ = summary;
+    last_crash_report_path_ = report_path;
+    last_crash_dump_path_ = dump_path;
+    state_cv_.notify_all();
+    return true;
+}
+
 void RuntimeState::ObservePalivEntry(const std::uint32_t entry) {
     std::scoped_lock lock(mutex_);
     last_paliv_entry_observed_ = entry;
@@ -183,17 +220,20 @@ std::string RuntimeState::BuildEventLogTail(const std::size_t max_entries) const
     return tail;
 }
 
-RuntimeSnapshot RuntimeState::BuildSnapshot(const std::uint32_t current_paliv_entry) const {
-    std::scoped_lock lock(mutex_);
+RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_paliv_entry) const {
     RuntimeSnapshot snapshot{};
     snapshot.bootstrap_ready = bootstrap_ready_;
     snapshot.hooks_ready = hooks_ready_;
     snapshot.pipe_ready = pipe_ready_;
     snapshot.ui_dispatch_ready = ui_dispatch_ready_;
+    snapshot.crash_handler_ready = crash_handler_ready_;
     snapshot.current_paliv_entry = current_paliv_entry;
     snapshot.last_paliv_entry_observed = last_paliv_entry_observed_;
     snapshot.last_ui_event = last_ui_event_;
     snapshot.last_error = last_error_;
+    snapshot.last_crash_summary = last_crash_summary_;
+    snapshot.last_crash_report_path = last_crash_report_path_;
+    snapshot.last_crash_dump_path = last_crash_dump_path_;
     const std::size_t start =
         event_log_.size() > 32 ? event_log_.size() - 32 : 0;
     for (std::size_t i = start; i < event_log_.size(); ++i) {
@@ -209,6 +249,25 @@ RuntimeSnapshot RuntimeState::BuildSnapshot(const std::uint32_t current_paliv_en
         snapshot.process_ui_event.id = HookId::process_ui_event;
     }
     return snapshot;
+}
+
+RuntimeSnapshot RuntimeState::BuildSnapshot(const std::uint32_t current_paliv_entry) const {
+    std::scoped_lock lock(mutex_);
+    return BuildSnapshotUnlocked(current_paliv_entry);
+}
+
+bool RuntimeState::TryBuildSnapshot(
+    RuntimeSnapshot* out,
+    const std::uint32_t current_paliv_entry) const {
+    if (!out) {
+        return false;
+    }
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        return false;
+    }
+    *out = BuildSnapshotUnlocked(current_paliv_entry);
+    return true;
 }
 
 std::vector<HookStatus> RuntimeState::CopyHookStatuses() const {

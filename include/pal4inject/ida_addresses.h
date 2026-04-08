@@ -15,6 +15,10 @@ inline constexpr std::uint32_t kSimulateKeyPressAndRelease = 0x4BFD70;
 inline constexpr std::uint32_t kProcessInputs = 0x4080B0;
 inline constexpr std::uint32_t kUpdateInputDeviceState = 0x407910;
 inline constexpr std::uint32_t kInitializeDirectInput = 0x407640;
+inline constexpr std::uint32_t kGiTalkScriptCallback = 0x5DFB10;
+inline constexpr std::uint32_t kCeguiRendererConstructor2 = 0x413580;
+inline constexpr std::uint32_t kSetupMinimapTexture = 0x40DE10;
+inline constexpr std::uint32_t kCameraUpdateMatrix = 0x5EA190;
 inline constexpr std::uint32_t kPal4MainWndProc = 0x40A170;
 inline constexpr std::uint32_t kHandlePlayerInputEvents = 0x4283B0;
 
@@ -22,9 +26,15 @@ inline constexpr std::uint32_t kMapVirtualKeyToUiKey = 0x412130;
 inline constexpr std::uint32_t kEnableMouseCapture = 0x4120D0;
 inline constexpr std::uint32_t kDisableMouseCapture = 0x4120E0;
 inline constexpr std::uint32_t kTransformMouseCoordinates = 0x412320;
+inline constexpr std::uint32_t kSetRenderStates = 0x4149D0;
+inline constexpr std::uint32_t kRenderGeometryAndResetCounter = 0x414A20;
+inline constexpr std::uint32_t kPalGameIvInitCameraSubsystem = 0x5EADE0;
+inline constexpr std::uint32_t kCameraGetActiveCameraInternalId = 0x5EBA20;
 
 inline constexpr std::uint32_t kPalGameIvGetInstance = pal4::ida::kPalGameIvGetInstance;
 inline constexpr std::uint32_t kUiFrameManagerGetInstance = pal4::ida::kUiFrameManagerGetInstance;
+inline constexpr std::uint32_t kGameConfigGlobal = 0x8E3D90;
+inline constexpr std::uint32_t kRenderStateInterfaceGlobal = 0x950CD0;
 
 inline constexpr std::ptrdiff_t kUiFrameManagerProcessUiEventThisOffset = 408;
 inline constexpr std::ptrdiff_t kUiFrameManagerMessageHandledByteOffset = 544;

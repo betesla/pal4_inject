@@ -8,6 +8,7 @@
 #endif
 #include <windows.h>
 
+#include "cegui_renderer_hooks.h"
 #include "hook_manager.h"
 #include "input_hooks.h"
 #include "pal4inject/protocol.h"
@@ -97,7 +98,6 @@ std::string BuildHookSummary(const std::vector<HookStatus>& statuses) {
 
 ProtocolResponse BuildSnapshotResponse() {
     std::string dispatch_reason;
-    RefreshUiDispatchReady(&dispatch_reason);
     const auto snapshot = GetRuntimeState().BuildSnapshot(0);
     ProtocolResponse response{};
     response.ok = true;
@@ -106,11 +106,14 @@ ProtocolResponse BuildSnapshotResponse() {
     response.fields["hooks_ready"] = snapshot.hooks_ready ? "1" : "0";
     response.fields["pipe_ready"] = snapshot.pipe_ready ? "1" : "0";
     response.fields["ui_dispatch_ready"] = snapshot.ui_dispatch_ready ? "1" : "0";
+    response.fields["crash_handler_ready"] = snapshot.crash_handler_ready ? "1" : "0";
     response.fields["current_paliv_entry"] = HexValue(snapshot.current_paliv_entry);
     response.fields["last_paliv_entry_observed"] = HexValue(snapshot.last_paliv_entry_observed);
     response.fields["last_ui_event"] = snapshot.last_ui_event;
     response.fields["last_error"] = snapshot.last_error;
-    response.fields["event_log_tail"] = snapshot.event_log_tail;
+    response.fields["last_crash_report_path"] = snapshot.last_crash_report_path;
+    response.fields["last_crash_dump_path"] = snapshot.last_crash_dump_path;
+    response.fields["last_crash_summary"] = snapshot.last_crash_summary;
     response.fields["process_ui_event_installed"] = snapshot.process_ui_event.installed ? "1" : "0";
     response.fields["process_ui_event_mode"] = ToString(snapshot.process_ui_event.mode);
     response.fields["process_ui_event_call_count"] = std::to_string(snapshot.process_ui_event.call_count);
@@ -205,6 +208,9 @@ ProtocolResponse DispatchCommand(const ProtocolCommand& command) {
         return response;
     case ProtocolCommandKind::set_hook_mode:
         GetRuntimeState().SetHookMode(command.hook_id, command.hook_mode);
+        if (command.hook_id == HookId::cegui_renderer_constructor_2) {
+            ApplyCeguiRendererHookMode(command.hook_mode);
+        }
         response.status = "set_hook_mode";
         response.fields["hook"] = ToString(command.hook_id);
         response.fields["mode"] = ToString(command.hook_mode);

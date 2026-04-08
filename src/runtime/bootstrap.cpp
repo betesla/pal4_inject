@@ -7,7 +7,10 @@
 #endif
 #include <windows.h>
 
+#include "camera_unlock.h"
+#include "crash_handler.h"
 #include "hook_manager.h"
+#include "inject_control_window.h"
 #include "ipc_server.h"
 #include "pal4inject/launcher.h"
 #include "runtime_state.h"
@@ -77,6 +80,14 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
     AppendBootstrapLog("bootstrap_names_configured");
 
     std::string error;
+    const bool crash_capture_ok = InstallCrashCapture(&error);
+    if (!crash_capture_ok) {
+        state.SetLastError(error);
+        AppendBootstrapLog(std::string("install_crash_capture failed: ") + error);
+    } else {
+        AppendBootstrapLog("install_crash_capture ok");
+    }
+
     const bool init_ok = GetHookManager().Initialize(&error);
     if (!init_ok) {
         state.SetLastError(error);
@@ -93,6 +104,14 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
         AppendBootstrapLog("start_ipc_server ok");
     }
 
+    const bool control_window_ok = StartInjectControlWindow(&error);
+    if (!control_window_ok) {
+        state.SetLastError(error);
+        AppendBootstrapLog(std::string("start_inject_control_window failed: ") + error);
+    } else {
+        AppendBootstrapLog("start_inject_control_window ok");
+    }
+
     bool hooks_ok = false;
     if (init_ok) {
         hooks_ok = GetHookManager().InstallBootstrapHooks(&error);
@@ -104,8 +123,25 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
         }
     }
 
+    bool camera_patch_ok = false;
+    if (init_ok && hooks_ok) {
+        camera_patch_ok = ApplyCameraPitchUnlockPatch(&error);
+        if (!camera_patch_ok) {
+            state.SetLastError(error);
+            AppendBootstrapLog(std::string("camera_pitch_unlock_patch failed: ") + error);
+        } else {
+            AppendBootstrapLog("camera_pitch_unlock_patch ok");
+        }
+    }
+
     state.SetHooksReady(hooks_ok);
-    state.SetBootstrapReady(init_ok && pipe_ok && hooks_ok);
+    state.SetBootstrapReady(
+        crash_capture_ok &&
+        init_ok &&
+        pipe_ok &&
+        control_window_ok &&
+        hooks_ok &&
+        camera_patch_ok);
     AppendBootstrapLog(state.BootstrapReady() ? "bootstrap_ready=1" : "bootstrap_ready=0");
     SignalReadyEvent();
     return 0;

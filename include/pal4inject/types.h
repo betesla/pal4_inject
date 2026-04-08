@@ -29,6 +29,10 @@ enum class HookId : std::uint8_t {
     process_inputs,
     update_input_device_state,
     initialize_direct_input,
+    gi_talk,
+    cegui_renderer_constructor_2,
+    setup_minimap_texture,
+    camera_update_matrix,
     pal4_main_wndproc,
     handle_player_input_events,
 };
@@ -64,11 +68,15 @@ struct RuntimeSnapshot {
     bool hooks_ready = false;
     bool pipe_ready = false;
     bool ui_dispatch_ready = false;
+    bool crash_handler_ready = false;
     HookStatus process_ui_event{};
     std::uint32_t current_paliv_entry = 0;
     std::uint32_t last_paliv_entry_observed = 0;
     std::string last_ui_event;
     std::string last_error;
+    std::string last_crash_summary;
+    std::string last_crash_report_path;
+    std::string last_crash_dump_path;
     std::string event_log_tail;
     std::vector<HookStatus> active_hooks;
 };

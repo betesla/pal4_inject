@@ -19,10 +19,12 @@ public:
     void SetHooksReady(bool ready);
     void SetPipeReady(bool ready);
     void SetUiDispatchReady(bool ready);
+    void SetCrashHandlerReady(bool ready);
     bool BootstrapReady() const;
     bool HooksReady() const;
     bool PipeReady() const;
     bool UiDispatchReady() const;
+    bool CrashHandlerReady() const;
 
     void SetMainModuleBase(std::uintptr_t base);
     std::uintptr_t MainModuleBase() const;
@@ -40,12 +42,21 @@ public:
 
     void SetLastUiEvent(std::string_view text);
     void SetLastError(std::string_view text);
+    void SetCrashArtifacts(
+        std::string_view summary,
+        std::string_view report_path,
+        std::string_view dump_path);
+    bool TrySetCrashArtifacts(
+        std::string_view summary,
+        std::string_view report_path,
+        std::string_view dump_path);
     void ObservePalivEntry(std::uint32_t entry);
     std::uint32_t LastPalivEntryObserved() const;
     void AppendEventLog(std::string_view text);
     std::string BuildEventLogTail(std::size_t max_entries = 32) const;
 
     RuntimeSnapshot BuildSnapshot(std::uint32_t current_paliv_entry) const;
+    bool TryBuildSnapshot(RuntimeSnapshot* out, std::uint32_t current_paliv_entry) const;
     std::vector<HookStatus> CopyHookStatuses() const;
     bool WaitForHookCalls(HookId id, std::uint64_t expected_calls, std::uint32_t timeout_ms);
     bool WaitForPalivEntry(std::uint32_t expected_entry, std::uint32_t timeout_ms);
@@ -56,6 +67,7 @@ public:
 private:
     HookStatus* FindHookStatusUnlocked(HookId id);
     const HookStatus* FindHookStatusUnlocked(HookId id) const;
+    RuntimeSnapshot BuildSnapshotUnlocked(std::uint32_t current_paliv_entry) const;
 
     mutable std::mutex mutex_;
     std::condition_variable state_cv_;
@@ -63,6 +75,7 @@ private:
     bool hooks_ready_ = false;
     bool pipe_ready_ = false;
     bool ui_dispatch_ready_ = false;
+    bool crash_handler_ready_ = false;
     std::uintptr_t main_module_base_ = 0;
     std::string ready_event_name_;
     std::string pipe_name_;
@@ -70,6 +83,9 @@ private:
     std::uint32_t last_paliv_entry_observed_ = 0;
     std::string last_ui_event_;
     std::string last_error_;
+    std::string last_crash_summary_;
+    std::string last_crash_report_path_;
+    std::string last_crash_dump_path_;
     std::deque<std::string> event_log_;
     bool shutdown_requested_ = false;
 };

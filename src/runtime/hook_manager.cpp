@@ -258,6 +258,10 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::process_inputs:
         case HookId::update_input_device_state:
         case HookId::initialize_direct_input:
+        case HookId::gi_talk:
+        case HookId::cegui_renderer_constructor_2:
+        case HookId::setup_minimap_texture:
+        case HookId::camera_update_matrix:
             registration.install_on_bootstrap = true;
             registration.descriptor.replacement = GetReplacementForHook(descriptor.id);
             if (!registration.descriptor.replacement) {
