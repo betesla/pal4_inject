@@ -38,8 +38,10 @@ cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
 - runtime DLL 通过 named event + named pipe 暴露 ready 信号和测试控制面。
 - runtime DLL 还会拉起一个原生 Win32 注入控制面板：
   - 默认显示在游戏窗口右上角附近
+  - 默认会先跟随游戏窗口定位；用户手动拖动后就不再强制吸附
   - 每个 hook 一行，可以直接改 `HookMode`
   - `Ctrl+F10` 隐藏 / 显示面板
+  - 作为游戏窗口的 owned popup 存在，避免点回游戏时像独立外部工具窗一样被压下去
 - Hook 框架内置 x86 inline detour，不依赖第三方 Hook 库。
 - bootstrap 早期安装 crash capture：
   - `AddVectoredExceptionHandler`

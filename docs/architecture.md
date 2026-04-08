@@ -64,6 +64,8 @@
     - VEH / unhandled exception handler、crash report、minidump
   - `inject_control_window.cpp`
     - 原生 Win32 控制面板、hook mode 下拉框、`Ctrl+F10` 隐藏/显示
+    - 初始吸附游戏窗口；手动拖动后停止自动跟随
+    - 作为游戏窗口 owned popup 存在，减少焦点切回游戏时的外部窗体干扰
   - `ipc_server.cpp`
     - `ping / hook_status / enqueue_ui_message / simulate_key / read_ui_state / read_paliv_state / set_hook_mode / shutdown`
     - `read_ui_state` 同时导出 crash capture 状态和最近一次 artifact 路径

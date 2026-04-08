@@ -42,6 +42,8 @@ struct PanelRowRuntime {
 HANDLE g_control_thread = nullptr;
 DWORD g_control_thread_id = 0;
 HWND g_control_hwnd = nullptr;
+HWND g_owner_game_hwnd = nullptr;
+bool g_follow_game_window = true;
 
 std::string FormatWindowsError(const DWORD code) {
     char* buffer = nullptr;
@@ -104,9 +106,23 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lparam) {
 }
 
 HWND FindGameWindow() {
+    if (g_owner_game_hwnd && IsWindow(g_owner_game_hwnd)) {
+        return g_owner_game_hwnd;
+    }
     HWND hwnd = nullptr;
     EnumWindows(&EnumWindowsProc, reinterpret_cast<LPARAM>(&hwnd));
     return hwnd;
+}
+
+void EnsureGameWindowOwner(const HWND hwnd) {
+    const HWND game_window = FindGameWindow();
+    if (!game_window || game_window == hwnd) {
+        return;
+    }
+    if (g_owner_game_hwnd != game_window) {
+        g_owner_game_hwnd = game_window;
+        SetWindowLongPtrA(hwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(game_window));
+    }
 }
 
 void ApplyFont(const HWND hwnd) {
@@ -117,6 +133,11 @@ void ApplyFont(const HWND hwnd) {
 }
 
 void RefreshPanelPlacement(const HWND hwnd) {
+    if (!g_follow_game_window) {
+        return;
+    }
+
+    EnsureGameWindowOwner(hwnd);
     const HWND game_window = FindGameWindow();
     if (!game_window) {
         return;
@@ -134,7 +155,7 @@ void RefreshPanelPlacement(const HWND hwnd) {
         game_rect.top + 40,
         0,
         0,
-        SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
 void ApplyHookModeSideEffect(const HookId id, const HookMode mode) {
@@ -287,9 +308,12 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
         return 0;
     case WM_TIMER:
         if (wparam == kRefreshTimerId) {
-            RefreshPanelPlacement(hwnd);
             RefreshPanelContent(hwnd);
+            RefreshPanelPlacement(hwnd);
         }
+        return 0;
+    case WM_ENTERSIZEMOVE:
+        g_follow_game_window = false;
         return 0;
     case WM_COMMAND: {
         const int control_id = LOWORD(wparam);
@@ -315,6 +339,7 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
         if (wparam == kToggleHotkeyId) {
             ShowWindow(hwnd, IsWindowVisible(hwnd) ? SW_HIDE : SW_SHOW);
             if (IsWindowVisible(hwnd)) {
+                EnsureGameWindowOwner(hwnd);
                 RefreshPanelPlacement(hwnd);
             }
         }
@@ -350,6 +375,7 @@ DWORD WINAPI ControlWindowThreadProc(LPVOID) {
         kHeaderHeight +
         static_cast<int>(BuildInjectControlPanelRows().size()) * kRowHeight +
         kFooterHeight + 32;
+    g_owner_game_hwnd = FindGameWindow();
     g_control_hwnd = CreateWindowExA(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
         kWindowClassName,
@@ -359,7 +385,7 @@ DWORD WINAPI ControlWindowThreadProc(LPVOID) {
         CW_USEDEFAULT,
         kPanelWidth,
         panel_height,
-        nullptr,
+        g_owner_game_hwnd,
         nullptr,
         GetModuleHandleA(nullptr),
         nullptr);
@@ -410,6 +436,8 @@ void StopInjectControlWindow() {
     g_control_thread = nullptr;
     g_control_thread_id = 0;
     g_control_hwnd = nullptr;
+    g_owner_game_hwnd = nullptr;
+    g_follow_game_window = true;
 }
 
 }  // namespace pal4::inject
