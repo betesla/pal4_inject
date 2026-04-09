@@ -128,6 +128,17 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             nullptr,
         },
         {
+            HookId::d3d9_set_present_parameters,
+            ida::kD3d9SetPresentParameters,
+            CallingConvention::cdecl_call,
+            HookMode::replace_with_fallback,
+            {0x8A, 0x44, 0x24, 0x08, 0x83, 0xEC, 0x10, 0x53,
+             0x56, 0x57, 0xBB, 0x01, 0x00, 0x00, 0x00, 0x33},
+            10,
+            nullptr,
+            nullptr,
+        },
+        {
             HookId::pal4_main_wndproc,
             ida::kPal4MainWndProc,
             CallingConvention::stdcall_call,

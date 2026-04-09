@@ -16,6 +16,10 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
 endif()
 
 set(PAL4_INJECT_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
+set(PAL4_INJECT_PAL4_RE_ROOT ${PAL4_INJECT_REPO_ROOT})
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pal4_re/rebuild/include")
+    set(PAL4_INJECT_PAL4_RE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../pal4_re")
+endif()
 
 add_library(pal4_inject_common STATIC
     src/common/camera_pitch_guard.cpp
@@ -25,6 +29,7 @@ add_library(pal4_inject_common STATIC
     src/common/dpi_awareness.cpp
     src/common/hook_inventory.cpp
     src/common/inject_control_panel.cpp
+    src/common/inject_settings.cpp
     src/common/input_logic.cpp
     src/common/input_queue.cpp
     src/common/launcher.cpp
@@ -34,12 +39,13 @@ add_library(pal4_inject_common STATIC
 target_include_directories(pal4_inject_common
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${PAL4_INJECT_REPO_ROOT}/rebuild/include
+        ${PAL4_INJECT_PAL4_RE_ROOT}/rebuild/include
 )
 target_link_libraries(pal4_inject_common PUBLIC advapi32 user32)
 
 add_library(pal4_inject_runtime_core STATIC
     src/runtime/bootstrap.cpp
+    src/runtime/d3d9_quality_hooks.cpp
     src/runtime/cegui_renderer_hooks.cpp
     src/runtime/camera_hooks.cpp
     src/runtime/camera_unlock.cpp
@@ -50,13 +56,14 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/input_hooks.cpp
     src/runtime/ipc_server.cpp
     src/runtime/minimap_hooks.cpp
+    src/runtime/runtime_preferences.cpp
     src/runtime/runtime_state.cpp
     src/runtime/window_focus_hooks.cpp
 )
 target_include_directories(pal4_inject_runtime_core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${PAL4_INJECT_REPO_ROOT}/rebuild/include
+        ${PAL4_INJECT_PAL4_RE_ROOT}/rebuild/include
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
 )

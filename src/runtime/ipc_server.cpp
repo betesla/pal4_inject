@@ -12,6 +12,7 @@
 #include "hook_manager.h"
 #include "input_hooks.h"
 #include "pal4inject/protocol.h"
+#include "runtime_preferences.h"
 #include "runtime_state.h"
 
 namespace pal4::inject {
@@ -107,6 +108,7 @@ ProtocolResponse BuildSnapshotResponse() {
     response.fields["pipe_ready"] = snapshot.pipe_ready ? "1" : "0";
     response.fields["ui_dispatch_ready"] = snapshot.ui_dispatch_ready ? "1" : "0";
     response.fields["crash_handler_ready"] = snapshot.crash_handler_ready ? "1" : "0";
+    response.fields["msaa_level"] = ToString(snapshot.msaa_level);
     response.fields["current_paliv_entry"] = HexValue(snapshot.current_paliv_entry);
     response.fields["last_paliv_entry_observed"] = HexValue(snapshot.last_paliv_entry_observed);
     response.fields["last_ui_event"] = snapshot.last_ui_event;
@@ -207,10 +209,7 @@ ProtocolResponse DispatchCommand(const ProtocolCommand& command) {
         response.fields["event_log_tail"] = GetRuntimeState().BuildEventLogTail();
         return response;
     case ProtocolCommandKind::set_hook_mode:
-        GetRuntimeState().SetHookMode(command.hook_id, command.hook_mode);
-        if (command.hook_id == HookId::cegui_renderer_constructor_2) {
-            ApplyCeguiRendererHookMode(command.hook_mode);
-        }
+        ApplyHookModePreference(command.hook_id, command.hook_mode, true, true);
         response.status = "set_hook_mode";
         response.fields["hook"] = ToString(command.hook_id);
         response.fields["mode"] = ToString(command.hook_mode);

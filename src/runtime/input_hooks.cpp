@@ -12,6 +12,7 @@
 #include "cegui_renderer_hooks.h"
 #include "camera_hooks.h"
 #include "cegui_bindings.h"
+#include "d3d9_quality_hooks.h"
 #include "minimap_hooks.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
@@ -800,6 +801,9 @@ void* GetReplacementForHook(const HookId id) {
         if (void* replacement = GetWindowFocusReplacementForHook(id)) {
             return replacement;
         }
+        if (void* replacement = GetD3d9QualityReplacementForHook(id)) {
+            return replacement;
+        }
         return GetCameraReplacementForHook(id);
     }
 }
@@ -834,6 +838,7 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
         SetCeguiRendererOriginalTrampoline(id, trampoline);
         SetMinimapOriginalTrampoline(id, trampoline);
         SetWindowFocusOriginalTrampoline(id, trampoline);
+        SetD3d9QualityOriginalTrampoline(id, trampoline);
         SetCameraOriginalTrampoline(id, trampoline);
         break;
     }

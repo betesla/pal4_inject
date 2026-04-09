@@ -174,6 +174,7 @@ bool CopyRelocatingX86Bytes(
         case 0x68:
         case 0xA1:
             return remaining >= prefix_len + 5 ? prefix_len + 5 : 0;
+        case 0x8A:
         case 0x8B:
         case 0x8D: {
             const std::size_t len = modrm_length(code + prefix_len, remaining - prefix_len, 1, 0);
@@ -263,6 +264,7 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::cegui_system_initialize:
         case HookId::setup_minimap_texture:
         case HookId::camera_update_matrix:
+        case HookId::d3d9_set_present_parameters:
         case HookId::pal4_main_wndproc:
             registration.install_on_bootstrap = true;
             registration.descriptor.replacement = GetReplacementForHook(descriptor.id);

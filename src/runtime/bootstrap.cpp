@@ -14,6 +14,7 @@
 #include "pal4inject/dpi_awareness.h"
 #include "ipc_server.h"
 #include "pal4inject/launcher.h"
+#include "runtime_preferences.h"
 #include "runtime_state.h"
 
 namespace pal4::inject {
@@ -104,6 +105,13 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
         AppendBootstrapLog(std::string("hook_manager_initialize failed: ") + error);
     } else {
         AppendBootstrapLog("hook_manager_initialize ok");
+        std::string settings_error;
+        if (!LoadPersistedRuntimePreferences(&settings_error)) {
+            state.SetLastError(settings_error);
+            AppendBootstrapLog(std::string("load_persisted_runtime_preferences failed: ") + settings_error);
+        } else {
+            AppendBootstrapLog("load_persisted_runtime_preferences ok");
+        }
     }
 
     const bool pipe_ok = StartIpcServer(&error);

@@ -20,6 +20,7 @@ inline constexpr std::uint32_t kCeguiRendererConstructor2 = 0x413580;
 inline constexpr std::uint32_t kCeguiSystemInitialize = 0x410450;
 inline constexpr std::uint32_t kSetupMinimapTexture = 0x40DE10;
 inline constexpr std::uint32_t kCameraUpdateMatrix = 0x5EA190;
+inline constexpr std::uint32_t kD3d9SetPresentParameters = 0x75F710;
 inline constexpr std::uint32_t kPal4MainWndProc = 0x40A170;
 inline constexpr std::uint32_t kHandlePlayerInputEvents = 0x4283B0;
 
@@ -35,6 +36,12 @@ inline constexpr std::uint32_t kCameraGetActiveCameraInternalId = 0x5EBA20;
 inline constexpr std::uint32_t kPalGameIvGetInstance = pal4::ida::kPalGameIvGetInstance;
 inline constexpr std::uint32_t kUiFrameManagerGetInstance = pal4::ida::kUiFrameManagerGetInstance;
 inline constexpr std::uint32_t kGameConfigGlobal = 0x8E3D90;
+inline constexpr std::uint32_t kD3d9MaxMsaaTypeGlobal = 0x8D5724;
+inline constexpr std::uint32_t kD3d9RequestedMsaaTypeGlobal = 0x8D5728;
+inline constexpr std::uint32_t kD3d9MaxMsaaQualityLevelsGlobal = 0x8D572C;
+inline constexpr std::uint32_t kD3d9RequestedNonMaskableQualityGlobal = 0x8D5730;
+inline constexpr std::uint32_t kD3d9PresentMultiSampleTypeGlobal = 0x97A4F0;
+inline constexpr std::uint32_t kD3d9PresentMultiSampleQualityGlobal = 0x97A4F4;
 inline constexpr std::uint32_t kRenderStateInterfaceGlobal = 0x950CD0;
 
 inline constexpr std::ptrdiff_t kUiFrameManagerProcessUiEventThisOffset = 408;

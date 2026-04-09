@@ -3,6 +3,16 @@
 #include <chrono>
 
 namespace pal4::inject {
+namespace {
+
+HookMode DefaultPreferredActiveMode(const HookDescriptor& descriptor) {
+    if (descriptor.mode != HookMode::observe_only) {
+        return descriptor.mode;
+    }
+    return HookMode::replace_with_fallback;
+}
+
+}  // namespace
 
 void RuntimeState::InitializeInventory(const std::vector<HookDescriptor>& inventory) {
     std::scoped_lock lock(mutex_);
@@ -12,6 +22,7 @@ void RuntimeState::InitializeInventory(const std::vector<HookDescriptor>& invent
         HookStatus status{};
         status.id = descriptor.id;
         status.mode = descriptor.mode;
+        status.preferred_active_mode = DefaultPreferredActiveMode(descriptor);
         hook_statuses_.push_back(status);
     }
 }
@@ -119,6 +130,9 @@ void RuntimeState::SetHookMode(const HookId id, const HookMode mode) {
     std::scoped_lock lock(mutex_);
     if (auto* status = FindHookStatusUnlocked(id)) {
         status->mode = mode;
+        if (mode != HookMode::observe_only) {
+            status->preferred_active_mode = mode;
+        }
     }
     state_cv_.notify_all();
 }
@@ -129,6 +143,23 @@ HookMode RuntimeState::GetHookMode(const HookId id) const {
         return status->mode;
     }
     return HookMode::observe_only;
+}
+
+void RuntimeState::SetPreferredActiveHookMode(const HookId id, const HookMode mode) {
+    std::scoped_lock lock(mutex_);
+    if (auto* status = FindHookStatusUnlocked(id)) {
+        status->preferred_active_mode =
+            mode == HookMode::observe_only ? HookMode::replace_with_fallback : mode;
+    }
+    state_cv_.notify_all();
+}
+
+HookMode RuntimeState::GetPreferredActiveHookMode(const HookId id) const {
+    std::scoped_lock lock(mutex_);
+    if (const auto* status = FindHookStatusUnlocked(id)) {
+        return status->preferred_active_mode;
+    }
+    return HookMode::replace_with_fallback;
 }
 
 void RuntimeState::SetHookError(const HookId id, const std::string_view error) {
@@ -145,6 +176,17 @@ void RuntimeState::ClearHookError(const HookId id) {
         status->last_error.clear();
     }
     state_cv_.notify_all();
+}
+
+void RuntimeState::SetMsaaLevel(const MsaaLevel level) {
+    std::scoped_lock lock(mutex_);
+    msaa_level_ = level;
+    state_cv_.notify_all();
+}
+
+MsaaLevel RuntimeState::GetMsaaLevel() const {
+    std::scoped_lock lock(mutex_);
+    return msaa_level_;
 }
 
 void RuntimeState::SetLastUiEvent(const std::string_view text) {
@@ -227,6 +269,7 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.pipe_ready = pipe_ready_;
     snapshot.ui_dispatch_ready = ui_dispatch_ready_;
     snapshot.crash_handler_ready = crash_handler_ready_;
+    snapshot.msaa_level = msaa_level_;
     snapshot.current_paliv_entry = current_paliv_entry;
     snapshot.last_paliv_entry_observed = last_paliv_entry_observed_;
     snapshot.last_ui_event = last_ui_event_;

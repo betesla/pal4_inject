@@ -25,7 +25,14 @@ constexpr std::array<EnumName<HookMode>, 4> kHookModes{{
     {HookMode::replace_strict, "replace_strict"},
 }};
 
-constexpr std::array<EnumName<HookId>, 13> kHookIds{{
+constexpr std::array<EnumName<MsaaLevel>, 4> kMsaaLevels{{
+    {MsaaLevel::off, "off"},
+    {MsaaLevel::x2, "2x"},
+    {MsaaLevel::x4, "4x"},
+    {MsaaLevel::x8, "8x"},
+}};
+
+constexpr std::array<EnumName<HookId>, 14> kHookIds{{
     {HookId::process_ui_event, "process_ui_event"},
     {HookId::handle_ui_message, "handle_ui_message"},
     {HookId::simulate_key_press_and_release, "simulate_key_press_and_release"},
@@ -37,6 +44,7 @@ constexpr std::array<EnumName<HookId>, 13> kHookIds{{
     {HookId::cegui_system_initialize, "cegui_system_initialize"},
     {HookId::setup_minimap_texture, "setup_minimap_texture"},
     {HookId::camera_update_matrix, "camera_update_matrix"},
+    {HookId::d3d9_set_present_parameters, "d3d9_set_present_parameters"},
     {HookId::pal4_main_wndproc, "pal4_main_wndproc"},
     {HookId::handle_player_input_events, "handle_player_input_events"},
 }};
@@ -80,12 +88,20 @@ const char* ToString(const HookMode mode) noexcept {
     return FindEnumName(mode, kHookModes);
 }
 
+const char* ToString(const MsaaLevel level) noexcept {
+    return FindEnumName(level, kMsaaLevels);
+}
+
 const char* ToString(const HookId id) noexcept {
     return FindEnumName(id, kHookIds);
 }
 
 bool TryParseHookMode(const std::string_view text, HookMode* out) noexcept {
     return TryParseEnum(text, kHookModes, out);
+}
+
+bool TryParseMsaaLevel(const std::string_view text, MsaaLevel* out) noexcept {
+    return TryParseEnum(text, kMsaaLevels, out);
 }
 
 bool TryParseHookId(const std::string_view text, HookId* out) noexcept {

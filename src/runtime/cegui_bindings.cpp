@@ -88,6 +88,11 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     }
     cached.get_system_singleton_ptr = reinterpret_cast<CeguiBindings::GetSingletonPtrFn>(proc);
 
+    if (!ResolveBinding(module, "?getSingletonPtr@FontManager@CEGUI@@SAPAV12@XZ", &proc, error)) {
+        return false;
+    }
+    cached.get_font_manager_singleton_ptr = reinterpret_cast<CeguiBindings::GetSingletonPtrFn>(proc);
+
     if (!ResolveBinding(module, "?injectMouseButtonDown@System@CEGUI@@QAE_NW4MouseButton@2@@Z", &proc, error)) {
         return false;
     }
@@ -127,6 +132,58 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
         return false;
     }
     cached.request_redraw = reinterpret_cast<CeguiBindings::RequestRedrawFn>(proc);
+
+    if (!ResolveBinding(module, "?getFont@FontManager@CEGUI@@QBEPAVFont@2@ABVString@2@@Z", &proc, error)) {
+        return false;
+    }
+    cached.font_manager_get_font = reinterpret_cast<CeguiBindings::FontManagerGetFontFn>(proc);
+
+    if (!ResolveBinding(module, "?notifyScreenResolution@Font@CEGUI@@QAEXABVSize@2@@Z", &proc, error)) {
+        return false;
+    }
+    cached.font_notify_screen_resolution =
+        reinterpret_cast<CeguiBindings::FontNotifyScreenResolutionFn>(proc);
+
+    if (!ResolveBinding(module, "?setNativeResolution@Font@CEGUI@@QAEXABVSize@2@@Z", &proc, error)) {
+        return false;
+    }
+    cached.font_set_native_resolution =
+        reinterpret_cast<CeguiBindings::FontSetNativeResolutionFn>(proc);
+
+    if (!ResolveBinding(module, "?setAutoScalingEnabled@Font@CEGUI@@QAEX_N@Z", &proc, error)) {
+        return false;
+    }
+    cached.font_set_auto_scaling_enabled =
+        reinterpret_cast<CeguiBindings::FontSetAutoScalingEnabledFn>(proc);
+
+    if (!ResolveBinding(module, "?isAutoScaled@Font@CEGUI@@QBE_NXZ", &proc, error)) {
+        return false;
+    }
+    cached.font_is_auto_scaled =
+        reinterpret_cast<CeguiBindings::FontIsAutoScaledFn>(proc);
+
+    if (!ResolveBinding(module, "?getPointSize@Font@CEGUI@@QBEIXZ", &proc, error)) {
+        return false;
+    }
+    cached.font_get_point_size =
+        reinterpret_cast<CeguiBindings::FontGetPointSizeFn>(proc);
+
+    if (!ResolveBinding(module, "?getFontHeight@Font@CEGUI@@QBEMM@Z", &proc, error)) {
+        return false;
+    }
+    cached.font_get_font_height =
+        reinterpret_cast<CeguiBindings::FontGetFontHeightFn>(proc);
+
+    if (!ResolveBinding(module, "??0String@CEGUI@@QAE@PBD@Z", &proc, error)) {
+        return false;
+    }
+    cached.cegui_string_ctor_from_ansi =
+        reinterpret_cast<CeguiBindings::CeguiStringCtorFromAnsiFn>(proc);
+
+    if (!ResolveBinding(module, "??1String@CEGUI@@QAE@XZ", &proc, error)) {
+        return false;
+    }
+    cached.cegui_string_dtor = reinterpret_cast<CeguiBindings::CeguiStringDtorFn>(proc);
 
     if (!ResolveBinding(module, "??_7EventArgs@CEGUI@@6B@", &proc, error)) {
         return false;

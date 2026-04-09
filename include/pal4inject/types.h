@@ -22,6 +22,13 @@ enum class HookMode : std::uint8_t {
     replace_strict,
 };
 
+enum class MsaaLevel : std::uint8_t {
+    off = 0,
+    x2,
+    x4,
+    x8,
+};
+
 enum class HookId : std::uint8_t {
     process_ui_event = 0,
     handle_ui_message,
@@ -34,6 +41,7 @@ enum class HookId : std::uint8_t {
     cegui_system_initialize,
     setup_minimap_texture,
     camera_update_matrix,
+    d3d9_set_present_parameters,
     pal4_main_wndproc,
     handle_player_input_events,
 };
@@ -52,6 +60,7 @@ struct HookDescriptor {
 struct HookStatus {
     HookId id = HookId::process_ui_event;
     HookMode mode = HookMode::observe_only;
+    HookMode preferred_active_mode = HookMode::replace_with_fallback;
     bool installed = false;
     std::uint64_t call_count = 0;
     std::string last_error;
@@ -70,6 +79,7 @@ struct RuntimeSnapshot {
     bool pipe_ready = false;
     bool ui_dispatch_ready = false;
     bool crash_handler_ready = false;
+    MsaaLevel msaa_level = MsaaLevel::off;
     HookStatus process_ui_event{};
     std::uint32_t current_paliv_entry = 0;
     std::uint32_t last_paliv_entry_observed = 0;
@@ -103,9 +113,11 @@ public:
 
 const char* ToString(CallingConvention cc) noexcept;
 const char* ToString(HookMode mode) noexcept;
+const char* ToString(MsaaLevel level) noexcept;
 const char* ToString(HookId id) noexcept;
 
 bool TryParseHookMode(std::string_view text, HookMode* out) noexcept;
+bool TryParseMsaaLevel(std::string_view text, MsaaLevel* out) noexcept;
 bool TryParseHookId(std::string_view text, HookId* out) noexcept;
 
 }  // namespace pal4::inject

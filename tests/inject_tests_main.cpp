@@ -20,6 +20,7 @@
 #include "pal4inject/ida_addresses.h"
 #include "pal4inject/dpi_awareness.h"
 #include "pal4inject/inject_control_panel.h"
+#include "pal4inject/inject_settings.h"
 #include "pal4inject/input_logic.h"
 #include "pal4inject/input_queue.h"
 #include "pal4inject/launcher.h"
@@ -56,7 +57,7 @@ void TestResolveRuntimeAddress() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 13);
+    assert(inventory.size() == 14);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -64,6 +65,7 @@ void TestHookInventory() {
     bool found_cegui_system_init = false;
     bool found_setup_minimap_texture = false;
     bool found_camera_update_matrix = false;
+    bool found_d3d9_present = false;
     bool found_reserved_wndproc = false;
     for (const auto& hook : inventory) {
         assert(!hook.expected_prologue.empty());
@@ -106,6 +108,12 @@ void TestHookInventory() {
             assert(hook.patch_span == 7);
             assert(hook.ida_ea == pal4::inject::ida::kCameraUpdateMatrix);
         }
+        if (hook.id == HookId::d3d9_set_present_parameters) {
+            found_d3d9_present = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 10);
+            assert(hook.ida_ea == pal4::inject::ida::kD3d9SetPresentParameters);
+        }
         if (hook.id == HookId::pal4_main_wndproc) {
             found_reserved_wndproc = true;
             assert(hook.patch_span == 8);
@@ -118,6 +126,7 @@ void TestHookInventory() {
     assert(found_cegui_system_init);
     assert(found_setup_minimap_texture);
     assert(found_camera_update_matrix);
+    assert(found_d3d9_present);
     assert(found_reserved_wndproc);
 }
 
@@ -127,6 +136,18 @@ void TestDpiAwarenessStrings() {
     assert(std::string(pal4::inject::ToString(pal4::inject::DpiAwarenessMode::per_monitor_aware)) == "per_monitor_aware");
     assert(std::string(pal4::inject::ToString(pal4::inject::DpiAwarenessMode::system_aware)) == "system_aware");
     assert(std::string(pal4::inject::ToString(pal4::inject::DpiAwarenessMode::already_set)) == "already_set");
+}
+
+void TestMsaaLevelStrings() {
+    assert(std::string(pal4::inject::ToString(pal4::inject::MsaaLevel::off)) == "off");
+    assert(std::string(pal4::inject::ToString(pal4::inject::MsaaLevel::x2)) == "2x");
+    assert(std::string(pal4::inject::ToString(pal4::inject::MsaaLevel::x4)) == "4x");
+    assert(std::string(pal4::inject::ToString(pal4::inject::MsaaLevel::x8)) == "8x");
+
+    pal4::inject::MsaaLevel parsed = pal4::inject::MsaaLevel::off;
+    assert(pal4::inject::TryParseMsaaLevel("4x", &parsed));
+    assert(parsed == pal4::inject::MsaaLevel::x4);
+    assert(!pal4::inject::TryParseMsaaLevel("16x", &parsed));
 }
 
 void TestProtocolRoundTrip() {
@@ -175,17 +196,18 @@ void TestProtocolRoundTrip() {
 
 void TestInjectControlPanelModel() {
     const auto rows = pal4::inject::BuildInjectControlPanelRows();
-    assert(rows.size() == 13);
+    assert(rows.size() == 14);
     assert(rows.front().id == HookId::process_ui_event);
     assert(rows.front().allow_mode_change);
     assert(rows[7].id == HookId::cegui_renderer_constructor_2);
     assert(rows[8].id == HookId::cegui_system_initialize);
     assert(rows[9].id == HookId::setup_minimap_texture);
     assert(rows[10].id == HookId::camera_update_matrix);
-    assert(rows[11].id == HookId::pal4_main_wndproc);
-    assert(rows[11].allow_mode_change);
-    assert(rows[12].id == HookId::handle_player_input_events);
-    assert(!rows[12].allow_mode_change);
+    assert(rows[11].id == HookId::d3d9_set_present_parameters);
+    assert(rows[12].id == HookId::pal4_main_wndproc);
+    assert(rows[12].allow_mode_change);
+    assert(rows[13].id == HookId::handle_player_input_events);
+    assert(!rows[13].allow_mode_change);
 
     const auto modes = pal4::inject::BuildInjectControlPanelModes();
     assert(modes.size() == 4);
@@ -194,6 +216,40 @@ void TestInjectControlPanelModel() {
     assert(pal4::inject::FindInjectControlPanelModeIndex(pal4::inject::HookMode::mirror_compare) == 1);
     assert(pal4::inject::InjectControlPanelModeFromIndex(2) == pal4::inject::HookMode::replace_with_fallback);
     assert(pal4::inject::InjectControlPanelModeFromIndex(99) == pal4::inject::HookMode::observe_only);
+}
+
+void TestInjectSettingsRoundTrip() {
+    pal4::inject::InjectPersistedSettings settings{};
+    settings.msaa_level = pal4::inject::MsaaLevel::x4;
+    settings.hooks.push_back({
+        HookId::process_ui_event,
+        pal4::inject::HookMode::replace_with_fallback,
+        pal4::inject::HookMode::replace_with_fallback,
+    });
+    settings.hooks.push_back({
+        HookId::d3d9_set_present_parameters,
+        pal4::inject::HookMode::observe_only,
+        pal4::inject::HookMode::replace_with_fallback,
+    });
+
+    std::string error;
+    const auto text = pal4::inject::FormatInjectPersistedSettings(settings);
+    pal4::inject::InjectPersistedSettings parsed{};
+    assert(pal4::inject::ParseInjectPersistedSettings(text, &parsed, &error));
+    assert(parsed.msaa_level == pal4::inject::MsaaLevel::x4);
+    assert(parsed.hooks.size() == 2);
+    assert(parsed.hooks[0].id == HookId::process_ui_event);
+    assert(parsed.hooks[0].mode == pal4::inject::HookMode::replace_with_fallback);
+    assert(parsed.hooks[1].id == HookId::d3d9_set_present_parameters);
+    assert(parsed.hooks[1].active_mode == pal4::inject::HookMode::replace_with_fallback);
+
+    const auto temp_path =
+        std::filesystem::temp_directory_path() / "pal4_inject_settings_unit_test.ini";
+    assert(pal4::inject::SaveInjectPersistedSettings(temp_path, settings, &error));
+    pal4::inject::InjectPersistedSettings loaded{};
+    assert(pal4::inject::LoadInjectPersistedSettings(temp_path, &loaded, &error));
+    assert(loaded.msaa_level == pal4::inject::MsaaLevel::x4);
+    std::filesystem::remove(temp_path);
 }
 
 void TestInputLogic() {
@@ -253,6 +309,7 @@ void TestInputQueue() {
 void TestRuntimeEventLog() {
     auto& state = pal4::inject::GetRuntimeState();
     state.InitializeInventory(pal4::inject::BuildHookInventorySkeleton());
+    state.SetMsaaLevel(pal4::inject::MsaaLevel::x2);
     state.AppendEventLog("event-1");
     state.AppendEventLog("event-2");
     state.SetCrashHandlerReady(true);
@@ -266,6 +323,7 @@ void TestRuntimeEventLog() {
     assert(tail.find("event-2") != std::string::npos);
     const auto snapshot = state.BuildSnapshot(0);
     assert(snapshot.crash_handler_ready);
+    assert(snapshot.msaa_level == pal4::inject::MsaaLevel::x2);
     assert(snapshot.last_crash_summary == "summary");
     assert(snapshot.last_crash_report_path == "report.txt");
     assert(snapshot.last_crash_dump_path == "dump.dmp");
@@ -965,7 +1023,9 @@ int main() {
     TestResolveRuntimeAddress();
     TestHookInventory();
     TestDpiAwarenessStrings();
+    TestMsaaLevelStrings();
     TestInjectControlPanelModel();
+    TestInjectSettingsRoundTrip();
     TestProtocolRoundTrip();
     TestInputLogic();
     TestInputQueue();

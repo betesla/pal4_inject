@@ -37,8 +37,12 @@ public:
     void IncrementHookCall(HookId id);
     void SetHookMode(HookId id, HookMode mode);
     HookMode GetHookMode(HookId id) const;
+    void SetPreferredActiveHookMode(HookId id, HookMode mode);
+    HookMode GetPreferredActiveHookMode(HookId id) const;
     void SetHookError(HookId id, std::string_view error);
     void ClearHookError(HookId id);
+    void SetMsaaLevel(MsaaLevel level);
+    MsaaLevel GetMsaaLevel() const;
 
     void SetLastUiEvent(std::string_view text);
     void SetLastError(std::string_view text);
@@ -80,6 +84,7 @@ private:
     std::string ready_event_name_;
     std::string pipe_name_;
     std::vector<HookStatus> hook_statuses_;
+    MsaaLevel msaa_level_ = MsaaLevel::off;
     std::uint32_t last_paliv_entry_observed_ = 0;
     std::string last_ui_event_;
     std::string last_error_;

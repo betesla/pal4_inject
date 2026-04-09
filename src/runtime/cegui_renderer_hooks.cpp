@@ -71,6 +71,10 @@ std::string FormatPointer(const void* value) {
     return out.str();
 }
 
+float AlignToHalfPixel(const float value) noexcept {
+    return std::floor(value + 0.5F) - 0.5F;
+}
+
 std::uintptr_t MainModuleBase() {
     auto& state = GetRuntimeState();
     std::uintptr_t base = state.MainModuleBase();
@@ -218,10 +222,10 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
                 *reinterpret_cast<const float*>(bytes + kRendererScaleYOffset);
             const float bias_x = patched->plan.horizontal_bias_pixels;
 
-            *reinterpret_cast<float*>(target) =
-                *reinterpret_cast<const float*>(quad_fields - 29) * scale_x + bias_x - 0.5F;
-            *reinterpret_cast<float*>(target + 4) =
-                *reinterpret_cast<const float*>(quad_fields - 37) * scale_y - 0.5F;
+            *reinterpret_cast<float*>(target) = AlignToHalfPixel(
+                *reinterpret_cast<const float*>(quad_fields - 29) * scale_x + bias_x);
+            *reinterpret_cast<float*>(target + 4) = AlignToHalfPixel(
+                *reinterpret_cast<const float*>(quad_fields - 37) * scale_y);
             *reinterpret_cast<float*>(target + 8) =
                 *reinterpret_cast<const float*>(quad_fields - 21);
             const std::uint16_t color0 =
@@ -240,10 +244,10 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
             const int vertex_index_1 = vertex_index + 1;
             *reinterpret_cast<int*>(bytes + kRendererVertexCountOffset) = vertex_index_1;
             const int target_1 = vertex_buffer + 28 * vertex_index_1;
-            *reinterpret_cast<float*>(target_1) =
-                *reinterpret_cast<const float*>(quad_fields - 29) * scale_x + bias_x - 0.5F;
-            *reinterpret_cast<float*>(target_1 + 4) =
-                *reinterpret_cast<const float*>(quad_fields - 33) * scale_y - 0.5F;
+            *reinterpret_cast<float*>(target_1) = AlignToHalfPixel(
+                *reinterpret_cast<const float*>(quad_fields - 29) * scale_x + bias_x);
+            *reinterpret_cast<float*>(target_1 + 4) = AlignToHalfPixel(
+                *reinterpret_cast<const float*>(quad_fields - 33) * scale_y);
             *reinterpret_cast<float*>(target_1 + 8) =
                 *reinterpret_cast<const float*>(quad_fields - 21);
             const std::uint16_t color1 =
@@ -262,10 +266,10 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
             const int vertex_index_2 = vertex_index_1 + 1;
             *reinterpret_cast<int*>(bytes + kRendererVertexCountOffset) = vertex_index_2;
             const int target_2 = vertex_buffer + 28 * vertex_index_2;
-            *reinterpret_cast<float*>(target_2) =
-                *reinterpret_cast<const float*>(quad_fields - 25) * scale_x + bias_x - 0.5F;
-            *reinterpret_cast<float*>(target_2 + 4) =
-                *reinterpret_cast<const float*>(quad_fields - 33) * scale_y - 0.5F;
+            *reinterpret_cast<float*>(target_2) = AlignToHalfPixel(
+                *reinterpret_cast<const float*>(quad_fields - 25) * scale_x + bias_x);
+            *reinterpret_cast<float*>(target_2 + 4) = AlignToHalfPixel(
+                *reinterpret_cast<const float*>(quad_fields - 33) * scale_y);
             *reinterpret_cast<float*>(target_2 + 8) =
                 *reinterpret_cast<const float*>(quad_fields - 21);
             const std::uint16_t color2 =
@@ -284,10 +288,10 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
             const int vertex_index_3 = vertex_index_2 + 1;
             *reinterpret_cast<int*>(bytes + kRendererVertexCountOffset) = vertex_index_3;
             const int target_3 = vertex_buffer + 28 * vertex_index_3;
-            *reinterpret_cast<float*>(target_3) =
-                *reinterpret_cast<const float*>(quad_fields - 25) * scale_x + bias_x - 0.5F;
-            *reinterpret_cast<float*>(target_3 + 4) =
-                *reinterpret_cast<const float*>(quad_fields - 37) * scale_y - 0.5F;
+            *reinterpret_cast<float*>(target_3) = AlignToHalfPixel(
+                *reinterpret_cast<const float*>(quad_fields - 25) * scale_x + bias_x);
+            *reinterpret_cast<float*>(target_3 + 4) = AlignToHalfPixel(
+                *reinterpret_cast<const float*>(quad_fields - 37) * scale_y);
             *reinterpret_cast<float*>(target_3 + 8) =
                 *reinterpret_cast<const float*>(quad_fields - 21);
             const std::uint16_t color3 =
