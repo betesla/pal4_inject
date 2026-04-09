@@ -44,6 +44,8 @@
     - 异常码筛选、crash summary 格式化、artifact 命名
   - `inject_control_panel.cpp`
     - 控制面板行模型与 mode 列表
+  - `inject_settings.cpp`
+    - 本地用户目录下的面板 / 画质设置持久化
 - `src/runtime`
   - `runtime_state.cpp`
     - bootstrap / pipe / hook call count / last UI event / last error / crash artifacts
@@ -54,6 +56,9 @@
   - `cegui_renderer_hooks.cpp`
     - shared `CEGUI_Renderer_Constructor_2` widescreen pillarbox patch
     - object-local synthetic vtable for centered wide-aspect rendering
+  - `d3d9_quality_hooks.cpp`
+    - `D3D9SetPresentParameters` seam
+    - 通过原始多重采样探测路径接入 `MSAA` 请求值
   - `minimap_hooks.cpp`
     - `SetupMinimapTexture` widescreen remap so minimap image follows the centered UI frame
   - `input_hooks.cpp`
@@ -63,9 +68,12 @@
   - `crash_handler.cpp`
     - VEH / unhandled exception handler、crash report、minidump
   - `inject_control_window.cpp`
-    - 原生 Win32 控制面板、hook mode 下拉框、`Ctrl+F10` 隐藏/显示
+    - 原生 Win32 控制面板、`MSAA` 选项、hook 快速开关和 mode 下拉框、`Ctrl+F10` 隐藏/显示
     - 初始吸附游戏窗口；手动拖动后停止自动跟随
     - 作为游戏窗口 owned popup 存在，减少焦点切回游戏时的外部窗体干扰
+  - `runtime_preferences.cpp`
+    - 把 panel 改动统一转成 runtime side effect
+    - 保存 / 加载 remembered hook mode 与 `MSAA` 设置
   - `ipc_server.cpp`
     - `ping / hook_status / enqueue_ui_message / simulate_key / read_ui_state / read_paliv_state / set_hook_mode / shutdown`
     - `read_ui_state` 同时导出 crash capture 状态和最近一次 artifact 路径
@@ -84,6 +92,7 @@
   - `CEGUI_Renderer_Constructor_2`
   - `SetupMinimapTexture`
   - `Camera_UpdateMatrix`
+  - `D3D9SetPresentParameters`
 - 只做 inventory、不默认安装：
   - `PAL4_Main_WndProc`
   - `HandlePlayerInputEvents`
@@ -123,3 +132,11 @@
 - 完整菜单场景默认不在每次集成 smoke 中启用：
   - `PAL4_INJECT_RUN_FULL_SCENARIOS=1`
 - 这样本地默认开发循环不依赖真实游戏窗口，也避免无意中启动长时间挂着的进程。
+
+## Current Render Research
+- 文本模糊问题已单独整理到：
+  - `docs/text_rendering_investigation.md`
+- 当前高优先级结论：
+  - PAL4 主 UI 的 `system / systemBold / dialog_simsun` 都是 `Dynamic` 字体
+  - 原字体定义本身已经开启 `AutoScaled="true"` 和 `AntiAlias="true"`
+  - 当前 inject 宽屏补丁在 renderer 层对 CEGUI 顶点做统一缩放，因此文字模糊更像是 glyph quad 被再次非整数缩放后的采样问题，而不只是“字体没开抗锯齿”

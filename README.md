@@ -39,7 +39,9 @@ cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
 - runtime DLL 还会拉起一个原生 Win32 注入控制面板：
   - 默认显示在游戏窗口右上角附近
   - 默认会先跟随游戏窗口定位；用户手动拖动后就不再强制吸附
-  - 每个 hook 一行，可以直接改 `HookMode`
+  - 顶部单独暴露 `MSAA` 画质项
+  - 每个 hook 一行，带快速开关、`HookMode` 下拉框和状态栏
+  - 面板配置会记忆到本地用户目录，下次启动自动恢复
   - `Ctrl+F10` 隐藏 / 显示面板
   - 作为游戏窗口的 owned popup 存在，避免点回游戏时像独立外部工具窗一样被压下去
 - Hook 框架内置 x86 inline detour，不依赖第三方 Hook 库。
@@ -62,6 +64,7 @@ cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
   - `CEGUI_Renderer_Constructor_2` widescreen pillarbox patch
   - `SetupMinimapTexture` widescreen layout patch
   - `Camera_UpdateMatrix` second-angle guard
+  - `D3D9SetPresentParameters` multisample override seam
 - `PAL4_Main_WndProc` 和 `HandlePlayerInputEvents` 目前只保留 inventory，不默认安装。
 
 ## Widescreen UI
@@ -89,11 +92,15 @@ cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
 
 ## Inject Control Panel
 - 注入后会出现 `PAL4 Inject Control` 小面板。
-- 面板会列出当前 hook inventory，并显示：
-  - hook 名称
+- 面板会先显示一个独立的 `Render MSAA` 选项：
+  - 当前支持 `off / 2x / 4x / 8x`
+  - 改动会记忆，但真正生效要等下一次 D3D9 reset 或下一次启动
+- hook 列表区会显示：
+  - 更短的可读名称
+  - `On` 快速开关
   - 当前 mode 下拉框
-  - installed / call count 状态
-- 对已安装且允许切换的 hook，可以直接从面板改 mode。
+  - installed / active / call count / error 状态
+- 对已安装且允许切换的 hook，可以直接从面板开关或改 mode。
 - 当前会立刻响应切换的重点功能包括：
   - `ProcessUIEvent`
   - `HandleUIMessageAndProcess`
@@ -101,6 +108,7 @@ cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
   - `giTalk`
   - `CEGUI_Renderer_Constructor_2` widescreen pillarbox
   - `Camera_UpdateMatrix` pitch guard
+  - `D3D9SetPresentParameters` multisample override
 
 ## 测试
 - `pal4_inject_tests.exe`

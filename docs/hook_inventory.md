@@ -39,6 +39,10 @@
   - mode: `replace_with_fallback`
   - patch span: `7`
   - reason: 在矩阵重建前统一夹紧最终 second angle 到安全区 `[0,89] U [271,360)`，避免 second angle 穿过 `90` 度后的视角翻面
+- `D3D9SetPresentParameters @ 0x75F710`
+  - mode: `replace_with_fallback`
+  - patch span: `10`
+  - reason: 复用原始 D3D9 多重采样探测逻辑，在设备创建 / reset 前写入记忆下来的 `MSAA` 请求值
 
 ## Reserved Hooks
 - `PAL4_Main_WndProc @ 0x40A170`
