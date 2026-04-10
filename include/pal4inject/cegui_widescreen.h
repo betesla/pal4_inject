@@ -22,10 +22,26 @@ struct WidescreenMinimapPlacement {
     int height = 0;
 };
 
+enum class WidescreenHudAnchor {
+    none = 0,
+    left_edge,
+    right_edge,
+};
+
 bool IsWideAspectResolution(int width, int height) noexcept;
 bool UsesOriginalWideRendererVariant(int width, int height) noexcept;
 CeguiWidescreenPlan BuildCeguiWidescreenPlan(int width, int height) noexcept;
 WidescreenMinimapPlacement BuildWidescreenMinimapPlacement(int width, int height) noexcept;
+float ComputeWidescreenHudLogicalX(
+    const CeguiWidescreenPlan& plan,
+    float base_logical_x,
+    WidescreenHudAnchor anchor) noexcept;
+float ComputeCenteredUiLogicalX(
+    const CeguiWidescreenPlan& plan,
+    float base_logical_x) noexcept;
+float ProjectWidescreenLogicalXToPhysicalPixels(
+    const CeguiWidescreenPlan& plan,
+    float logical_x) noexcept;
 bool ApplyCeguiWidescreenMouseTransform(
     const CeguiWidescreenPlan& plan,
     float raw_x,

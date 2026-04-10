@@ -14,6 +14,7 @@
 #include "cegui_bindings.h"
 #include "cegui_font_hooks.h"
 #include "d3d9_quality_hooks.h"
+#include "hud_layout_fixups.h"
 #include "minimap_hooks.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
@@ -710,6 +711,7 @@ bool __fastcall Hook_SimulateKeyPressAndRelease(
 
 int __cdecl Hook_ProcessInputs() {
     GetRuntimeState().IncrementHookCall(HookId::process_inputs);
+    RefreshWidescreenHudLayoutFixups();
     LogLowLevelObserveOnlyHook(HookId::process_inputs, nullptr);
     return g_original_process_inputs
         ? g_original_process_inputs()

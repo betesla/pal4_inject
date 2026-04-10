@@ -67,6 +67,7 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/camera_unlock.cpp
     src/runtime/cegui_bindings.cpp
     src/runtime/crash_handler.cpp
+    src/runtime/hud_layout_fixups.cpp
     src/runtime/hook_manager.cpp
     src/runtime/inject_control_window.cpp
     src/runtime/input_hooks.cpp

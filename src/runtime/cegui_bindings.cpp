@@ -93,6 +93,11 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     }
     cached.get_font_manager_singleton_ptr = reinterpret_cast<CeguiBindings::GetSingletonPtrFn>(proc);
 
+    if (!ResolveBinding(module, "?getSingletonPtr@WindowManager@CEGUI@@SAPAV12@XZ", &proc, error)) {
+        return false;
+    }
+    cached.get_window_manager_singleton_ptr = reinterpret_cast<CeguiBindings::GetSingletonPtrFn>(proc);
+
     if (!ResolveBinding(module, "?injectMouseButtonDown@System@CEGUI@@QAE_NW4MouseButton@2@@Z", &proc, error)) {
         return false;
     }
@@ -128,10 +133,33 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     }
     cached.inject_key_up = reinterpret_cast<CeguiBindings::InjectKeyFn>(proc);
 
+    if (!ResolveBinding(module, "?isWindowPresent@WindowManager@CEGUI@@QBE_NABVString@2@@Z", &proc, error)) {
+        return false;
+    }
+    cached.window_manager_is_window_present =
+        reinterpret_cast<CeguiBindings::WindowManagerIsWindowPresentFn>(proc);
+
+    if (!ResolveBinding(module, "?getWindow@WindowManager@CEGUI@@QBEPAVWindow@2@ABVString@2@@Z", &proc, error)) {
+        return false;
+    }
+    cached.window_manager_get_window = reinterpret_cast<CeguiBindings::WindowManagerGetWindowFn>(proc);
+
     if (!ResolveBinding(module, "?requestRedraw@Window@CEGUI@@QBEXXZ", &proc, error)) {
         return false;
     }
     cached.request_redraw = reinterpret_cast<CeguiBindings::RequestRedrawFn>(proc);
+
+    if (!ResolveBinding(module, "?getWindowPosition@Window@CEGUI@@QBEABVUVector2@2@XZ", &proc, error)) {
+        return false;
+    }
+    cached.window_get_window_position =
+        reinterpret_cast<CeguiBindings::WindowGetWindowPositionFn>(proc);
+
+    if (!ResolveBinding(module, "?setWindowPosition@Window@CEGUI@@QAEXABVUVector2@2@@Z", &proc, error)) {
+        return false;
+    }
+    cached.window_set_window_position =
+        reinterpret_cast<CeguiBindings::WindowSetWindowPositionFn>(proc);
 
     if (!ResolveBinding(module, "?getFont@FontManager@CEGUI@@QBEPAVFont@2@ABVString@2@@Z", &proc, error)) {
         return false;

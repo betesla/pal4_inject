@@ -12,6 +12,16 @@ struct CeguiSizeValue {
     float height = 0.0F;
 };
 
+struct CeguiUDim {
+    float scale = 0.0F;
+    float offset = 0.0F;
+};
+
+struct CeguiUVector2 {
+    CeguiUDim x{};
+    CeguiUDim y{};
+};
+
 struct OpaqueCeguiString {
     std::array<std::byte, 152> storage{};
 };
@@ -19,12 +29,16 @@ struct OpaqueCeguiString {
 struct CeguiBindings {
     using GetSingletonFn = void* (__cdecl*)();
     using GetSingletonPtrFn = void* (__cdecl*)();
+    using WindowManagerIsWindowPresentFn = bool (__thiscall*)(void*, const void*);
+    using WindowManagerGetWindowFn = void* (__thiscall*)(void*, const void*);
     using InjectMouseButtonFn = bool (__thiscall*)(void*, unsigned int);
     using InjectMousePositionFn = bool (__thiscall*)(void*, float, float);
     using InjectMouseWheelFn = bool (__thiscall*)(void*, float);
     using InjectCharFn = bool (__thiscall*)(void*, unsigned int);
     using InjectKeyFn = bool (__thiscall*)(void*, unsigned int);
     using RequestRedrawFn = void (__thiscall*)(void*);
+    using WindowGetWindowPositionFn = const CeguiUVector2* (__thiscall*)(void*);
+    using WindowSetWindowPositionFn = void (__thiscall*)(void*, const CeguiUVector2&);
     using FontManagerGetFontFn = void* (__thiscall*)(void*, const void*);
     using FontNotifyScreenResolutionFn = void (__thiscall*)(void*, const CeguiSizeValue&);
     using FontSetNativeResolutionFn = void (__thiscall*)(void*, const CeguiSizeValue&);
@@ -37,6 +51,9 @@ struct CeguiBindings {
     GetSingletonPtrFn get_system_singleton_ptr = nullptr;
     GetSingletonPtrFn get_font_manager_singleton_ptr = nullptr;
     InjectMouseButtonFn inject_mouse_button_down = nullptr;
+    GetSingletonPtrFn get_window_manager_singleton_ptr = nullptr;
+    WindowManagerIsWindowPresentFn window_manager_is_window_present = nullptr;
+    WindowManagerGetWindowFn window_manager_get_window = nullptr;
     InjectMouseButtonFn inject_mouse_button_up = nullptr;
     InjectMousePositionFn inject_mouse_position = nullptr;
     InjectMouseWheelFn inject_mouse_wheel_change = nullptr;
@@ -45,6 +62,8 @@ struct CeguiBindings {
     InjectKeyFn inject_key_up = nullptr;
     RequestRedrawFn request_redraw = nullptr;
     FontManagerGetFontFn font_manager_get_font = nullptr;
+    WindowGetWindowPositionFn window_get_window_position = nullptr;
+    WindowSetWindowPositionFn window_set_window_position = nullptr;
     FontNotifyScreenResolutionFn font_notify_screen_resolution = nullptr;
     FontSetNativeResolutionFn font_set_native_resolution = nullptr;
     FontSetAutoScalingEnabledFn font_set_auto_scaling_enabled = nullptr;

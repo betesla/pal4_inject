@@ -69,6 +69,12 @@ void __fastcall Hook_SetupMinimapTexture(
         return;
     }
 
+    const HookMode renderer_mode = state.GetHookMode(HookId::cegui_renderer_constructor_2);
+    if (renderer_mode == HookMode::observe_only || renderer_mode == HookMode::mirror_compare) {
+        g_original_setup_minimap_texture(self, arg_x, arg_y, arg_w, arg_h);
+        return;
+    }
+
     if (const int* config = ReadGameConfigPointer()) {
         const auto placement = BuildWidescreenMinimapPlacement(config[0], config[1]);
         if (placement.apply) {
