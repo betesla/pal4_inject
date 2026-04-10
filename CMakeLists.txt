@@ -59,6 +59,7 @@ target_link_libraries(pal4_inject_common PUBLIC advapi32 user32)
 add_dependencies(pal4_inject_common pal4_inject_build_info)
 
 add_library(pal4_inject_runtime_core STATIC
+    src/runtime/battle_ui_layout_hooks.cpp
     src/runtime/bootstrap.cpp
     src/runtime/cegui_font_hooks.cpp
     src/runtime/d3d9_quality_hooks.cpp

@@ -265,6 +265,9 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::cegui_system_initialize:
         case HookId::load_font_file:
         case HookId::setup_minimap_texture:
+        case HookId::combat_console_set_image_position:
+        case HookId::combat_console_set_image_position_2:
+        case HookId::ui_show_combat_result:
         case HookId::camera_update_matrix:
         case HookId::d3d9_set_present_parameters:
         case HookId::pal4_main_wndproc:

@@ -38,7 +38,7 @@ constexpr std::array<EnumName<ScriptMode>, 3> kScriptModes{{
     {ScriptMode::csb, "csb"},
 }};
 
-constexpr std::array<EnumName<HookId>, 15> kHookIds{{
+constexpr std::array<EnumName<HookId>, 18> kHookIds{{
     {HookId::process_ui_event, "process_ui_event"},
     {HookId::handle_ui_message, "handle_ui_message"},
     {HookId::simulate_key_press_and_release, "simulate_key_press_and_release"},
@@ -54,6 +54,9 @@ constexpr std::array<EnumName<HookId>, 15> kHookIds{{
     {HookId::d3d9_set_present_parameters, "d3d9_set_present_parameters"},
     {HookId::pal4_main_wndproc, "pal4_main_wndproc"},
     {HookId::handle_player_input_events, "handle_player_input_events"},
+    {HookId::combat_console_set_image_position, "combat_console_set_image_position"},
+    {HookId::combat_console_set_image_position_2, "combat_console_set_image_position_2"},
+    {HookId::ui_show_combat_result, "ui_show_combat_result"},
 }};
 
 template <typename Enum, std::size_t N>

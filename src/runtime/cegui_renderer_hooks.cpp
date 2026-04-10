@@ -15,6 +15,7 @@
 
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
+#include "hud_layout_fixups.h"
 #include "runtime_state.h"
 
 namespace pal4::inject {
@@ -521,6 +522,7 @@ void ApplyCeguiRendererHookMode(const HookMode mode) {
         }
         ApplyRendererStateToObject(reinterpret_cast<void*>(renderer_key), *state, enabled);
     }
+    RefreshWidescreenHudLayoutFixups();
 }
 
 }  // namespace pal4::inject

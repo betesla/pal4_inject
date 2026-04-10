@@ -9,6 +9,7 @@
 #endif
 #include <windows.h>
 
+#include "battle_ui_layout_hooks.h"
 #include "cegui_renderer_hooks.h"
 #include "camera_hooks.h"
 #include "cegui_bindings.h"
@@ -810,6 +811,9 @@ void* GetReplacementForHook(const HookId id) {
         if (void* replacement = GetD3d9QualityReplacementForHook(id)) {
             return replacement;
         }
+        if (void* replacement = GetBattleUiLayoutReplacementForHook(id)) {
+            return replacement;
+        }
         return GetCameraReplacementForHook(id);
     }
 }
@@ -846,6 +850,7 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
         SetMinimapOriginalTrampoline(id, trampoline);
         SetWindowFocusOriginalTrampoline(id, trampoline);
         SetD3d9QualityOriginalTrampoline(id, trampoline);
+        SetBattleUiLayoutOriginalTrampoline(id, trampoline);
         SetCameraOriginalTrampoline(id, trampoline);
         break;
     }

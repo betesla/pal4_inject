@@ -52,6 +52,9 @@ enum class HookId : std::uint8_t {
     d3d9_set_present_parameters,
     pal4_main_wndproc,
     handle_player_input_events,
+    combat_console_set_image_position,
+    combat_console_set_image_position_2,
+    ui_show_combat_result,
 };
 
 struct HookDescriptor {
@@ -89,6 +92,7 @@ struct RuntimeSnapshot {
     bool pipe_ready = false;
     bool ui_dispatch_ready = false;
     bool crash_handler_ready = false;
+    std::uintptr_t main_module_base = 0;
     MsaaLevel msaa_level = MsaaLevel::off;
     HookStatus process_ui_event{};
     std::uint32_t current_paliv_entry = 0;

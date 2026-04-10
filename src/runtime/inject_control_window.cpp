@@ -3,55 +3,302 @@
 #include <array>
 #include <string>
 #include <string_view>
+#include <cwchar>
 #include <vector>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <commctrl.h>
+
+#ifdef _MSC_VER
+#pragma comment(lib, "comctl32.lib")
+#endif
 
 #include "d3d9_quality_hooks.h"
 #include "pal4inject/inject_control_panel.h"
+#include "pal4inject/script_mode_override.h"
+#include "pal4inject_build_info.h"
 #include "runtime_preferences.h"
 #include "runtime_state.h"
 
 namespace pal4::inject {
 namespace {
 
-constexpr char kWindowClassName[] = "PAL4InjectControlPanel";
+constexpr wchar_t kWindowClassName[] = L"PAL4InjectControlPanel";
 constexpr UINT_PTR kRefreshTimerId = 1;
-constexpr int kPanelWidth = 980;
-constexpr int kPanelMargin = 12;
-constexpr int kNameWidth = 300;
-constexpr int kToggleWidth = 70;
-constexpr int kComboWidth = 180;
-constexpr int kStatusWidth = 380;
-constexpr int kRowHeight = 26;
+constexpr int kPanelWidth = 1080;
+constexpr int kPanelHeight = 620;
+constexpr int kWindowMargin = 12;
+constexpr int kFooterHeight = 54;
+constexpr int kPageMargin = 14;
+constexpr int kSummaryLabelWidth = 90;
+constexpr int kNameWidth = 230;
+constexpr int kToggleWidth = 72;
+constexpr int kComboWidth = 210;
+constexpr int kStatusWidth = 490;
+constexpr int kRowHeight = 28;
 constexpr int kSectionHeight = 22;
-constexpr int kColumnHeaderHeight = 18;
+constexpr int kPageTitleHeight = 22;
+constexpr int kPageNoteHeight = 36;
+constexpr int kColumnHeaderHeight = 20;
 constexpr int kHookToggleBaseId = 1000;
 constexpr int kHookComboBaseId = 2000;
 constexpr int kMsaaComboId = 3000;
 constexpr int kMsaaStatusId = 3001;
+constexpr int kOverviewStatusId = 3002;
+constexpr int kScriptModeStatusId = 3003;
 constexpr int kFooterLabelId = 4000;
 constexpr int kShutdownButtonId = 4001;
+constexpr int kTabControlId = 4100;
 constexpr int kToggleHotkeyId = 1;
 constexpr UINT kForceCloseMessage = WM_APP + 1;
 
 struct PanelRowRuntime {
     InjectControlPanelRow row{};
+    HWND label = nullptr;
     HWND toggle = nullptr;
     HWND combo = nullptr;
     HWND status = nullptr;
+};
+
+using PageArray = std::array<InjectControlPanelPage, 5>;
+
+constexpr PageArray kPageOrder{
+    InjectControlPanelPage::overview,
+    InjectControlPanelPage::input_ui,
+    InjectControlPanelPage::script_text,
+    InjectControlPanelPage::render_visual,
+    InjectControlPanelPage::camera,
 };
 
 HANDLE g_control_thread = nullptr;
 DWORD g_control_thread_id = 0;
 HWND g_control_hwnd = nullptr;
 HWND g_owner_game_hwnd = nullptr;
+HWND g_tab_hwnd = nullptr;
+std::array<HWND, kPageOrder.size()> g_page_panels{};
+HWND g_overview_status = nullptr;
+HWND g_script_mode_status = nullptr;
 HWND g_msaa_combo = nullptr;
 HWND g_msaa_status = nullptr;
 bool g_follow_game_window = true;
+
+int PageIndex(const InjectControlPanelPage page) noexcept {
+    return static_cast<int>(page);
+}
+
+void ApplyFont(HWND hwnd);
+
+std::wstring WideFromNarrow(const std::string_view text) {
+    if (text.empty()) {
+        return {};
+    }
+
+    auto convert = [text](const UINT code_page, const DWORD flags) -> std::wstring {
+        const int required = MultiByteToWideChar(
+            code_page,
+            flags,
+            text.data(),
+            static_cast<int>(text.size()),
+            nullptr,
+            0);
+        if (required <= 0) {
+            return {};
+        }
+
+        std::wstring wide(static_cast<std::size_t>(required), L'\0');
+        const int converted = MultiByteToWideChar(
+            code_page,
+            flags,
+            text.data(),
+            static_cast<int>(text.size()),
+            wide.data(),
+            static_cast<int>(wide.size()));
+        if (converted <= 0) {
+            return {};
+        }
+        return wide;
+    };
+
+    std::wstring wide = convert(CP_UTF8, MB_ERR_INVALID_CHARS);
+    if (!wide.empty()) {
+        return wide;
+    }
+    wide = convert(CP_ACP, 0);
+    if (!wide.empty()) {
+        return wide;
+    }
+
+    std::wstring fallback;
+    fallback.reserve(text.size());
+    for (const unsigned char ch : text) {
+        fallback.push_back(static_cast<wchar_t>(ch));
+    }
+    return fallback;
+}
+
+std::wstring WideFromUnsigned(const std::uint64_t value) {
+    wchar_t buffer[32]{};
+    swprintf_s(buffer, L"%llu", static_cast<unsigned long long>(value));
+    return buffer;
+}
+
+std::wstring BuildHookStateLabel(const HookStatus& status) {
+    if (!status.installed) {
+        return L"\u672a\u5b89\u88c5";
+    }
+    if (status.mode == HookMode::observe_only) {
+        return L"\u4ec5\u89c2\u5bdf";
+    }
+    return L"\u5df2\u542f\u7528";
+}
+
+std::wstring BuildReadyLabel(const bool ready) {
+    return ready ? L"\u5c31\u7eea" : L"\u672a\u5c31\u7eea";
+}
+
+std::wstring BuildSwitchLabel(const bool enabled) {
+    return enabled ? L"\u5df2\u5f00\u542f" : L"\u672a\u5f00\u542f";
+}
+
+std::wstring BuildScriptModeLabel(const ScriptMode mode) {
+    switch (mode) {
+    case ScriptMode::inherit:
+        return L"\u6cbf\u7528\u539f\u59cb\u503c";
+    case ScriptMode::cs:
+        return L"CS \u6587\u672c";
+    case ScriptMode::csb:
+        return L"CSB \u5b57\u8282\u7801";
+    }
+    return L"\u672a\u77e5";
+}
+
+std::wstring DescribeMsaaTypeWide(const std::uint32_t type) {
+    switch (type) {
+    case 0:
+    case 1:
+        return L"\u5173";
+    case 2:
+        return L"2x";
+    case 4:
+        return L"4x";
+    case 8:
+        return L"8x";
+    default:
+        return WideFromUnsigned(type) + L"x";
+    }
+}
+
+std::wstring BuildPanelOverviewText() {
+    auto& state = GetRuntimeState();
+    std::wstring text = L"\u5f15\u5bfc=";
+    text += BuildReadyLabel(state.BootstrapReady());
+    text += L" | Hook=";
+    text += BuildReadyLabel(state.HooksReady());
+    text += L" | \u901a\u4fe1=";
+    text += BuildReadyLabel(state.PipeReady());
+    text += L" | \u5d29\u6e83\u6355\u83b7=";
+    text += BuildSwitchLabel(state.CrashHandlerReady());
+    return text;
+}
+
+std::wstring BuildPanelScriptModeText() {
+    auto& state = GetRuntimeState();
+    std::string error;
+    const auto requested_mode = LoadInheritedScriptModeOverride(&error);
+
+    std::wstring text = L"\u8bf7\u6c42=";
+    text += BuildScriptModeLabel(requested_mode.value_or(ScriptMode::inherit));
+
+    std::uint32_t current_flag = 0;
+    if (TryReadLocalScriptModeFlag(state.MainModuleBase(), &current_flag)) {
+        text += L" | \u5b9e\u9645=";
+        text += BuildScriptModeLabel(ScriptModeFromCsbFlag(current_flag));
+        text += L" | flag=";
+        text += WideFromUnsigned(current_flag);
+    } else {
+        text += L" | \u5b9e\u9645=\u8bfb\u53d6\u5931\u8d25";
+    }
+
+    if (!error.empty()) {
+        text += L" | \u73af\u5883\u9519\u8bef=";
+        text += WideFromNarrow(error);
+    }
+    return text;
+}
+
+std::wstring BuildLocalizedHookStatusText(const HookStatus* status) {
+    if (!status) {
+        return L"\u72b6\u6001\u672a\u77e5";
+    }
+
+    std::wstring text = BuildHookStateLabel(*status);
+    text += L" | \u8c03\u7528=";
+    text += WideFromUnsigned(status->call_count);
+    if (!status->last_error.empty()) {
+        text += L" | \u9519\u8bef=";
+        text += WideFromNarrow(status->last_error);
+    }
+    return text;
+}
+
+std::wstring BuildLocalizedMsaaStatusText(
+    const RuntimeState& state,
+    const HookStatus* msaa_hook) {
+    D3d9MsaaSnapshot snapshot{};
+    std::wstring text;
+    if (msaa_hook && msaa_hook->mode == HookMode::observe_only) {
+        text = L"\u8986\u5199\u5df2\u5173\u95ed | ";
+    }
+
+    if (BuildD3d9MsaaSnapshot(&snapshot)) {
+        text += L"\u76ee\u6807 ";
+        text += WideFromNarrow(ToString(snapshot.desired_level));
+        text += L" | \u5b9e\u9645 ";
+        text += DescribeMsaaTypeWide(snapshot.applied_type);
+        if (snapshot.applied_quality > 0) {
+            text += L" q";
+            text += WideFromUnsigned(snapshot.applied_quality);
+        }
+        text += L" | \u4e0a\u9650 ";
+        text += DescribeMsaaTypeWide(snapshot.max_supported_type);
+    } else {
+        text += L"\u76ee\u6807 ";
+        text += WideFromNarrow(ToString(state.GetMsaaLevel()));
+        text += L" | \u7b49\u5f85 D3D9";
+    }
+
+    if (msaa_hook) {
+        text += L" | \u8c03\u7528=";
+        text += WideFromUnsigned(msaa_hook->call_count);
+        if (msaa_hook->call_count == 0) {
+            text += L" | \u7b49\u5f85\u4e0b\u6b21 reset";
+        }
+        if (!msaa_hook->last_error.empty()) {
+            text += L" | \u9519\u8bef=";
+            text += WideFromNarrow(msaa_hook->last_error);
+        }
+    }
+    return text;
+}
+
+std::wstring BuildPageNote(const InjectControlPanelPage page) {
+    switch (page) {
+    case InjectControlPanelPage::overview:
+        return L"\u67e5\u770b\u5f53\u524d\u6ce8\u5165\u72b6\u6001\uff0c\u5e76\u4ece\u4e0a\u65b9\u9875\u7b7e\u5207\u6362\u5230\u5176\u4ed6\u529f\u80fd\u9762\u677f\u3002";
+    case InjectControlPanelPage::input_ui:
+        return L"\u96c6\u4e2d\u7ba1\u7406\u83dc\u5355\u3001\u952e\u76d8\u3001\u8f93\u5165\u8bbe\u5907\u4e0e\u7126\u70b9\u4fdd\u62a4\u76f8\u5173 Hook\u3002";
+    case InjectControlPanelPage::script_text:
+        return L"\u67e5\u770b\u5bf9\u767d\u3001\u5b57\u4f53\u540c\u6b65\u4e0e\u5267\u672c\u6267\u884c\u76f8\u5173 Hook\u3002";
+    case InjectControlPanelPage::render_visual:
+        return L"\u96c6\u4e2d\u7ba1\u7406\u5bbd\u5c4f\u3001HUD\u3001\u6218\u6597 UI \u4e0e MSAA \u76f8\u5173\u529f\u80fd\u3002";
+    case InjectControlPanelPage::camera:
+        return L"\u5355\u72ec\u7ba1\u7406\u76f8\u673a\u89d2\u5ea6\u3001\u4fef\u4ef0\u4fdd\u62a4\u548c\u89c6\u89d2\u5b89\u5168\u76f8\u5173 Hook\u3002";
+    }
+    return {};
+}
 
 std::string FormatWindowsError(const DWORD code) {
     char* buffer = nullptr;
@@ -81,6 +328,82 @@ std::vector<PanelRowRuntime>& PanelRows() {
     return rows;
 }
 
+HWND CreateStaticControl(
+    const HWND parent,
+    const std::wstring_view text,
+    const int x,
+    const int y,
+    const int width,
+    const int height,
+    const int control_id = 0,
+    const DWORD style = WS_CHILD | WS_VISIBLE) {
+    const HWND control = CreateWindowExW(
+        0,
+        L"STATIC",
+        text.empty() ? L"" : text.data(),
+        style,
+        x,
+        y,
+        width,
+        height,
+        parent,
+        control_id == 0 ? nullptr : reinterpret_cast<HMENU>(static_cast<INT_PTR>(control_id)),
+        nullptr,
+        nullptr);
+    ApplyFont(control);
+    return control;
+}
+
+HWND CreateButtonControl(
+    const HWND parent,
+    const std::wstring_view text,
+    const int x,
+    const int y,
+    const int width,
+    const int height,
+    const int control_id,
+    const DWORD style = WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX) {
+    const HWND control = CreateWindowExW(
+        0,
+        L"BUTTON",
+        text.data(),
+        style,
+        x,
+        y,
+        width,
+        height,
+        parent,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(control_id)),
+        nullptr,
+        nullptr);
+    ApplyFont(control);
+    return control;
+}
+
+HWND CreateComboControl(
+    const HWND parent,
+    const int x,
+    const int y,
+    const int width,
+    const int height,
+    const int control_id) {
+    const HWND control = CreateWindowExW(
+        0,
+        L"COMBOBOX",
+        L"",
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
+        x,
+        y,
+        width,
+        height,
+        parent,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(control_id)),
+        nullptr,
+        nullptr);
+    ApplyFont(control);
+    return control;
+}
+
 const HookStatus* FindStatus(
     const std::vector<HookStatus>& statuses,
     const HookId id) {
@@ -101,6 +424,20 @@ std::array<MsaaLevel, 4> BuildMsaaLevels() {
     };
 }
 
+void PopulateMsaaCombo(const HWND combo) {
+    for (const auto level : BuildMsaaLevels()) {
+        const auto text = WideFromNarrow(ToString(level));
+        SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(text.c_str()));
+    }
+}
+
+void PopulateHookModeCombo(const HWND combo) {
+    for (const auto mode : BuildInjectControlPanelModes()) {
+        const auto text = BuildInjectControlPanelModeLabel(mode);
+        SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(text.data()));
+    }
+}
+
 int FindMsaaLevelIndex(const MsaaLevel level) noexcept {
     const auto levels = BuildMsaaLevels();
     for (int i = 0; i < static_cast<int>(levels.size()); ++i) {
@@ -119,6 +456,28 @@ MsaaLevel MsaaLevelFromIndex(const int index) noexcept {
     return levels[static_cast<std::size_t>(index)];
 }
 
+RECT GetPageContentRect() {
+    RECT rect{};
+    if (!g_tab_hwnd) {
+        return rect;
+    }
+    GetClientRect(g_tab_hwnd, &rect);
+    TabCtrl_AdjustRect(g_tab_hwnd, FALSE, &rect);
+    return rect;
+}
+
+void UpdatePageVisibility() {
+    if (!g_tab_hwnd) {
+        return;
+    }
+    const int selected = TabCtrl_GetCurSel(g_tab_hwnd);
+    for (std::size_t i = 0; i < g_page_panels.size(); ++i) {
+        if (g_page_panels[i]) {
+            ShowWindow(g_page_panels[i], static_cast<int>(i) == selected ? SW_SHOW : SW_HIDE);
+        }
+    }
+}
+
 BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lparam) {
     if (!IsWindowVisible(hwnd)) {
         return TRUE;
@@ -131,9 +490,9 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lparam) {
     if (process_id != GetCurrentProcessId()) {
         return TRUE;
     }
-    char class_name[128]{};
-    GetClassNameA(hwnd, class_name, static_cast<int>(std::size(class_name)));
-    if (std::string_view(class_name) == kWindowClassName) {
+    wchar_t class_name[128]{};
+    GetClassNameW(hwnd, class_name, static_cast<int>(std::size(class_name)));
+    if (std::wstring_view(class_name) == kWindowClassName) {
         return TRUE;
     }
     *reinterpret_cast<HWND*>(lparam) = hwnd;
@@ -156,14 +515,14 @@ void EnsureGameWindowOwner(const HWND hwnd) {
     }
     if (g_owner_game_hwnd != game_window) {
         g_owner_game_hwnd = game_window;
-        SetWindowLongPtrA(hwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(game_window));
+        SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(game_window));
     }
 }
 
 void ApplyFont(const HWND hwnd) {
     const HFONT font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
     if (font) {
-        SendMessageA(hwnd, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+        SendMessageW(hwnd, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
     }
 }
 
@@ -171,7 +530,7 @@ bool IsComboInteractionActive(const HWND combo) {
     if (!combo || !IsWindow(combo)) {
         return false;
     }
-    if (SendMessageA(combo, CB_GETDROPPEDSTATE, 0, 0) != 0) {
+    if (SendMessageW(combo, CB_GETDROPPEDSTATE, 0, 0) != 0) {
         return true;
     }
     return GetFocus() == combo;
@@ -196,7 +555,7 @@ void RefreshPanelPlacement(const HWND hwnd) {
     SetWindowPos(
         hwnd,
         HWND_TOPMOST,
-        game_rect.right - kPanelWidth - kPanelMargin,
+        game_rect.right - kPanelWidth - kWindowMargin,
         game_rect.top + 40,
         0,
         0,
@@ -216,12 +575,12 @@ void UpdateHookRowDisplay(
     }
 
     if (!status) {
-        SendMessageA(runtime.toggle, BM_SETCHECK, BST_UNCHECKED, 0);
-        SetWindowTextA(runtime.status, "unavailable");
+        SendMessageW(runtime.toggle, BM_SETCHECK, BST_UNCHECKED, 0);
+        SetWindowTextW(runtime.status, L"\u72b6\u6001\u672a\u77e5");
         return;
     }
 
-    SendMessageA(
+    SendMessageW(
         runtime.toggle,
         BM_SETCHECK,
         status->mode == HookMode::observe_only ? BST_UNCHECKED : BST_CHECKED,
@@ -230,20 +589,13 @@ void UpdateHookRowDisplay(
     if (!combo_interaction_active) {
         const int expected_index = FindInjectControlPanelModeIndex(status->mode);
         const int current_index = static_cast<int>(
-            SendMessageA(runtime.combo, CB_GETCURSEL, 0, 0));
+            SendMessageW(runtime.combo, CB_GETCURSEL, 0, 0));
         if (current_index != expected_index) {
-            SendMessageA(runtime.combo, CB_SETCURSEL, expected_index, 0);
+            SendMessageW(runtime.combo, CB_SETCURSEL, expected_index, 0);
         }
     }
 
-    std::string status_text = installed
-        ? (status->mode == HookMode::observe_only ? "observe" : "active")
-        : "not installed";
-    status_text += " | calls=" + std::to_string(status->call_count);
-    if (!status->last_error.empty()) {
-        status_text += " | err=" + status->last_error;
-    }
-    SetWindowTextA(runtime.status, status_text.c_str());
+    SetWindowTextW(runtime.status, BuildLocalizedHookStatusText(status).c_str());
 }
 
 void RefreshPanelContent(const HWND hwnd) {
@@ -254,261 +606,289 @@ void RefreshPanelContent(const HWND hwnd) {
     if (g_msaa_combo && !msaa_combo_interaction) {
         const int expected_index = FindMsaaLevelIndex(state.GetMsaaLevel());
         const int current_index = static_cast<int>(
-            SendMessageA(g_msaa_combo, CB_GETCURSEL, 0, 0));
+            SendMessageW(g_msaa_combo, CB_GETCURSEL, 0, 0));
         if (current_index != expected_index) {
-            SendMessageA(g_msaa_combo, CB_SETCURSEL, expected_index, 0);
+            SendMessageW(g_msaa_combo, CB_SETCURSEL, expected_index, 0);
         }
     }
 
     if (g_msaa_status) {
         const auto* msaa_hook = FindStatus(statuses, HookId::d3d9_set_present_parameters);
-        D3d9MsaaSnapshot snapshot{};
-        std::string text;
-        if (msaa_hook && msaa_hook->mode == HookMode::observe_only) {
-            text = "Override off | ";
-        }
-
-        if (BuildD3d9MsaaSnapshot(&snapshot)) {
-            text += DescribeMsaaState(snapshot);
-        } else {
-            text += std::string("Desired ") + ToString(state.GetMsaaLevel()) + " | waiting for D3D9";
-        }
-
-        if (msaa_hook) {
-            text += " | calls=" + std::to_string(msaa_hook->call_count);
-            if (msaa_hook->call_count == 0) {
-                text += " | waiting for next reset";
-            }
-            if (!msaa_hook->last_error.empty()) {
-                text += " | err=" + msaa_hook->last_error;
-            }
-        }
-        SetWindowTextA(g_msaa_status, text.c_str());
+        SetWindowTextW(g_msaa_status, BuildLocalizedMsaaStatusText(state, msaa_hook).c_str());
     }
 
     for (const auto& runtime : PanelRows()) {
         UpdateHookRowDisplay(runtime, FindStatus(statuses, runtime.row.id));
     }
 
-    std::string footer =
-        "Ctrl+F10 hide/show | settings=" + RuntimePreferencesPath().string() +
-        " | crash=" + std::string(state.CrashHandlerReady() ? "on" : "off");
+    if (g_overview_status) {
+        SetWindowTextW(g_overview_status, BuildPanelOverviewText().c_str());
+    }
+    if (g_script_mode_status) {
+        SetWindowTextW(g_script_mode_status, BuildPanelScriptModeText().c_str());
+    }
+
+    std::wstring footer =
+        L"Ctrl+F10 \u663e\u793a/\u9690\u85cf | \u914d\u7f6e=" + RuntimePreferencesPath().wstring() +
+        L" | \u5d29\u6e83\u6355\u83b7=" + BuildSwitchLabel(state.CrashHandlerReady()) +
+        L" | build=" + WideFromNarrow(kPal4InjectBuildId);
     if (const HWND footer_label = GetDlgItem(hwnd, kFooterLabelId)) {
-        SetWindowTextA(footer_label, footer.c_str());
+        SetWindowTextW(footer_label, footer.c_str());
     }
 }
 
-void BuildPanelControls(const HWND hwnd) {
-    auto& rows = PanelRows();
-    rows.clear();
-    g_msaa_combo = nullptr;
-    g_msaa_status = nullptr;
+void BuildOverviewPage(const HWND panel) {
+    int y = kPageMargin;
+    CreateStaticControl(panel, BuildInjectControlPanelPageLabel(InjectControlPanelPage::overview), kPageMargin, y, 140, kPageTitleHeight);
+    y += kPageTitleHeight;
 
-    const auto panel_rows = BuildInjectControlPanelRows();
-    const auto modes = BuildInjectControlPanelModes();
+    CreateStaticControl(panel, BuildPageNote(InjectControlPanelPage::overview), kPageMargin, y, 860, kPageNoteHeight);
+    y += kPageNoteHeight + 8;
 
-    int y = kPanelMargin;
-    const auto create_static =
-        [hwnd](const char* text, const int x, const int y_pos, const int width, const int height) {
-            const HWND control = CreateWindowExA(
-                0,
-                "STATIC",
-                text,
-                WS_CHILD | WS_VISIBLE,
-                x,
-                y_pos,
-                width,
-                height,
-                hwnd,
-                nullptr,
-                nullptr,
-                nullptr);
-            ApplyFont(control);
-            return control;
-        };
+    CreateStaticControl(panel, L"\u4e3b\u72b6\u6001", kPageMargin, y + 4, kSummaryLabelWidth, 20);
+    g_overview_status = CreateStaticControl(panel, L"", kPageMargin + kSummaryLabelWidth, y + 4, 860, 20, kOverviewStatusId);
+    y += kRowHeight;
 
-    create_static("Graphics", kPanelMargin, y, 120, kSectionHeight);
-    y += kSectionHeight;
+    CreateStaticControl(panel, L"\u811a\u672c\u6a21\u5f0f", kPageMargin, y + 4, kSummaryLabelWidth, 20);
+    g_script_mode_status = CreateStaticControl(panel, L"", kPageMargin + kSummaryLabelWidth, y + 4, 900, 20, kScriptModeStatusId);
+    y += kRowHeight + 10;
 
-    create_static("Render MSAA", kPanelMargin, y + 4, kNameWidth, 18);
-    g_msaa_combo = CreateWindowExA(
+    CreateWindowExW(
         0,
-        "COMBOBOX",
-        "",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
-        kPanelMargin + kNameWidth + kToggleWidth,
+        L"STATIC",
+        L"",
+        WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ,
+        kPageMargin,
         y,
-        kComboWidth,
-        180,
-        hwnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMsaaComboId)),
+        980,
+        8,
+        panel,
+        nullptr,
         nullptr,
         nullptr);
-    ApplyFont(g_msaa_combo);
-    for (const auto level : BuildMsaaLevels()) {
-        SendMessageA(
-            g_msaa_combo,
-            CB_ADDSTRING,
+    y += 16;
+
+    CreateStaticControl(
+        panel,
+        L"\u63d0\u793a\uff1a\u5df2\u6309\u201c\u6982\u89c8 / \u8f93\u5165\u4e0e\u754c\u9762 / \u811a\u672c\u4e0e\u6587\u672c / \u6e32\u67d3\u4e0e\u753b\u9762 / \u76f8\u673a\u201d\u62c6\u5206\u9875\u7b7e\uff0c"
+        L"\u8bf7\u4ece\u4e0a\u65b9\u5207\u6362\u3002",
+        kPageMargin,
+        y,
+        920,
+        40);
+}
+
+int BuildHookPageHeader(
+    const HWND panel,
+    const InjectControlPanelPage page,
+    int y,
+    const bool show_msaa_block) {
+    CreateStaticControl(panel, BuildInjectControlPanelPageLabel(page), kPageMargin, y, 180, kPageTitleHeight);
+    y += kPageTitleHeight;
+
+    CreateStaticControl(panel, BuildPageNote(page), kPageMargin, y, 860, kPageNoteHeight);
+    y += kPageNoteHeight + 8;
+
+    if (show_msaa_block) {
+        CreateStaticControl(panel, L"\u6297\u952f\u9f7f MSAA", kPageMargin, y + 4, kNameWidth, 20);
+        g_msaa_combo = CreateComboControl(
+            panel,
+            kPageMargin + kNameWidth + kToggleWidth,
+            y,
+            kComboWidth,
+            240,
+            kMsaaComboId);
+        PopulateMsaaCombo(g_msaa_combo);
+        g_msaa_status = CreateStaticControl(
+            panel,
+            L"",
+            kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
+            y + 4,
+            kStatusWidth,
+            20,
+            kMsaaStatusId);
+        y += kRowHeight + 6;
+
+        CreateWindowExW(
             0,
-            reinterpret_cast<LPARAM>(ToString(level)));
+            L"STATIC",
+            L"",
+            WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ,
+            kPageMargin,
+            y,
+            980,
+            8,
+            panel,
+            nullptr,
+            nullptr,
+            nullptr);
+        y += 12;
     }
 
-    g_msaa_status = CreateWindowExA(
-        0,
-        "STATIC",
-        "",
-        WS_CHILD | WS_VISIBLE,
-        kPanelMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
-        y + 4,
-        kStatusWidth,
-        18,
-        hwnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kMsaaStatusId)),
-        nullptr,
-        nullptr);
-    ApplyFont(g_msaa_status);
-
-    y += kRowHeight + 8;
-    CreateWindowExA(
-        0,
-        "STATIC",
-        "",
-        WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ,
-        kPanelMargin,
-        y,
-        kPanelWidth - kPanelMargin * 2,
-        8,
-        hwnd,
-        nullptr,
-        nullptr,
-        nullptr);
-    y += 12;
-
-    create_static("Hooks", kPanelMargin, y, 120, kSectionHeight);
-    y += kSectionHeight;
-
-    create_static("Hook", kPanelMargin, y, kNameWidth, kColumnHeaderHeight);
-    create_static("On", kPanelMargin + kNameWidth, y, kToggleWidth, kColumnHeaderHeight);
-    create_static(
-        "Mode",
-        kPanelMargin + kNameWidth + kToggleWidth,
+    CreateStaticControl(panel, L"\u529f\u80fd", kPageMargin, y, kNameWidth, kColumnHeaderHeight);
+    CreateStaticControl(panel, L"\u542f\u7528", kPageMargin + kNameWidth, y, kToggleWidth, kColumnHeaderHeight);
+    CreateStaticControl(
+        panel,
+        L"\u6a21\u5f0f",
+        kPageMargin + kNameWidth + kToggleWidth,
         y,
         kComboWidth,
         kColumnHeaderHeight);
-    create_static(
-        "Status",
-        kPanelMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
+    CreateStaticControl(
+        panel,
+        L"\u8fd0\u884c\u72b6\u6001",
+        kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
         y,
         kStatusWidth,
         kColumnHeaderHeight);
-    y += kColumnHeaderHeight;
+    return y + kColumnHeaderHeight + 4;
+}
 
-    int row_index = 0;
+void BuildHookRowsForPage(
+    const HWND panel,
+    const InjectControlPanelPage page,
+    int y) {
+    const auto panel_rows = BuildInjectControlPanelRows();
     for (const auto& row : panel_rows) {
-        create_static(
-            std::string(row.label).c_str(),
-            kPanelMargin,
-            y + 4,
-            kNameWidth,
-            18);
+        if (row.page != page) {
+            continue;
+        }
 
-        const HWND toggle = CreateWindowExA(
-            0,
-            "BUTTON",
-            "",
-            WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-            kPanelMargin + kNameWidth + 18,
+        const HWND label = CreateStaticControl(panel, row.label, kPageMargin, y + 5, kNameWidth, 20);
+        const int row_index = static_cast<int>(PanelRows().size());
+        const HWND toggle = CreateButtonControl(
+            panel,
+            L"\u542f\u7528",
+            kPageMargin + kNameWidth + 8,
             y + 2,
             kToggleWidth,
             20,
-            hwnd,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(kHookToggleBaseId + row_index)),
-            nullptr,
-            nullptr);
-        ApplyFont(toggle);
-
-        const HWND combo = CreateWindowExA(
-            0,
-            "COMBOBOX",
-            "",
-            WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
-            kPanelMargin + kNameWidth + kToggleWidth,
+            kHookToggleBaseId + row_index);
+        const HWND combo = CreateComboControl(
+            panel,
+            kPageMargin + kNameWidth + kToggleWidth,
             y,
             kComboWidth,
-            180,
-            hwnd,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(kHookComboBaseId + row_index)),
-            nullptr,
-            nullptr);
-        ApplyFont(combo);
-        for (const auto mode : modes) {
-            SendMessageA(
-                combo,
-                CB_ADDSTRING,
-                0,
-                reinterpret_cast<LPARAM>(ToString(mode)));
-        }
-
-        const HWND status = CreateWindowExA(
-            0,
-            "STATIC",
-            "",
-            WS_CHILD | WS_VISIBLE,
-            kPanelMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
-            y + 4,
+            240,
+            kHookComboBaseId + row_index);
+        PopulateHookModeCombo(combo);
+        const HWND status = CreateStaticControl(
+            panel,
+            L"",
+            kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
+            y + 5,
             kStatusWidth,
-            18,
-            hwnd,
-            nullptr,
-            nullptr,
-            nullptr);
-        ApplyFont(status);
-
-        rows.push_back({row, toggle, combo, status});
+            20);
+        PanelRows().push_back({row, label, toggle, combo, status});
         y += kRowHeight;
-        ++row_index;
+    }
+}
+
+void BuildHookPage(const HWND panel, const InjectControlPanelPage page) {
+    int y = kPageMargin;
+    y = BuildHookPageHeader(panel, page, y, page == InjectControlPanelPage::render_visual);
+    BuildHookRowsForPage(panel, page, y);
+}
+
+void BuildPanelControls(const HWND hwnd) {
+    PanelRows().clear();
+    g_tab_hwnd = nullptr;
+    g_page_panels.fill(nullptr);
+    g_overview_status = nullptr;
+    g_script_mode_status = nullptr;
+    g_msaa_combo = nullptr;
+    g_msaa_status = nullptr;
+
+    RECT client_rect{};
+    GetClientRect(hwnd, &client_rect);
+    const int footer_top = client_rect.bottom - kFooterHeight;
+
+    g_tab_hwnd = CreateWindowExW(
+        0,
+        WC_TABCONTROLW,
+        L"",
+        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_TABSTOP,
+        kWindowMargin,
+        kWindowMargin,
+        client_rect.right - kWindowMargin * 2,
+        footer_top - kWindowMargin * 2,
+        hwnd,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTabControlId)),
+        nullptr,
+        nullptr);
+    ApplyFont(g_tab_hwnd);
+
+    for (int i = 0; i < static_cast<int>(kPageOrder.size()); ++i) {
+        TCITEMW item{};
+        item.mask = TCIF_TEXT;
+        item.pszText = const_cast<wchar_t*>(BuildInjectControlPanelPageLabel(kPageOrder[static_cast<std::size_t>(i)]).data());
+        SendMessageW(
+            g_tab_hwnd,
+            TCM_INSERTITEMW,
+            static_cast<WPARAM>(i),
+            reinterpret_cast<LPARAM>(&item));
     }
 
-    const HWND footer = CreateWindowExA(
-        0,
-        "STATIC",
-        "",
-        WS_CHILD | WS_VISIBLE,
-        kPanelMargin,
-        y + 4,
-        kPanelWidth - 150 - kPanelMargin * 2,
-        18,
-        hwnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kFooterLabelId)),
-        nullptr,
-        nullptr);
-    ApplyFont(footer);
+    const RECT page_rect = GetPageContentRect();
+    for (const auto page : kPageOrder) {
+        const HWND panel = CreateWindowExW(
+            WS_EX_CONTROLPARENT,
+            L"STATIC",
+            L"",
+            WS_CHILD | WS_VISIBLE,
+            page_rect.left,
+            page_rect.top,
+            page_rect.right - page_rect.left,
+            page_rect.bottom - page_rect.top,
+            g_tab_hwnd,
+            nullptr,
+            nullptr,
+            nullptr);
+        ApplyFont(panel);
+        g_page_panels[static_cast<std::size_t>(PageIndex(page))] = panel;
+    }
 
-    const HWND shutdown_button = CreateWindowExA(
-        0,
-        "BUTTON",
-        "Shutdown Inject",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        kPanelWidth - 120 - kPanelMargin,
-        y + 24,
-        120,
-        24,
+    BuildOverviewPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::overview))]);
+    BuildHookPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::input_ui))], InjectControlPanelPage::input_ui);
+    BuildHookPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::script_text))], InjectControlPanelPage::script_text);
+    BuildHookPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::render_visual))], InjectControlPanelPage::render_visual);
+    BuildHookPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::camera))], InjectControlPanelPage::camera);
+
+    CreateStaticControl(
         hwnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kShutdownButtonId)),
-        nullptr,
-        nullptr);
-    ApplyFont(shutdown_button);
+        L"",
+        kWindowMargin,
+        footer_top + 6,
+        client_rect.right - kWindowMargin * 2 - 150,
+        18,
+        kFooterLabelId);
+    CreateButtonControl(
+        hwnd,
+        L"\u5173\u95ed\u6ce8\u5165",
+        client_rect.right - 132 - kWindowMargin,
+        footer_top + 24,
+        132,
+        24,
+        kShutdownButtonId,
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON);
+
+    UpdatePageVisibility();
 }
 
 LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
-    case WM_CREATE:
+    case WM_CREATE: {
+        INITCOMMONCONTROLSEX controls{};
+        controls.dwSize = sizeof(controls);
+        controls.dwICC = ICC_TAB_CLASSES;
+        InitCommonControlsEx(&controls);
         BuildPanelControls(hwnd);
         SetTimer(hwnd, kRefreshTimerId, 300, nullptr);
         RegisterHotKey(hwnd, kToggleHotkeyId, MOD_CONTROL | MOD_NOREPEAT, VK_F10);
         RefreshPanelPlacement(hwnd);
         RefreshPanelContent(hwnd);
         return 0;
+    }
     case WM_TIMER:
         if (wparam == kRefreshTimerId) {
             RefreshPanelContent(hwnd);
@@ -518,6 +898,14 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
     case WM_ENTERSIZEMOVE:
         g_follow_game_window = false;
         return 0;
+    case WM_NOTIFY: {
+        const auto* header = reinterpret_cast<const NMHDR*>(lparam);
+        if (header && header->idFrom == kTabControlId && header->code == TCN_SELCHANGE) {
+            UpdatePageVisibility();
+            return 0;
+        }
+        break;
+    }
     case WM_COMMAND: {
         const int control_id = LOWORD(wparam);
         const int notify_code = HIWORD(wparam);
@@ -527,7 +915,7 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
             return 0;
         }
         if (control_id == kMsaaComboId && notify_code == CBN_SELCHANGE) {
-            const int selected = static_cast<int>(SendMessageA(g_msaa_combo, CB_GETCURSEL, 0, 0));
+            const int selected = static_cast<int>(SendMessageW(g_msaa_combo, CB_GETCURSEL, 0, 0));
             ApplyMsaaPreference(MsaaLevelFromIndex(selected), true, true);
             RefreshPanelContent(hwnd);
             return 0;
@@ -538,7 +926,7 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
             const int row_index = control_id - kHookToggleBaseId;
             auto& row = PanelRows()[static_cast<std::size_t>(row_index)];
             const bool enabled =
-                SendMessageA(row.toggle, BM_GETCHECK, 0, 0) == BST_CHECKED;
+                SendMessageW(row.toggle, BM_GETCHECK, 0, 0) == BST_CHECKED;
             const HookMode next_mode = enabled
                 ? ResolveEnabledHookMode(row.row.id)
                 : HookMode::observe_only;
@@ -551,7 +939,7 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
             notify_code == CBN_SELCHANGE) {
             const int row_index = control_id - kHookComboBaseId;
             auto& row = PanelRows()[static_cast<std::size_t>(row_index)];
-            const int selected = static_cast<int>(SendMessageA(row.combo, CB_GETCURSEL, 0, 0));
+            const int selected = static_cast<int>(SendMessageW(row.combo, CB_GETCURSEL, 0, 0));
             ApplyHookModePreference(
                 row.row.id,
                 InjectControlPanelModeFromIndex(selected),
@@ -581,6 +969,11 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
         KillTimer(hwnd, kRefreshTimerId);
         UnregisterHotKey(hwnd, kToggleHotkeyId);
         g_control_hwnd = nullptr;
+        g_owner_game_hwnd = nullptr;
+        g_tab_hwnd = nullptr;
+        g_page_panels.fill(nullptr);
+        g_overview_status = nullptr;
+        g_script_mode_status = nullptr;
         g_msaa_combo = nullptr;
         g_msaa_status = nullptr;
         PostQuitMessage(0);
@@ -588,41 +981,36 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
     default:
         break;
     }
-    return DefWindowProcA(hwnd, message, wparam, lparam);
+    return DefWindowProcW(hwnd, message, wparam, lparam);
 }
 
 DWORD WINAPI ControlWindowThreadProc(LPVOID) {
-    WNDCLASSA window_class{};
+    WNDCLASSW window_class{};
     window_class.lpfnWndProc = &PanelWindowProc;
-    window_class.hInstance = GetModuleHandleA(nullptr);
+    window_class.hInstance = GetModuleHandleW(nullptr);
     window_class.lpszClassName = kWindowClassName;
-    window_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    window_class.hCursor = LoadCursorW(
+        nullptr,
+        reinterpret_cast<LPCWSTR>(static_cast<ULONG_PTR>(32512)));
     window_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
-    RegisterClassA(&window_class);
+    RegisterClassW(&window_class);
 
-    const int panel_height =
-        kPanelMargin +
-        kSectionHeight +
-        kRowHeight +
-        8 +
-        12 +
-        kSectionHeight +
-        kColumnHeaderHeight +
-        static_cast<int>(BuildInjectControlPanelRows().size()) * kRowHeight +
-        72;
+    std::wstring window_title = L"PAL4 \u6ce8\u5165\u63a7\u5236\u9762\u677f [";
+    window_title += WideFromNarrow(kPal4InjectBuildId);
+    window_title += L"]";
     g_owner_game_hwnd = FindGameWindow();
-    g_control_hwnd = CreateWindowExA(
+    g_control_hwnd = CreateWindowExW(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
         kWindowClassName,
-        "PAL4 Inject Control",
+        window_title.c_str(),
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
         kPanelWidth,
-        panel_height,
+        kPanelHeight,
         g_owner_game_hwnd,
         nullptr,
-        GetModuleHandleA(nullptr),
+        GetModuleHandleW(nullptr),
         nullptr);
     if (!g_control_hwnd) {
         return 1;
@@ -632,9 +1020,9 @@ DWORD WINAPI ControlWindowThreadProc(LPVOID) {
     UpdateWindow(g_control_hwnd);
 
     MSG msg{};
-    while (GetMessageA(&msg, nullptr, 0, 0) > 0) {
+    while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
         TranslateMessage(&msg);
-        DispatchMessageA(&msg);
+        DispatchMessageW(&msg);
         if (GetRuntimeState().ShutdownRequested() && g_control_hwnd) {
             DestroyWindow(g_control_hwnd);
         }
@@ -660,7 +1048,7 @@ bool StartInjectControlWindow(std::string* error) {
 
 void StopInjectControlWindow() {
     if (g_control_hwnd) {
-        PostMessageA(g_control_hwnd, kForceCloseMessage, 0, 0);
+        PostMessageW(g_control_hwnd, kForceCloseMessage, 0, 0);
     }
     if (g_control_thread && GetThreadId(g_control_thread) != GetCurrentThreadId()) {
         WaitForSingleObject(g_control_thread, 5000);
@@ -672,6 +1060,10 @@ void StopInjectControlWindow() {
     g_control_thread_id = 0;
     g_control_hwnd = nullptr;
     g_owner_game_hwnd = nullptr;
+    g_tab_hwnd = nullptr;
+    g_page_panels.fill(nullptr);
+    g_overview_status = nullptr;
+    g_script_mode_status = nullptr;
     g_msaa_combo = nullptr;
     g_msaa_status = nullptr;
     g_follow_game_window = true;
