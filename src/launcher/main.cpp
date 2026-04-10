@@ -16,8 +16,8 @@ std::filesystem::path CurrentExecutableDirectory() {
 
 void PrintUsage() {
     std::cout
-        << "Usage: pal4_injector_launcher --game-root <path> "
-        << "[--dll <path>] [--ready-timeout-ms <ms>] [--no-resume]\n";
+        << "Usage: pal4_injector_launcher (--game-root <path> | --exe <path>) "
+        << "[--dll <path>] [--script-mode cs|csb] [--ready-timeout-ms <ms>] [--no-resume]\n";
 }
 
 }  // namespace
@@ -30,8 +30,16 @@ int main(int argc, char** argv) {
         const std::string arg = argv[i];
         if (arg == "--game-root" && i + 1 < argc) {
             options.game_root = argv[++i];
+        } else if (arg == "--exe" && i + 1 < argc) {
+            options.executable_path = argv[++i];
         } else if (arg == "--dll" && i + 1 < argc) {
             options.dll_path = argv[++i];
+        } else if (arg == "--script-mode" && i + 1 < argc) {
+            if (!pal4::inject::TryParseScriptMode(argv[++i], &options.script_mode) ||
+                options.script_mode == pal4::inject::ScriptMode::inherit) {
+                std::cerr << "invalid --script-mode, expected cs or csb\n";
+                return 1;
+            }
         } else if (arg == "--ready-timeout-ms" && i + 1 < argc) {
             options.ready_timeout_ms = static_cast<DWORD>(std::stoul(argv[++i]));
         } else if (arg == "--no-resume") {
@@ -44,7 +52,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (options.game_root.empty()) {
+    if (options.game_root.empty() && options.executable_path.empty()) {
         PrintUsage();
         return 1;
     }
@@ -60,6 +68,7 @@ int main(int argc, char** argv) {
         << "ok pid=" << result.process_id
         << " pipe=" << result.pipe_name
         << " ready_event=" << result.ready_event_name
+        << " script_mode=" << pal4::inject::ToString(result.script_mode)
         << " resumed=" << (options.resume_after_ready ? 1 : 0)
         << "\n";
 

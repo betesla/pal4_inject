@@ -46,6 +46,7 @@ add_library(pal4_inject_common STATIC
     src/common/input_queue.cpp
     src/common/launcher.cpp
     src/common/protocol.cpp
+    src/common/script_mode_override.cpp
     src/common/types.cpp
 )
 target_include_directories(pal4_inject_common

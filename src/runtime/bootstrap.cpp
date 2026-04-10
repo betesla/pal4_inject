@@ -11,9 +11,11 @@
 #include "crash_handler.h"
 #include "hook_manager.h"
 #include "inject_control_window.h"
+#include "pal4inject_build_info.h"
 #include "pal4inject/dpi_awareness.h"
 #include "ipc_server.h"
 #include "pal4inject/launcher.h"
+#include "pal4inject/script_mode_override.h"
 #include "runtime_preferences.h"
 #include "runtime_state.h"
 
@@ -68,11 +70,63 @@ void SignalReadyEvent() {
     AppendBootstrapLog("signal_ready_event ok");
 }
 
+void VerifyInheritedScriptMode(RuntimeState& state) {
+    std::string error;
+    const auto requested_mode = LoadInheritedScriptModeOverride(&error);
+    if (!error.empty()) {
+        state.SetLastError(error);
+        state.AppendEventLog(std::string("script_mode_env_error=") + error);
+        AppendBootstrapLog(std::string("script_mode_env_error=") + error);
+        return;
+    }
+
+    std::uint32_t before_flag = 0;
+    if (!TryReadLocalScriptModeFlag(state.MainModuleBase(), &before_flag)) {
+        state.SetLastError("failed to read local script mode flag during bootstrap");
+        AppendBootstrapLog("script_mode_bootstrap_read failed");
+        return;
+    }
+
+    const auto before_mode = ScriptModeFromCsbFlag(before_flag);
+    std::string observed_line =
+        std::string("script_mode_bootstrap_observed actual=") + ToString(before_mode) +
+        " flag=" + std::to_string(before_flag);
+    if (requested_mode.has_value()) {
+        observed_line += " requested=" + std::string(ToString(*requested_mode));
+    } else {
+        observed_line += " requested=inherit";
+    }
+    state.AppendEventLog(observed_line);
+    AppendBootstrapLog(observed_line);
+
+    if (!requested_mode.has_value() || before_mode == *requested_mode) {
+        return;
+    }
+
+    std::uint32_t after_flag = before_flag;
+    const bool reapply_ok =
+        TryWriteLocalScriptModeFlag(state.MainModuleBase(), *requested_mode, &after_flag);
+    const auto after_mode = ScriptModeFromCsbFlag(after_flag);
+    const std::string reapply_line =
+        std::string("script_mode_reapply requested=") + ToString(*requested_mode) +
+        " before=" + ToString(before_mode) +
+        " before_flag=" + std::to_string(before_flag) +
+        " after=" + ToString(after_mode) +
+        " after_flag=" + std::to_string(after_flag) +
+        " ok=" + (reapply_ok ? "1" : "0");
+    state.AppendEventLog(reapply_line);
+    AppendBootstrapLog(reapply_line);
+    if (!reapply_ok) {
+        state.SetLastError("script mode reapply failed during bootstrap");
+    }
+}
+
 }  // namespace
 
 DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
     AppendBootstrapLog("bootstrap_thread_enter");
+    AppendBootstrapLog(std::string("build_id=") + kPal4InjectBuildId);
 
     auto& state = GetRuntimeState();
     state.SetMainModuleBase(reinterpret_cast<std::uintptr_t>(GetModuleHandleA(nullptr)));
@@ -80,6 +134,7 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
         BuildReadyEventName(GetCurrentProcessId()),
         BuildPipeName(GetCurrentProcessId()));
     AppendBootstrapLog("bootstrap_names_configured");
+    VerifyInheritedScriptMode(state);
 
     std::string error;
     DpiAwarenessMode dpi_mode = DpiAwarenessMode::unknown;

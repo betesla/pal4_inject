@@ -28,6 +28,36 @@ cmake -S I:\PAL4\projects\pal4_re\inject -B I:\PAL4\projects\pal4_re\inject\buil
 cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
 ```
 
+## 启动
+- 兼容旧方式：
+  - `pal4_injector_launcher.exe --game-root <包含 launch.exe 的目录>`
+- 新增直接指定目标 EXE：
+  - `pal4_injector_launcher.exe --exe <完整 exe 路径>`
+- 新增脚本模式切换：
+  - `--script-mode cs`
+  - `--script-mode csb`
+  - 不传时保持游戏原始默认值
+
+示例：
+
+```powershell
+I:\PAL4\projects\pal4_inject\build\Debug\pal4_injector_launcher.exe `
+  --exe I:\Games\original\PAL4.exe `
+  --script-mode cs `
+  --dll I:\PAL4\projects\pal4_inject\build\Debug\pal4_runtime_x86.dll
+```
+
+脚本模式切换当前通过启动器在进程恢复前写入 `launch.exe` 的
+`g_IsCSBMode @ VA 0x8C27FC`：
+
+- `cs` -> 写 `0`
+- `csb` -> 写 `1`
+
+启动器还会把请求的脚本模式通过继承环境变量传给子进程。
+注入后的 bootstrap 会再次读取实际值，必要时补写，并把
+`requested_script_mode / script_mode / script_mode_flag`
+导出到 `read_ui_state` 快照里。
+
 ## 产物
 - `pal4_runtime_x86.dll`
 - `pal4_injector_launcher.exe`

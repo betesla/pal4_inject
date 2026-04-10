@@ -1,9 +1,11 @@
 #include "pal4inject/launcher.h"
 
 #include <filesystem>
+#include <optional>
 #include <sstream>
+#include <vector>
 
-#include "pal4inject/ida_addresses.h"
+#include "pal4inject/script_mode_override.h"
 
 namespace pal4::inject {
 namespace {
@@ -26,6 +28,71 @@ struct ProcessBasicInformationLayout {
 struct PebImageBaseLayout {
     BYTE reserved[8]{};
     PVOID image_base_address = nullptr;
+};
+
+std::string FormatWindowsError(DWORD code);
+
+std::optional<std::string> ReadEnvironmentVariable(const char* name) {
+    const DWORD required = GetEnvironmentVariableA(name, nullptr, 0);
+    if (required == 0) {
+        return std::nullopt;
+    }
+
+    std::vector<char> buffer(static_cast<std::size_t>(required), '\0');
+    const DWORD copied = GetEnvironmentVariableA(name, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (copied == 0 || copied >= buffer.size()) {
+        return std::nullopt;
+    }
+    return std::string(buffer.data(), copied);
+}
+
+class ScopedChildScriptModeEnvironment {
+public:
+    ScopedChildScriptModeEnvironment(
+        const ScriptMode mode,
+        std::string* error)
+        : previous_value_(ReadEnvironmentVariable(kInjectedScriptModeEnvVar)),
+          restore_required_(true) {
+        const char* requested_value =
+            mode == ScriptMode::inherit ? nullptr : ToString(mode);
+        if (!SetEnvironmentVariableA(kInjectedScriptModeEnvVar, requested_value)) {
+            restore_required_ = false;
+            if (error) {
+                *error = std::string("SetEnvironmentVariableA(") +
+                    kInjectedScriptModeEnvVar + ") failed: " +
+                    FormatWindowsError(GetLastError());
+            }
+            ok_ = false;
+            return;
+        }
+        ok_ = true;
+        if (error) {
+            error->clear();
+        }
+    }
+
+    ScopedChildScriptModeEnvironment(const ScopedChildScriptModeEnvironment&) = delete;
+    ScopedChildScriptModeEnvironment& operator=(const ScopedChildScriptModeEnvironment&) = delete;
+
+    ~ScopedChildScriptModeEnvironment() {
+        if (!restore_required_) {
+            return;
+        }
+        if (previous_value_.has_value()) {
+            SetEnvironmentVariableA(kInjectedScriptModeEnvVar, previous_value_->c_str());
+        } else {
+            SetEnvironmentVariableA(kInjectedScriptModeEnvVar, nullptr);
+        }
+    }
+
+    bool ok() const noexcept {
+        return ok_;
+    }
+
+private:
+    std::optional<std::string> previous_value_;
+    bool restore_required_ = false;
+bool ok_ = false;
 };
 
 std::string FormatWindowsError(const DWORD code) {
@@ -202,7 +269,7 @@ bool ApplyScriptModeOverride(
     }
 
     const auto remote_address =
-        ida::ResolveRuntimeAddress(module_base, ida::kIsCsbModeGlobal);
+        ResolveScriptModeGlobalAddress(module_base);
     return WriteRemoteUint32(process, remote_address, *csb_flag, error);
 }
 
@@ -442,6 +509,10 @@ LaunchResult LaunchInjectedProcess(const LaunchOptions& options, InjectedProcess
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION process_info{};
     std::string workdir_text = workdir.string();
+    ScopedChildScriptModeEnvironment script_mode_env(options.script_mode, &result.error);
+    if (!script_mode_env.ok()) {
+        return result;
+    }
 
     if (!CreateProcessA(
             exe_path.string().c_str(),

@@ -11,8 +11,8 @@
 #include "cegui_renderer_hooks.h"
 #include "hook_manager.h"
 #include "input_hooks.h"
-#include "pal4inject/ida_addresses.h"
 #include "pal4inject/protocol.h"
+#include "pal4inject/script_mode_override.h"
 #include "runtime_preferences.h"
 #include "runtime_state.h"
 
@@ -99,19 +99,7 @@ std::string BuildHookSummary(const std::vector<HookStatus>& statuses) {
 }
 
 bool TryReadCurrentScriptModeFlag(std::uint32_t* out_flag) {
-    if (!out_flag) {
-        return false;
-    }
-
-    const auto module_base = GetRuntimeState().MainModuleBase();
-    if (module_base == 0) {
-        return false;
-    }
-
-    const auto address =
-        ida::ResolveRuntimeAddress(module_base, ida::kIsCsbModeGlobal);
-    *out_flag = *reinterpret_cast<const std::uint32_t*>(address);
-    return true;
+    return TryReadLocalScriptModeFlag(GetRuntimeState().MainModuleBase(), out_flag);
 }
 
 ProtocolResponse BuildSnapshotResponse() {
@@ -142,8 +130,16 @@ ProtocolResponse BuildSnapshotResponse() {
     std::uint32_t script_mode_flag = 0;
     if (TryReadCurrentScriptModeFlag(&script_mode_flag)) {
         response.fields["script_mode"] =
-            ToString(script_mode_flag == 0 ? ScriptMode::cs : ScriptMode::csb);
+            ToString(ScriptModeFromCsbFlag(script_mode_flag));
         response.fields["script_mode_flag"] = std::to_string(script_mode_flag);
+    }
+    std::string script_mode_error;
+    const auto requested_script_mode = LoadInheritedScriptModeOverride(&script_mode_error);
+    response.fields["requested_script_mode"] = requested_script_mode.has_value()
+        ? ToString(*requested_script_mode)
+        : ToString(ScriptMode::inherit);
+    if (!script_mode_error.empty()) {
+        response.fields["requested_script_mode_error"] = script_mode_error;
     }
     response.fields["hooks"] = BuildHookSummary(snapshot.active_hooks);
     if (!dispatch_reason.empty()) {
