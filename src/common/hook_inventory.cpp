@@ -16,6 +16,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             8,
             nullptr,
             nullptr,
+            10,
+            true,
         },
         {
             HookId::handle_ui_message,
@@ -27,6 +29,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             8,
             nullptr,
             nullptr,
+            20,
+            true,
         },
         {
             HookId::simulate_key_press_and_release,
@@ -38,6 +42,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             6,
             nullptr,
             nullptr,
+            30,
+            true,
         },
         {
             HookId::process_inputs,
@@ -49,6 +55,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             7,
             nullptr,
             nullptr,
+            40,
+            true,
         },
         {
             HookId::update_input_device_state,
@@ -60,6 +68,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             5,
             nullptr,
             nullptr,
+            50,
+            true,
         },
         {
             HookId::initialize_direct_input,
@@ -71,6 +81,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             5,
             nullptr,
             nullptr,
+            60,
+            true,
         },
         {
             HookId::gi_talk,
@@ -82,6 +94,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             8,
             nullptr,
             nullptr,
+            70,
+            true,
         },
         {
             HookId::cegui_renderer_constructor_2,
@@ -93,6 +107,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             8,
             nullptr,
             nullptr,
+            80,
+            true,
         },
         {
             HookId::cegui_system_initialize,
@@ -104,6 +120,21 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             13,
             nullptr,
             nullptr,
+            90,
+            true,
+        },
+        {
+            HookId::load_font_file,
+            ida::kLoadFontFile,
+            CallingConvention::cdecl_call,
+            HookMode::replace_with_fallback,
+            {0x6A, 0xFF, 0x68, 0x99, 0x37, 0x82, 0x00, 0x64,
+             0xA1, 0x00, 0x00, 0x00, 0x00, 0x50, 0x64, 0x89},
+            7,
+            nullptr,
+            nullptr,
+            900,
+            false,
         },
         {
             HookId::setup_minimap_texture,
@@ -115,6 +146,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             8,
             nullptr,
             nullptr,
+            100,
+            true,
         },
         {
             HookId::camera_update_matrix,
@@ -126,6 +159,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             7,
             nullptr,
             nullptr,
+            110,
+            true,
         },
         {
             HookId::d3d9_set_present_parameters,
@@ -137,6 +172,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             10,
             nullptr,
             nullptr,
+            120,
+            true,
         },
         {
             HookId::pal4_main_wndproc,
@@ -148,6 +185,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             8,
             nullptr,
             nullptr,
+            130,
+            true,
         },
         {
             HookId::handle_player_input_events,
@@ -159,6 +198,8 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             9,
             nullptr,
             nullptr,
+            1000,
+            false,
         },
     };
 }

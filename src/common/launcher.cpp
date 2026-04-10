@@ -3,8 +3,30 @@
 #include <filesystem>
 #include <sstream>
 
+#include "pal4inject/ida_addresses.h"
+
 namespace pal4::inject {
 namespace {
+
+using NtQueryInformationProcessFn = LONG(WINAPI*)(
+    HANDLE,
+    ULONG,
+    PVOID,
+    ULONG,
+    PULONG);
+
+struct ProcessBasicInformationLayout {
+    PVOID reserved1 = nullptr;
+    PVOID peb_base_address = nullptr;
+    PVOID reserved2[2]{};
+    ULONG_PTR unique_process_id = 0;
+    PVOID reserved3 = nullptr;
+};
+
+struct PebImageBaseLayout {
+    BYTE reserved[8]{};
+    PVOID image_base_address = nullptr;
+};
 
 std::string FormatWindowsError(const DWORD code) {
     char* buffer = nullptr;
@@ -43,6 +65,145 @@ std::string QuoteArgument(const std::string& value) {
     }
     quoted.push_back('"');
     return quoted;
+}
+
+bool QueryRemoteMainModuleBase(
+    const HANDLE process,
+    std::uintptr_t* module_base,
+    std::string* error) {
+    if (!module_base) {
+        if (error) {
+            *error = "remote module base output pointer is null";
+        }
+        return false;
+    }
+
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    if (!ntdll) {
+        if (error) {
+            *error = "GetModuleHandleW(ntdll.dll) failed: " + FormatWindowsError(GetLastError());
+        }
+        return false;
+    }
+
+    const auto nt_query_information_process =
+        reinterpret_cast<NtQueryInformationProcessFn>(
+            GetProcAddress(ntdll, "NtQueryInformationProcess"));
+    if (!nt_query_information_process) {
+        if (error) {
+            *error = "GetProcAddress(NtQueryInformationProcess) failed: " +
+                FormatWindowsError(GetLastError());
+        }
+        return false;
+    }
+
+    ProcessBasicInformationLayout process_info{};
+    ULONG return_length = 0;
+    const LONG nt_status = nt_query_information_process(
+        process,
+        0,
+        &process_info,
+        sizeof(process_info),
+        &return_length);
+    if (nt_status != 0 || !process_info.peb_base_address) {
+        if (error) {
+            std::ostringstream out;
+            out << "NtQueryInformationProcess failed: status=0x"
+                << std::hex << std::uppercase << static_cast<unsigned long>(nt_status);
+            *error = out.str();
+        }
+        return false;
+    }
+
+    PebImageBaseLayout peb{};
+    SIZE_T read = 0;
+    if (!ReadProcessMemory(
+            process,
+            process_info.peb_base_address,
+            &peb,
+            sizeof(peb),
+            &read) ||
+        read != sizeof(peb) ||
+        !peb.image_base_address) {
+        if (error) {
+            *error = "ReadProcessMemory(PEB) failed: " + FormatWindowsError(GetLastError());
+        }
+        return false;
+    }
+
+    *module_base = reinterpret_cast<std::uintptr_t>(peb.image_base_address);
+    return true;
+}
+
+bool WriteRemoteUint32(
+    const HANDLE process,
+    const std::uintptr_t remote_address,
+    const std::uint32_t value,
+    std::string* error) {
+    SIZE_T written = 0;
+    if (!WriteProcessMemory(
+            process,
+            reinterpret_cast<void*>(remote_address),
+            &value,
+            sizeof(value),
+            &written) ||
+        written != sizeof(value)) {
+        if (error) {
+            *error = "WriteProcessMemory(uint32) failed: " + FormatWindowsError(GetLastError());
+        }
+        return false;
+    }
+
+    std::uint32_t observed_value = 0;
+    SIZE_T read = 0;
+    if (!ReadProcessMemory(
+            process,
+            reinterpret_cast<void*>(remote_address),
+            &observed_value,
+            sizeof(observed_value),
+            &read) ||
+        read != sizeof(observed_value)) {
+        if (error) {
+            *error = "ReadProcessMemory(uint32 verify) failed: " + FormatWindowsError(GetLastError());
+        }
+        return false;
+    }
+
+    if (observed_value != value) {
+        if (error) {
+            *error =
+                "remote uint32 verify mismatch at 0x" +
+                [&remote_address]() {
+                    std::ostringstream out;
+                    out << std::hex << std::uppercase << remote_address;
+                    return out.str();
+                }();
+        }
+        return false;
+    }
+    return true;
+}
+
+bool ApplyScriptModeOverride(
+    const HANDLE process,
+    const ScriptMode script_mode,
+    std::string* error) {
+    const auto csb_flag = ScriptModeToCsbFlag(script_mode);
+    if (!csb_flag.has_value()) {
+        if (error) {
+            error->clear();
+        }
+        return true;
+    }
+
+    std::uintptr_t module_base = 0;
+    if (!QueryRemoteMainModuleBase(process, &module_base, error)) {
+        return false;
+    }
+
+    const auto remote_address =
+        ida::ResolveRuntimeAddress(module_base, ida::kIsCsbModeGlobal);
+    return WriteRemoteUint32(process, remote_address, *csb_flag, error);
 }
 
 bool InjectRuntimeDll(
@@ -202,6 +363,55 @@ bool ResumeInjectedProcess(const InjectedProcess& process, std::string* error) {
     return true;
 }
 
+bool ResolveLaunchPaths(
+    const LaunchOptions& options,
+    std::filesystem::path* exe_path,
+    std::filesystem::path* workdir,
+    std::string* error) {
+    if (!exe_path || !workdir) {
+        if (error) {
+            *error = "launch path outputs are null";
+        }
+        return false;
+    }
+
+    if (!options.executable_path.empty()) {
+        *exe_path = options.executable_path;
+        *workdir = options.executable_path.parent_path();
+        if (!std::filesystem::exists(*exe_path)) {
+            if (error) {
+                *error = "target executable does not exist";
+            }
+            return false;
+        }
+        if (error) {
+            error->clear();
+        }
+        return true;
+    }
+
+    if (options.game_root.empty()) {
+        if (error) {
+            *error = "game_root or executable_path is required";
+        }
+        return false;
+    }
+
+    *exe_path = options.game_root / "launch.exe";
+    *workdir = options.game_root;
+    if (!std::filesystem::exists(*exe_path)) {
+        if (error) {
+            *error = "launch.exe not found under game_root";
+        }
+        return false;
+    }
+
+    if (error) {
+        error->clear();
+    }
+    return true;
+}
+
 LaunchResult LaunchInjectedProcess(const LaunchOptions& options, InjectedProcess* out_process) {
     LaunchResult result{};
     if (!out_process) {
@@ -209,9 +419,9 @@ LaunchResult LaunchInjectedProcess(const LaunchOptions& options, InjectedProcess
         return result;
     }
 
-    const std::filesystem::path exe_path = options.game_root / "launch.exe";
-    if (!std::filesystem::exists(exe_path)) {
-        result.error = "launch.exe not found under game_root";
+    std::filesystem::path exe_path;
+    std::filesystem::path workdir;
+    if (!ResolveLaunchPaths(options, &exe_path, &workdir, &result.error)) {
         return result;
     }
     if (!std::filesystem::exists(options.dll_path)) {
@@ -231,7 +441,7 @@ LaunchResult LaunchInjectedProcess(const LaunchOptions& options, InjectedProcess
     STARTUPINFOA startup{};
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION process_info{};
-    std::string workdir = options.game_root.string();
+    std::string workdir_text = workdir.string();
 
     if (!CreateProcessA(
             exe_path.string().c_str(),
@@ -241,7 +451,7 @@ LaunchResult LaunchInjectedProcess(const LaunchOptions& options, InjectedProcess
             FALSE,
             options.creation_flags,
             nullptr,
-            workdir.c_str(),
+            workdir_text.empty() ? nullptr : workdir_text.c_str(),
             &startup,
             &process_info)) {
         result.error = "CreateProcessA failed: " + FormatWindowsError(GetLastError());
@@ -252,6 +462,14 @@ LaunchResult LaunchInjectedProcess(const LaunchOptions& options, InjectedProcess
     local_process.process_info = process_info;
     local_process.ready_event_name = BuildReadyEventName(process_info.dwProcessId);
     local_process.pipe_name = BuildPipeName(process_info.dwProcessId);
+
+    if (!ApplyScriptModeOverride(
+            process_info.hProcess,
+            options.script_mode,
+            &result.error)) {
+        local_process.Close();
+        return result;
+    }
 
     if (!InjectRuntimeDll(process_info.hProcess, options.dll_path, &result.error)) {
         local_process.Close();
@@ -273,6 +491,7 @@ LaunchResult LaunchInjectedProcess(const LaunchOptions& options, InjectedProcess
     result.process_id = process_info.dwProcessId;
     result.ready_event_name = local_process.ready_event_name;
     result.pipe_name = local_process.pipe_name;
+    result.script_mode = options.script_mode;
     *out_process = local_process;
     return result;
 }

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -29,6 +30,12 @@ enum class MsaaLevel : std::uint8_t {
     x8,
 };
 
+enum class ScriptMode : std::uint8_t {
+    inherit = 0,
+    cs,
+    csb,
+};
+
 enum class HookId : std::uint8_t {
     process_ui_event = 0,
     handle_ui_message,
@@ -39,6 +46,7 @@ enum class HookId : std::uint8_t {
     gi_talk,
     cegui_renderer_constructor_2,
     cegui_system_initialize,
+    load_font_file,
     setup_minimap_texture,
     camera_update_matrix,
     d3d9_set_present_parameters,
@@ -55,6 +63,8 @@ struct HookDescriptor {
     std::size_t patch_span = 0;
     void* replacement = nullptr;
     void* original_trampoline = nullptr;
+    std::uint32_t bootstrap_order = 1000;
+    bool bootstrap_required = false;
 };
 
 struct HookStatus {
@@ -85,6 +95,8 @@ struct RuntimeSnapshot {
     std::uint32_t last_paliv_entry_observed = 0;
     std::string last_ui_event;
     std::string last_error;
+    std::string last_font_sync_summary;
+    bool last_font_sync_ok = false;
     std::string last_crash_summary;
     std::string last_crash_report_path;
     std::string last_crash_dump_path;
@@ -114,10 +126,13 @@ public:
 const char* ToString(CallingConvention cc) noexcept;
 const char* ToString(HookMode mode) noexcept;
 const char* ToString(MsaaLevel level) noexcept;
+const char* ToString(ScriptMode mode) noexcept;
 const char* ToString(HookId id) noexcept;
 
 bool TryParseHookMode(std::string_view text, HookMode* out) noexcept;
 bool TryParseMsaaLevel(std::string_view text, MsaaLevel* out) noexcept;
+bool TryParseScriptMode(std::string_view text, ScriptMode* out) noexcept;
 bool TryParseHookId(std::string_view text, HookId* out) noexcept;
+std::optional<std::uint32_t> ScriptModeToCsbFlag(ScriptMode mode) noexcept;
 
 }  // namespace pal4::inject

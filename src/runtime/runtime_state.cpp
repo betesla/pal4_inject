@@ -189,6 +189,15 @@ MsaaLevel RuntimeState::GetMsaaLevel() const {
     return msaa_level_;
 }
 
+void RuntimeState::SetLastFontSync(
+    const std::string_view summary,
+    const bool ok) {
+    std::scoped_lock lock(mutex_);
+    last_font_sync_summary_ = summary;
+    last_font_sync_ok_ = ok;
+    state_cv_.notify_all();
+}
+
 void RuntimeState::SetLastUiEvent(const std::string_view text) {
     std::scoped_lock lock(mutex_);
     last_ui_event_ = text;
@@ -274,6 +283,8 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.last_paliv_entry_observed = last_paliv_entry_observed_;
     snapshot.last_ui_event = last_ui_event_;
     snapshot.last_error = last_error_;
+    snapshot.last_font_sync_summary = last_font_sync_summary_;
+    snapshot.last_font_sync_ok = last_font_sync_ok_;
     snapshot.last_crash_summary = last_crash_summary_;
     snapshot.last_crash_report_path = last_crash_report_path_;
     snapshot.last_crash_dump_path = last_crash_dump_path_;

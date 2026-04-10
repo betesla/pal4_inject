@@ -12,6 +12,7 @@
 #include "cegui_renderer_hooks.h"
 #include "camera_hooks.h"
 #include "cegui_bindings.h"
+#include "cegui_font_hooks.h"
 #include "d3d9_quality_hooks.h"
 #include "minimap_hooks.h"
 #include "pal4inject/cegui_widescreen.h"
@@ -795,6 +796,9 @@ void* GetReplacementForHook(const HookId id) {
         if (void* replacement = GetCeguiRendererReplacementForHook(id)) {
             return replacement;
         }
+        if (void* replacement = GetCeguiFontReplacementForHook(id)) {
+            return replacement;
+        }
         if (void* replacement = GetMinimapReplacementForHook(id)) {
             return replacement;
         }
@@ -836,6 +840,7 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
         break;
     default:
         SetCeguiRendererOriginalTrampoline(id, trampoline);
+        SetCeguiFontOriginalTrampoline(id, trampoline);
         SetMinimapOriginalTrampoline(id, trampoline);
         SetWindowFocusOriginalTrampoline(id, trampoline);
         SetD3d9QualityOriginalTrampoline(id, trampoline);

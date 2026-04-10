@@ -156,18 +156,6 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     cached.font_set_auto_scaling_enabled =
         reinterpret_cast<CeguiBindings::FontSetAutoScalingEnabledFn>(proc);
 
-    if (!ResolveBinding(module, "?isAutoScaled@Font@CEGUI@@QBE_NXZ", &proc, error)) {
-        return false;
-    }
-    cached.font_is_auto_scaled =
-        reinterpret_cast<CeguiBindings::FontIsAutoScaledFn>(proc);
-
-    if (!ResolveBinding(module, "?getPointSize@Font@CEGUI@@QBEIXZ", &proc, error)) {
-        return false;
-    }
-    cached.font_get_point_size =
-        reinterpret_cast<CeguiBindings::FontGetPointSizeFn>(proc);
-
     if (!ResolveBinding(module, "?getFontHeight@Font@CEGUI@@QBEMM@Z", &proc, error)) {
         return false;
     }

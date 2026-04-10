@@ -165,6 +165,8 @@ std::string BuildCrashReportText(
         << "last_paliv_entry_observed=0x" << std::hex << std::uppercase << runtime_snapshot->last_paliv_entry_observed << "\n"
         << "last_ui_event=" << runtime_snapshot->last_ui_event << "\n"
         << "last_error=" << runtime_snapshot->last_error << "\n"
+        << "last_font_sync_ok=" << (runtime_snapshot->last_font_sync_ok ? 1 : 0) << "\n"
+        << "last_font_sync_summary=" << runtime_snapshot->last_font_sync_summary << "\n"
         << "hooks=" << BuildHookSummary(*runtime_snapshot) << "\n"
         << "event_log_tail=\n" << runtime_snapshot->event_log_tail << "\n";
     return out.str();

@@ -11,6 +11,7 @@
 #include "cegui_renderer_hooks.h"
 #include "hook_manager.h"
 #include "input_hooks.h"
+#include "pal4inject/ida_addresses.h"
 #include "pal4inject/protocol.h"
 #include "runtime_preferences.h"
 #include "runtime_state.h"
@@ -97,6 +98,22 @@ std::string BuildHookSummary(const std::vector<HookStatus>& statuses) {
     return out.str();
 }
 
+bool TryReadCurrentScriptModeFlag(std::uint32_t* out_flag) {
+    if (!out_flag) {
+        return false;
+    }
+
+    const auto module_base = GetRuntimeState().MainModuleBase();
+    if (module_base == 0) {
+        return false;
+    }
+
+    const auto address =
+        ida::ResolveRuntimeAddress(module_base, ida::kIsCsbModeGlobal);
+    *out_flag = *reinterpret_cast<const std::uint32_t*>(address);
+    return true;
+}
+
 ProtocolResponse BuildSnapshotResponse() {
     std::string dispatch_reason;
     const auto snapshot = GetRuntimeState().BuildSnapshot(0);
@@ -113,6 +130,8 @@ ProtocolResponse BuildSnapshotResponse() {
     response.fields["last_paliv_entry_observed"] = HexValue(snapshot.last_paliv_entry_observed);
     response.fields["last_ui_event"] = snapshot.last_ui_event;
     response.fields["last_error"] = snapshot.last_error;
+    response.fields["last_font_sync_summary"] = snapshot.last_font_sync_summary;
+    response.fields["last_font_sync_ok"] = snapshot.last_font_sync_ok ? "1" : "0";
     response.fields["last_crash_report_path"] = snapshot.last_crash_report_path;
     response.fields["last_crash_dump_path"] = snapshot.last_crash_dump_path;
     response.fields["last_crash_summary"] = snapshot.last_crash_summary;
@@ -120,6 +139,12 @@ ProtocolResponse BuildSnapshotResponse() {
     response.fields["process_ui_event_mode"] = ToString(snapshot.process_ui_event.mode);
     response.fields["process_ui_event_call_count"] = std::to_string(snapshot.process_ui_event.call_count);
     response.fields["process_ui_event_last_error"] = snapshot.process_ui_event.last_error;
+    std::uint32_t script_mode_flag = 0;
+    if (TryReadCurrentScriptModeFlag(&script_mode_flag)) {
+        response.fields["script_mode"] =
+            ToString(script_mode_flag == 0 ? ScriptMode::cs : ScriptMode::csb);
+        response.fields["script_mode_flag"] = std::to_string(script_mode_flag);
+    }
     response.fields["hooks"] = BuildHookSummary(snapshot.active_hooks);
     if (!dispatch_reason.empty()) {
         response.fields["ui_dispatch_reason"] = dispatch_reason;

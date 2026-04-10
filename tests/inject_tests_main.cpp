@@ -14,6 +14,9 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#ifdef _MSC_VER
+#include <crtdbg.h>
+#endif
 #include <windows.h>
 
 #include "pal4inject/hook_inventory.h"
@@ -25,11 +28,13 @@
 #include "pal4inject/input_queue.h"
 #include "pal4inject/launcher.h"
 #include "pal4inject/camera_pitch_guard.h"
+#include "pal4inject/cegui_font_resync.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/camera_unlock_patch.h"
 #include "pal4inject/crash_capture.h"
 #include "pal4inject/protocol.h"
 #include "runtime_state.h"
+#include "pal4inject_build_info.h"
 
 namespace {
 
@@ -57,12 +62,13 @@ void TestResolveRuntimeAddress() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 14);
+    assert(inventory.size() == 15);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
     bool found_cegui_renderer_ctor = false;
     bool found_cegui_system_init = false;
+    bool found_load_font_file = false;
     bool found_setup_minimap_texture = false;
     bool found_camera_update_matrix = false;
     bool found_d3d9_present = false;
@@ -95,12 +101,22 @@ void TestHookInventory() {
             assert(hook.mode == pal4::inject::HookMode::observe_only);
             assert(hook.patch_span == 13);
             assert(hook.ida_ea == pal4::inject::ida::kCeguiSystemInitialize);
+            assert(hook.bootstrap_required);
+        }
+        if (hook.id == HookId::load_font_file) {
+            found_load_font_file = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kLoadFontFile);
+            assert(!hook.bootstrap_required);
+            assert(hook.bootstrap_order == 900);
         }
         if (hook.id == HookId::setup_minimap_texture) {
             found_setup_minimap_texture = true;
             assert(hook.mode == pal4::inject::HookMode::observe_only);
             assert(hook.patch_span == 8);
             assert(hook.ida_ea == pal4::inject::ida::kSetupMinimapTexture);
+            assert(hook.bootstrap_order < 900);
         }
         if (hook.id == HookId::camera_update_matrix) {
             found_camera_update_matrix = true;
@@ -117,6 +133,7 @@ void TestHookInventory() {
         if (hook.id == HookId::pal4_main_wndproc) {
             found_reserved_wndproc = true;
             assert(hook.patch_span == 8);
+            assert(hook.bootstrap_order < 900);
         }
     }
     assert(found_process_ui_event);
@@ -124,6 +141,7 @@ void TestHookInventory() {
     assert(found_gi_talk);
     assert(found_cegui_renderer_ctor);
     assert(found_cegui_system_init);
+    assert(found_load_font_file);
     assert(found_setup_minimap_texture);
     assert(found_camera_update_matrix);
     assert(found_d3d9_present);
@@ -148,6 +166,32 @@ void TestMsaaLevelStrings() {
     assert(pal4::inject::TryParseMsaaLevel("4x", &parsed));
     assert(parsed == pal4::inject::MsaaLevel::x4);
     assert(!pal4::inject::TryParseMsaaLevel("16x", &parsed));
+}
+
+void TestScriptModeStrings() {
+    assert(std::string(pal4::inject::ToString(pal4::inject::ScriptMode::inherit)) == "inherit");
+    assert(std::string(pal4::inject::ToString(pal4::inject::ScriptMode::cs)) == "cs");
+    assert(std::string(pal4::inject::ToString(pal4::inject::ScriptMode::csb)) == "csb");
+
+    pal4::inject::ScriptMode parsed = pal4::inject::ScriptMode::inherit;
+    assert(pal4::inject::TryParseScriptMode("cs", &parsed));
+    assert(parsed == pal4::inject::ScriptMode::cs);
+    assert(pal4::inject::TryParseScriptMode("csb", &parsed));
+    assert(parsed == pal4::inject::ScriptMode::csb);
+    assert(!pal4::inject::TryParseScriptMode("text", &parsed));
+
+    const auto inherit_flag = pal4::inject::ScriptModeToCsbFlag(pal4::inject::ScriptMode::inherit);
+    const auto cs_flag = pal4::inject::ScriptModeToCsbFlag(pal4::inject::ScriptMode::cs);
+    const auto csb_flag = pal4::inject::ScriptModeToCsbFlag(pal4::inject::ScriptMode::csb);
+    assert(!inherit_flag.has_value());
+    assert(cs_flag.has_value() && *cs_flag == 0U);
+    assert(csb_flag.has_value() && *csb_flag == 1U);
+
+    constexpr std::uintptr_t kModuleBase = 0x10000000;
+    const auto resolved = pal4::inject::ida::ResolveRuntimeAddress(
+        kModuleBase,
+        pal4::inject::ida::kIsCsbModeGlobal);
+    assert(resolved == kModuleBase + (pal4::inject::ida::kIsCsbModeGlobal - pal4::inject::ida::kLaunchExeBase));
 }
 
 void TestProtocolRoundTrip() {
@@ -196,18 +240,19 @@ void TestProtocolRoundTrip() {
 
 void TestInjectControlPanelModel() {
     const auto rows = pal4::inject::BuildInjectControlPanelRows();
-    assert(rows.size() == 14);
+    assert(rows.size() == 15);
     assert(rows.front().id == HookId::process_ui_event);
     assert(rows.front().allow_mode_change);
     assert(rows[7].id == HookId::cegui_renderer_constructor_2);
     assert(rows[8].id == HookId::cegui_system_initialize);
-    assert(rows[9].id == HookId::setup_minimap_texture);
-    assert(rows[10].id == HookId::camera_update_matrix);
-    assert(rows[11].id == HookId::d3d9_set_present_parameters);
-    assert(rows[12].id == HookId::pal4_main_wndproc);
-    assert(rows[12].allow_mode_change);
-    assert(rows[13].id == HookId::handle_player_input_events);
-    assert(!rows[13].allow_mode_change);
+    assert(rows[9].id == HookId::load_font_file);
+    assert(rows[10].id == HookId::setup_minimap_texture);
+    assert(rows[11].id == HookId::camera_update_matrix);
+    assert(rows[12].id == HookId::d3d9_set_present_parameters);
+    assert(rows[13].id == HookId::pal4_main_wndproc);
+    assert(rows[13].allow_mode_change);
+    assert(rows[14].id == HookId::handle_player_input_events);
+    assert(!rows[14].allow_mode_change);
 
     const auto modes = pal4::inject::BuildInjectControlPanelModes();
     assert(modes.size() == 4);
@@ -231,17 +276,36 @@ void TestInjectSettingsRoundTrip() {
         pal4::inject::HookMode::observe_only,
         pal4::inject::HookMode::replace_with_fallback,
     });
+    settings.hooks.push_back({
+        HookId::load_font_file,
+        pal4::inject::HookMode::replace_with_fallback,
+        pal4::inject::HookMode::replace_with_fallback,
+    });
 
     std::string error;
     const auto text = pal4::inject::FormatInjectPersistedSettings(settings);
     pal4::inject::InjectPersistedSettings parsed{};
     assert(pal4::inject::ParseInjectPersistedSettings(text, &parsed, &error));
     assert(parsed.msaa_level == pal4::inject::MsaaLevel::x4);
-    assert(parsed.hooks.size() == 2);
-    assert(parsed.hooks[0].id == HookId::process_ui_event);
-    assert(parsed.hooks[0].mode == pal4::inject::HookMode::replace_with_fallback);
-    assert(parsed.hooks[1].id == HookId::d3d9_set_present_parameters);
-    assert(parsed.hooks[1].active_mode == pal4::inject::HookMode::replace_with_fallback);
+    assert(parsed.hooks.size() == 3);
+    const auto find_hook =
+        [&parsed](const HookId id) -> const pal4::inject::PersistedHookSetting* {
+            for (const auto& hook : parsed.hooks) {
+                if (hook.id == id) {
+                    return &hook;
+                }
+            }
+            return nullptr;
+        };
+    const auto* process_ui_event = find_hook(HookId::process_ui_event);
+    assert(process_ui_event);
+    assert(process_ui_event->mode == pal4::inject::HookMode::replace_with_fallback);
+    const auto* d3d9_present = find_hook(HookId::d3d9_set_present_parameters);
+    assert(d3d9_present);
+    assert(d3d9_present->active_mode == pal4::inject::HookMode::replace_with_fallback);
+    const auto* load_font_file = find_hook(HookId::load_font_file);
+    assert(load_font_file);
+    assert(load_font_file->mode == pal4::inject::HookMode::replace_with_fallback);
 
     const auto temp_path =
         std::filesystem::temp_directory_path() / "pal4_inject_settings_unit_test.ini";
@@ -314,6 +378,7 @@ void TestRuntimeEventLog() {
     state.AppendEventLog("event-2");
     state.SetCrashHandlerReady(true);
     state.SetCrashArtifacts("summary", "report.txt", "dump.dmp");
+    state.SetLastFontSync("hook=load_font_file action=resynced", true);
     state.IncrementHookCall(HookId::process_ui_event);
     state.ObservePalivEntry(2);
     assert(state.WaitForHookCalls(HookId::process_ui_event, 1, 10));
@@ -327,11 +392,53 @@ void TestRuntimeEventLog() {
     assert(snapshot.last_crash_summary == "summary");
     assert(snapshot.last_crash_report_path == "report.txt");
     assert(snapshot.last_crash_dump_path == "dump.dmp");
+    assert(snapshot.last_font_sync_ok);
+    assert(snapshot.last_font_sync_summary == "hook=load_font_file action=resynced");
+}
+
+void ConfigureNonInteractiveCrashDialogs() {
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+#ifdef _MSC_VER
+    _set_error_mode(_OUT_TO_STDERR);
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#ifdef _DEBUG
+    _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_WARN, _CRTDBG_FILE_STDERR);
+    _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+#endif
+#endif
 }
 
 void TestLauncherNaming() {
     assert(pal4::inject::BuildReadyEventName(1234) == "Local\\PAL4InjectReady_1234");
     assert(pal4::inject::BuildPipeName(1234) == "\\\\.\\pipe\\pal4_inject_1234");
+    assert(std::string_view(pal4::inject::kPal4InjectBuildId).size() >= 8);
+
+    pal4::inject::LaunchOptions options{};
+    assert(options.script_mode == pal4::inject::ScriptMode::inherit);
+    options.game_root = "I:\\Games\\PAL4_game";
+    std::filesystem::path exe_path;
+    std::filesystem::path workdir;
+    std::string error;
+    assert(pal4::inject::ResolveLaunchPaths(options, &exe_path, &workdir, &error));
+    assert(exe_path == std::filesystem::path("I:\\Games\\PAL4_game\\launch.exe"));
+    assert(workdir == std::filesystem::path("I:\\Games\\PAL4_game"));
+
+    const auto direct_exe =
+        std::filesystem::temp_directory_path() / "pal4_inject_launcher_target.exe";
+    {
+        std::ofstream output(direct_exe, std::ios::binary | std::ios::trunc);
+        output << "stub";
+    }
+    options = {};
+    options.executable_path = direct_exe;
+    assert(pal4::inject::ResolveLaunchPaths(options, &exe_path, &workdir, &error));
+    assert(exe_path == direct_exe);
+    assert(workdir == direct_exe.parent_path());
+    std::filesystem::remove(direct_exe);
 }
 
 void TestCameraPitchUnlockPatchMetadata() {
@@ -447,6 +554,61 @@ void TestCeguiWidescreenPlanMath() {
     assert(minimap_1280_800.y == 532);
     assert(minimap_1280_800.width == 231);
     assert(minimap_1280_800.height == 231);
+}
+
+void TestCeguiDynamicFontResyncMath() {
+    assert(pal4::inject::IsKnownDynamicUiFont("system"));
+    assert(pal4::inject::IsKnownDynamicUiFont("SystemBold"));
+    assert(pal4::inject::IsKnownDynamicUiFont("DIALOG_SIMSUN"));
+    assert(!pal4::inject::IsKnownDynamicUiFont("unknown_font"));
+
+    assert(
+        pal4::inject::CanonicalKnownDynamicUiFontName("system") ==
+        std::string_view("system"));
+    assert(
+        pal4::inject::CanonicalKnownDynamicUiFontName("SystemBold") ==
+        std::string_view("systemBold"));
+    assert(
+        pal4::inject::CanonicalKnownDynamicUiFontName("dialog_simsun") ==
+        std::string_view("dialog_simsun"));
+
+    const auto target_1920_1080 =
+        pal4::inject::BuildKnownDynamicFontResyncTarget(
+            "system",
+            pal4::inject::BuildCeguiWidescreenPlan(1920, 1080));
+    assert(target_1920_1080.apply);
+    assert(target_1920_1080.native_width == 800.0F);
+    assert(target_1920_1080.native_height == 600.0F);
+    assert(target_1920_1080.notify_width == 1440.0F);
+    assert(target_1920_1080.notify_height == 1080.0F);
+
+    const auto target_1600_900 =
+        pal4::inject::BuildKnownDynamicFontResyncTarget(
+            "systemBold",
+            pal4::inject::BuildCeguiWidescreenPlan(1600, 900));
+    assert(target_1600_900.apply);
+    assert(target_1600_900.native_width == 800.0F);
+    assert(target_1600_900.native_height == 600.0F);
+    assert(target_1600_900.notify_width == 1200.0F);
+    assert(target_1600_900.notify_height == 900.0F);
+
+    const auto target_1024_768 =
+        pal4::inject::BuildKnownDynamicFontResyncTarget(
+            "system",
+            pal4::inject::BuildCeguiWidescreenPlan(1024, 768));
+    assert(!target_1024_768.apply);
+    assert(target_1024_768.notify_width == 800.0F);
+    assert(target_1024_768.notify_height == 600.0F);
+
+    const auto dialog_target_1920_1080 =
+        pal4::inject::BuildKnownDynamicFontResyncTarget(
+            "dialog_simsun",
+            pal4::inject::BuildCeguiWidescreenPlan(1920, 1080));
+    assert(dialog_target_1920_1080.apply);
+    assert(dialog_target_1920_1080.native_width == 800.0F);
+    assert(dialog_target_1920_1080.native_height == 600.0F);
+    assert(dialog_target_1920_1080.notify_width == 1440.0F);
+    assert(dialog_target_1920_1080.notify_height == 1080.0F);
 }
 
 void TestCrashCaptureHelpers() {
@@ -959,6 +1121,13 @@ void CleanupHarness(IntegrationHarness* harness) {
 
 void TestSkipLogoToMenuScenario() {
     auto harness = LaunchHarness();
+    assert(WaitForSnapshotField(harness.pipe_name, "bootstrap_ready", "1", 5000));
+    assert(WaitForHookCountByPolling(
+        harness.pipe_name,
+        HookId::load_font_file,
+        1,
+        15000));
+    assert(WaitForSnapshotField(harness.pipe_name, "last_font_sync_ok", "1", 5000));
     CleanupHarness(&harness);
 }
 
@@ -1020,10 +1189,12 @@ void MaybeRunIntegrationSmoke() {
 }  // namespace
 
 int main() {
+    ConfigureNonInteractiveCrashDialogs();
     TestResolveRuntimeAddress();
     TestHookInventory();
     TestDpiAwarenessStrings();
     TestMsaaLevelStrings();
+    TestScriptModeStrings();
     TestInjectControlPanelModel();
     TestInjectSettingsRoundTrip();
     TestProtocolRoundTrip();
@@ -1034,6 +1205,7 @@ int main() {
     TestCameraPitchUnlockPatchMetadata();
     TestCameraPitchGuardMath();
     TestCeguiWidescreenPlanMath();
+    TestCeguiDynamicFontResyncMath();
     TestCrashCaptureHelpers();
     MaybeRunIntegrationSmoke();
     std::cout << "pal4_inject_tests: ok\n";

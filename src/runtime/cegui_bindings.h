@@ -29,8 +29,6 @@ struct CeguiBindings {
     using FontNotifyScreenResolutionFn = void (__thiscall*)(void*, const CeguiSizeValue&);
     using FontSetNativeResolutionFn = void (__thiscall*)(void*, const CeguiSizeValue&);
     using FontSetAutoScalingEnabledFn = void (__thiscall*)(void*, bool);
-    using FontIsAutoScaledFn = bool (__thiscall*)(void*);
-    using FontGetPointSizeFn = unsigned int (__thiscall*)(void*);
     using FontGetFontHeightFn = float (__thiscall*)(void*, float);
     using CeguiStringCtorFromAnsiFn = void (__thiscall*)(void*, const char*);
     using CeguiStringDtorFn = void (__thiscall*)(void*);
@@ -50,8 +48,6 @@ struct CeguiBindings {
     FontNotifyScreenResolutionFn font_notify_screen_resolution = nullptr;
     FontSetNativeResolutionFn font_set_native_resolution = nullptr;
     FontSetAutoScalingEnabledFn font_set_auto_scaling_enabled = nullptr;
-    FontIsAutoScaledFn font_is_auto_scaled = nullptr;
-    FontGetPointSizeFn font_get_point_size = nullptr;
     FontGetFontHeightFn font_get_font_height = nullptr;
     CeguiStringCtorFromAnsiFn cegui_string_ctor_from_ansi = nullptr;
     CeguiStringDtorFn cegui_string_dtor = nullptr;

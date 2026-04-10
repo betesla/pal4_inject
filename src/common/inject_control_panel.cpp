@@ -25,6 +25,8 @@ std::string_view BuildDisplayLabel(const HookId id) {
         return "Wide UI centering";
     case HookId::cegui_system_initialize:
         return "CEGUI init observe";
+    case HookId::load_font_file:
+        return "UI dynamic font resync";
     case HookId::setup_minimap_texture:
         return "Minimap widescreen fix";
     case HookId::camera_update_matrix:

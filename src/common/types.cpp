@@ -32,7 +32,13 @@ constexpr std::array<EnumName<MsaaLevel>, 4> kMsaaLevels{{
     {MsaaLevel::x8, "8x"},
 }};
 
-constexpr std::array<EnumName<HookId>, 14> kHookIds{{
+constexpr std::array<EnumName<ScriptMode>, 3> kScriptModes{{
+    {ScriptMode::inherit, "inherit"},
+    {ScriptMode::cs, "cs"},
+    {ScriptMode::csb, "csb"},
+}};
+
+constexpr std::array<EnumName<HookId>, 15> kHookIds{{
     {HookId::process_ui_event, "process_ui_event"},
     {HookId::handle_ui_message, "handle_ui_message"},
     {HookId::simulate_key_press_and_release, "simulate_key_press_and_release"},
@@ -42,6 +48,7 @@ constexpr std::array<EnumName<HookId>, 14> kHookIds{{
     {HookId::gi_talk, "gi_talk"},
     {HookId::cegui_renderer_constructor_2, "cegui_renderer_constructor_2"},
     {HookId::cegui_system_initialize, "cegui_system_initialize"},
+    {HookId::load_font_file, "load_font_file"},
     {HookId::setup_minimap_texture, "setup_minimap_texture"},
     {HookId::camera_update_matrix, "camera_update_matrix"},
     {HookId::d3d9_set_present_parameters, "d3d9_set_present_parameters"},
@@ -92,6 +99,10 @@ const char* ToString(const MsaaLevel level) noexcept {
     return FindEnumName(level, kMsaaLevels);
 }
 
+const char* ToString(const ScriptMode mode) noexcept {
+    return FindEnumName(mode, kScriptModes);
+}
+
 const char* ToString(const HookId id) noexcept {
     return FindEnumName(id, kHookIds);
 }
@@ -104,8 +115,24 @@ bool TryParseMsaaLevel(const std::string_view text, MsaaLevel* out) noexcept {
     return TryParseEnum(text, kMsaaLevels, out);
 }
 
+bool TryParseScriptMode(const std::string_view text, ScriptMode* out) noexcept {
+    return TryParseEnum(text, kScriptModes, out);
+}
+
 bool TryParseHookId(const std::string_view text, HookId* out) noexcept {
     return TryParseEnum(text, kHookIds, out);
+}
+
+std::optional<std::uint32_t> ScriptModeToCsbFlag(const ScriptMode mode) noexcept {
+    switch (mode) {
+    case ScriptMode::inherit:
+        return std::nullopt;
+    case ScriptMode::cs:
+        return 0U;
+    case ScriptMode::csb:
+        return 1U;
+    }
+    return std::nullopt;
 }
 
 }  // namespace pal4::inject

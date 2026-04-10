@@ -44,6 +44,7 @@ public:
     void SetMsaaLevel(MsaaLevel level);
     MsaaLevel GetMsaaLevel() const;
 
+    void SetLastFontSync(std::string_view summary, bool ok);
     void SetLastUiEvent(std::string_view text);
     void SetLastError(std::string_view text);
     void SetCrashArtifacts(
@@ -88,6 +89,8 @@ private:
     std::uint32_t last_paliv_entry_observed_ = 0;
     std::string last_ui_event_;
     std::string last_error_;
+    std::string last_font_sync_summary_;
+    bool last_font_sync_ok_ = false;
     std::string last_crash_summary_;
     std::string last_crash_report_path_;
     std::string last_crash_dump_path_;

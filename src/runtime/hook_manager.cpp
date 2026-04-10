@@ -1,5 +1,6 @@
 #include "hook_manager.h"
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 
@@ -262,6 +263,7 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::gi_talk:
         case HookId::cegui_renderer_constructor_2:
         case HookId::cegui_system_initialize:
+        case HookId::load_font_file:
         case HookId::setup_minimap_texture:
         case HookId::camera_update_matrix:
         case HookId::d3d9_set_present_parameters:
@@ -288,6 +290,18 @@ bool HookManager::Initialize(std::string* error) {
         descriptors.push_back(registration.descriptor);
     }
     GetRuntimeState().InitializeInventory(descriptors);
+    std::stable_sort(
+        registrations_.begin(),
+        registrations_.end(),
+        [](const HookRegistration& lhs, const HookRegistration& rhs) {
+            if (lhs.install_on_bootstrap != rhs.install_on_bootstrap) {
+                return lhs.install_on_bootstrap && !rhs.install_on_bootstrap;
+            }
+            if (lhs.descriptor.bootstrap_order != rhs.descriptor.bootstrap_order) {
+                return lhs.descriptor.bootstrap_order < rhs.descriptor.bootstrap_order;
+            }
+            return static_cast<int>(lhs.descriptor.id) < static_cast<int>(rhs.descriptor.id);
+        });
     initialized_ = true;
     return true;
 }
@@ -297,17 +311,43 @@ bool HookManager::InstallBootstrapHooks(std::string* error) {
         return false;
     }
 
+    std::vector<std::string> optional_failures;
     for (auto& registration : registrations_) {
         if (!registration.install_on_bootstrap) {
             continue;
         }
         if (!InstallHook(registration, error)) {
-            if (error) {
-                *error = std::string(ToString(registration.descriptor.id)) + ": " + *error;
+            const std::string base_error = error ? *error : "install failed";
+            const std::string full_error =
+                std::string(ToString(registration.descriptor.id)) + ": " + base_error;
+            auto& state = GetRuntimeState();
+            state.SetHookError(registration.descriptor.id, full_error);
+            if (registration.descriptor.bootstrap_required) {
+                if (error) {
+                    *error = full_error;
+                }
+                return false;
             }
-            GetRuntimeState().SetHookError(registration.descriptor.id, error ? *error : "install failed");
-            return false;
+
+            state.AppendEventLog(
+                std::string("optional_hook_install_failed hook=") +
+                ToString(registration.descriptor.id) +
+                " error=" + full_error);
+            optional_failures.push_back(full_error);
+            if (error) {
+                error->clear();
+            }
         }
+    }
+    if (!optional_failures.empty()) {
+        std::string joined = "optional bootstrap hook failures: ";
+        for (std::size_t i = 0; i < optional_failures.size(); ++i) {
+            if (i != 0) {
+                joined += " | ";
+            }
+            joined += optional_failures[i];
+        }
+        GetRuntimeState().SetLastError(joined);
     }
     return true;
 }

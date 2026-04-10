@@ -21,9 +21,21 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pal4_re/rebuild/include")
     set(PAL4_INJECT_PAL4_RE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../pal4_re")
 endif()
 
+set(PAL4_INJECT_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+set(PAL4_INJECT_BUILD_INFO_HEADER ${PAL4_INJECT_GENERATED_DIR}/pal4inject_build_info.h)
+
+add_custom_target(pal4_inject_build_info ALL
+    COMMAND ${CMAKE_COMMAND}
+        -DOUTPUT=${PAL4_INJECT_BUILD_INFO_HEADER}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/generate_build_info.cmake
+    BYPRODUCTS ${PAL4_INJECT_BUILD_INFO_HEADER}
+    COMMENT "Generating PAL4 inject build info"
+)
+
 add_library(pal4_inject_common STATIC
     src/common/camera_pitch_guard.cpp
     src/common/camera_unlock_patch.cpp
+    src/common/cegui_font_resync.cpp
     src/common/cegui_widescreen.cpp
     src/common/crash_capture.cpp
     src/common/dpi_awareness.cpp
@@ -39,12 +51,15 @@ add_library(pal4_inject_common STATIC
 target_include_directories(pal4_inject_common
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${PAL4_INJECT_GENERATED_DIR}
         ${PAL4_INJECT_PAL4_RE_ROOT}/rebuild/include
 )
 target_link_libraries(pal4_inject_common PUBLIC advapi32 user32)
+add_dependencies(pal4_inject_common pal4_inject_build_info)
 
 add_library(pal4_inject_runtime_core STATIC
     src/runtime/bootstrap.cpp
+    src/runtime/cegui_font_hooks.cpp
     src/runtime/d3d9_quality_hooks.cpp
     src/runtime/cegui_renderer_hooks.cpp
     src/runtime/camera_hooks.cpp
@@ -63,11 +78,13 @@ add_library(pal4_inject_runtime_core STATIC
 target_include_directories(pal4_inject_runtime_core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${PAL4_INJECT_GENERATED_DIR}
         ${PAL4_INJECT_PAL4_RE_ROOT}/rebuild/include
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
 )
 target_link_libraries(pal4_inject_runtime_core PUBLIC pal4_inject_common advapi32 user32)
+add_dependencies(pal4_inject_runtime_core pal4_inject_build_info)
 
 add_library(pal4_runtime_x86 SHARED
     src/runtime/dll_main.cpp
@@ -91,6 +108,7 @@ if(PAL4_INJECT_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
     )
     target_link_libraries(pal4_inject_tests PRIVATE pal4_inject_runtime_core)
+    add_dependencies(pal4_inject_tests pal4_inject_build_info)
     add_test(NAME pal4_inject_tests COMMAND pal4_inject_tests)
 endif()
 
