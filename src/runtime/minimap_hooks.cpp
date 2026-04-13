@@ -8,6 +8,7 @@
 #endif
 #include <windows.h>
 
+#include "hook_logging.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
 #include "runtime_state.h"
@@ -42,7 +43,7 @@ void LogMinimapLayoutEvent(
         << " y=" << placement.y
         << " w=" << placement.width
         << " h=" << placement.height;
-    GetRuntimeState().AppendEventLog(out.str());
+    AppendHookEventLog(HookId::setup_minimap_texture, out.str());
 }
 
 void __fastcall Hook_SetupMinimapTexture(

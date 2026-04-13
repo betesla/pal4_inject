@@ -45,8 +45,10 @@ add_library(pal4_inject_common STATIC
     src/common/input_logic.cpp
     src/common/input_queue.cpp
     src/common/launcher.cpp
+    src/common/memory_debug.cpp
     src/common/protocol.cpp
     src/common/script_mode_override.cpp
+    src/common/ui_snapshot.cpp
     src/common/types.cpp
 )
 target_include_directories(pal4_inject_common
@@ -69,13 +71,16 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/cegui_bindings.cpp
     src/runtime/crash_handler.cpp
     src/runtime/hud_layout_fixups.cpp
+    src/runtime/hook_logging.cpp
     src/runtime/hook_manager.cpp
     src/runtime/inject_control_window.cpp
     src/runtime/input_hooks.cpp
     src/runtime/ipc_server.cpp
+    src/runtime/memory_debug_runtime.cpp
     src/runtime/minimap_hooks.cpp
     src/runtime/runtime_preferences.cpp
     src/runtime/runtime_state.cpp
+    src/runtime/ui_snapshot_runtime.cpp
     src/runtime/window_focus_hooks.cpp
 )
 target_include_directories(pal4_inject_runtime_core
@@ -102,6 +107,11 @@ add_executable(pal4_injector_launcher
 )
 target_link_libraries(pal4_injector_launcher PRIVATE pal4_inject_common)
 
+add_executable(pal4_inject_cli
+    src/cli/main.cpp
+)
+target_link_libraries(pal4_inject_cli PRIVATE pal4_inject_common)
+
 if(PAL4_INJECT_BUILD_TESTS)
     enable_testing()
     add_executable(pal4_inject_tests
@@ -119,6 +129,7 @@ foreach(target
     pal4_inject_common
     pal4_inject_runtime_core
     pal4_runtime_x86
+    pal4_inject_cli
     pal4_injector_launcher
     pal4_inject_tests
 )

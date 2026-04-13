@@ -88,6 +88,11 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     }
     cached.get_system_singleton_ptr = reinterpret_cast<CeguiBindings::GetSingletonPtrFn>(proc);
 
+    if (!ResolveBinding(module, "?getGUISheet@System@CEGUI@@QBEPAVWindow@2@XZ", &proc, error)) {
+        return false;
+    }
+    cached.get_gui_sheet = reinterpret_cast<CeguiBindings::SystemGetGuiSheetFn>(proc);
+
     if (!ResolveBinding(module, "?getSingletonPtr@FontManager@CEGUI@@SAPAV12@XZ", &proc, error)) {
         return false;
     }
@@ -142,7 +147,104 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     if (!ResolveBinding(module, "?getWindow@WindowManager@CEGUI@@QBEPAVWindow@2@ABVString@2@@Z", &proc, error)) {
         return false;
     }
-    cached.window_manager_get_window = reinterpret_cast<CeguiBindings::WindowManagerGetWindowFn>(proc);
+    cached.window_manager_get_window =
+        reinterpret_cast<CeguiBindings::WindowManagerGetWindowFn>(proc);
+
+    if (!ResolveBinding(module, "?getName@Window@CEGUI@@QBEABVString@2@XZ", &proc, error)) {
+        return false;
+    }
+    cached.window_get_name = reinterpret_cast<CeguiBindings::WindowGetStringFn>(proc);
+
+    if (!ResolveBinding(module, "?getText@Window@CEGUI@@QBEABVString@2@XZ", &proc, error)) {
+        return false;
+    }
+    cached.window_get_text = reinterpret_cast<CeguiBindings::WindowGetStringFn>(proc);
+
+    if (!ResolveBinding(module, "?c_str@String@CEGUI@@QBEPBDXZ", &proc, error)) {
+        return false;
+    }
+    cached.cegui_string_c_str = reinterpret_cast<CeguiBindings::CeguiStringCStrFn>(proc);
+
+    if (!ResolveBinding(module, "?getChildCount@Window@CEGUI@@QBEIXZ", &proc, error)) {
+        return false;
+    }
+    cached.window_get_child_count =
+        reinterpret_cast<CeguiBindings::WindowGetChildCountFn>(proc);
+
+    if (!ResolveBinding(module, "?getChildAtIdx@Window@CEGUI@@QBEPAV12@I@Z", &proc, error)) {
+        return false;
+    }
+    cached.window_get_child_at_index =
+        reinterpret_cast<CeguiBindings::WindowGetChildAtIdxFn>(proc);
+
+    if (!ResolveBinding(module, "?getAbsoluteXPosition@Window@CEGUI@@QBEMXZ", &proc, error)) {
+        return false;
+    }
+    cached.window_get_absolute_x = reinterpret_cast<CeguiBindings::WindowGetScalarFn>(proc);
+
+    if (!ResolveBinding(module, "?getAbsoluteYPosition@Window@CEGUI@@QBEMXZ", &proc, error)) {
+        return false;
+    }
+    cached.window_get_absolute_y = reinterpret_cast<CeguiBindings::WindowGetScalarFn>(proc);
+
+    if (!ResolveBinding(module, "?getAbsoluteWidth@Window@CEGUI@@QBEMXZ", &proc, error)) {
+        return false;
+    }
+    cached.window_get_absolute_width = reinterpret_cast<CeguiBindings::WindowGetScalarFn>(proc);
+
+    if (!ResolveBinding(module, "?getAbsoluteHeight@Window@CEGUI@@QBEMXZ", &proc, error)) {
+        return false;
+    }
+    cached.window_get_absolute_height = reinterpret_cast<CeguiBindings::WindowGetScalarFn>(proc);
+
+    if (!ResolveBinding(module, "?isVisible@Window@CEGUI@@QBE_N_N@Z", &proc, error)) {
+        return false;
+    }
+    cached.window_is_visible = reinterpret_cast<CeguiBindings::WindowIsFlagFn>(proc);
+
+    if (!ResolveBinding(module, "?isDisabled@Window@CEGUI@@QBE_N_N@Z", &proc, error)) {
+        return false;
+    }
+    cached.window_is_disabled = reinterpret_cast<CeguiBindings::WindowIsFlagFn>(proc);
+
+    if (!ResolveBinding(module, "?isActive@Window@CEGUI@@QBE_NXZ", &proc, error)) {
+        return false;
+    }
+    cached.window_is_active = reinterpret_cast<CeguiBindings::WindowIsActiveFn>(proc);
+
+    if (!ResolveBinding(module, "?activate@Window@CEGUI@@QAEXXZ", &proc, error)) {
+        return false;
+    }
+    cached.window_activate = reinterpret_cast<CeguiBindings::WindowActivateFn>(proc);
+
+    if (!ResolveBinding(module, "?testClassName@Window@CEGUI@@QBE_NABVString@2@@Z", &proc, error)) {
+        return false;
+    }
+    cached.window_test_class_name = reinterpret_cast<CeguiBindings::WindowTestClassNameFn>(proc);
+
+    if (!ResolveBinding(module, "?hasInputFocus@Editbox@CEGUI@@QBE_NXZ", &proc, error)) {
+        return false;
+    }
+    cached.editbox_has_input_focus =
+        reinterpret_cast<CeguiBindings::WindowHasInputFocusFn>(proc);
+
+    if (!ResolveBinding(module, "?hasInputFocus@MultiLineEditbox@CEGUI@@QBE_NXZ", &proc, error)) {
+        return false;
+    }
+    cached.multiline_editbox_has_input_focus =
+        reinterpret_cast<CeguiBindings::WindowHasInputFocusFn>(proc);
+
+    if (!ResolveBinding(module, "?isReadOnly@Editbox@CEGUI@@QBE_NXZ", &proc, error)) {
+        return false;
+    }
+    cached.editbox_is_read_only =
+        reinterpret_cast<CeguiBindings::WindowIsReadOnlyFn>(proc);
+
+    if (!ResolveBinding(module, "?isReadOnly@MultiLineEditbox@CEGUI@@QBE_NXZ", &proc, error)) {
+        return false;
+    }
+    cached.multiline_editbox_is_read_only =
+        reinterpret_cast<CeguiBindings::WindowIsReadOnlyFn>(proc);
 
     if (!ResolveBinding(module, "?requestRedraw@Window@CEGUI@@QBEXXZ", &proc, error)) {
         return false;

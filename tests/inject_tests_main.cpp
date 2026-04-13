@@ -1,5 +1,6 @@
 #include <cassert>
 #include <chrono>
+#include <cstring>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -32,7 +33,11 @@
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/camera_unlock_patch.h"
 #include "pal4inject/crash_capture.h"
+#include "pal4inject/memory_debug.h"
 #include "pal4inject/protocol.h"
+#include "pal4inject/script_mode_override.h"
+#include "pal4inject/ui_snapshot.h"
+#include "memory_debug_runtime.h"
 #include "runtime_state.h"
 #include "pal4inject_build_info.h"
 
@@ -62,7 +67,7 @@ void TestResolveRuntimeAddress() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 15);
+    assert(inventory.size() == 18);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -70,6 +75,9 @@ void TestHookInventory() {
     bool found_cegui_system_init = false;
     bool found_load_font_file = false;
     bool found_setup_minimap_texture = false;
+    bool found_combat_console_set_image_position = false;
+    bool found_combat_console_set_image_position_2 = false;
+    bool found_ui_show_combat_result = false;
     bool found_camera_update_matrix = false;
     bool found_d3d9_present = false;
     bool found_reserved_wndproc = false;
@@ -118,6 +126,27 @@ void TestHookInventory() {
             assert(hook.ida_ea == pal4::inject::ida::kSetupMinimapTexture);
             assert(hook.bootstrap_order < 900);
         }
+        if (hook.id == HookId::combat_console_set_image_position) {
+            found_combat_console_set_image_position = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 8);
+            assert(hook.ida_ea == pal4::inject::ida::kCombatConsoleSetImageAndPosition);
+            assert(!hook.bootstrap_required);
+        }
+        if (hook.id == HookId::combat_console_set_image_position_2) {
+            found_combat_console_set_image_position_2 = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kCombatConsoleSetImageAndPosition2);
+            assert(!hook.bootstrap_required);
+        }
+        if (hook.id == HookId::ui_show_combat_result) {
+            found_ui_show_combat_result = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kUiShowCombatResult);
+            assert(!hook.bootstrap_required);
+        }
         if (hook.id == HookId::camera_update_matrix) {
             found_camera_update_matrix = true;
             assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
@@ -143,6 +172,9 @@ void TestHookInventory() {
     assert(found_cegui_system_init);
     assert(found_load_font_file);
     assert(found_setup_minimap_texture);
+    assert(found_combat_console_set_image_position);
+    assert(found_combat_console_set_image_position_2);
+    assert(found_ui_show_combat_result);
     assert(found_camera_update_matrix);
     assert(found_d3d9_present);
     assert(found_reserved_wndproc);
@@ -188,10 +220,62 @@ void TestScriptModeStrings() {
     assert(csb_flag.has_value() && *csb_flag == 1U);
 
     constexpr std::uintptr_t kModuleBase = 0x10000000;
-    const auto resolved = pal4::inject::ida::ResolveRuntimeAddress(
-        kModuleBase,
-        pal4::inject::ida::kIsCsbModeGlobal);
+    const auto resolved = pal4::inject::ResolveScriptModeGlobalAddress(kModuleBase);
     assert(resolved == kModuleBase + (pal4::inject::ida::kIsCsbModeGlobal - pal4::inject::ida::kLaunchExeBase));
+    assert(pal4::inject::ScriptModeFromCsbFlag(0) == pal4::inject::ScriptMode::cs);
+    assert(pal4::inject::ScriptModeFromCsbFlag(1) == pal4::inject::ScriptMode::csb);
+    assert(pal4::inject::ScriptModeFromCsbFlag(99) == pal4::inject::ScriptMode::csb);
+}
+
+void TestInheritedScriptModeOverride() {
+    const auto original_required =
+        GetEnvironmentVariableA(pal4::inject::kInjectedScriptModeEnvVar, nullptr, 0);
+    std::optional<std::string> original_value;
+    if (original_required != 0) {
+        std::string buffer(static_cast<std::size_t>(original_required), '\0');
+        const DWORD copied = GetEnvironmentVariableA(
+            pal4::inject::kInjectedScriptModeEnvVar,
+            buffer.data(),
+            static_cast<DWORD>(buffer.size()));
+        if (copied != 0 && copied < buffer.size()) {
+            original_value = std::string(buffer.data(), copied);
+        }
+    }
+
+    const auto restore_env = [&]() {
+        if (original_value.has_value()) {
+            SetEnvironmentVariableA(
+                pal4::inject::kInjectedScriptModeEnvVar,
+                original_value->c_str());
+        } else {
+            SetEnvironmentVariableA(pal4::inject::kInjectedScriptModeEnvVar, nullptr);
+        }
+    };
+
+    std::string error;
+    SetEnvironmentVariableA(pal4::inject::kInjectedScriptModeEnvVar, nullptr);
+    auto inherited = pal4::inject::LoadInheritedScriptModeOverride(&error);
+    assert(!inherited.has_value());
+    assert(error.empty());
+
+    SetEnvironmentVariableA(pal4::inject::kInjectedScriptModeEnvVar, "cs");
+    inherited = pal4::inject::LoadInheritedScriptModeOverride(&error);
+    assert(inherited.has_value());
+    assert(*inherited == pal4::inject::ScriptMode::cs);
+    assert(error.empty());
+
+    SetEnvironmentVariableA(pal4::inject::kInjectedScriptModeEnvVar, "csb");
+    inherited = pal4::inject::LoadInheritedScriptModeOverride(&error);
+    assert(inherited.has_value());
+    assert(*inherited == pal4::inject::ScriptMode::csb);
+    assert(error.empty());
+
+    SetEnvironmentVariableA(pal4::inject::kInjectedScriptModeEnvVar, "inherit");
+    inherited = pal4::inject::LoadInheritedScriptModeOverride(&error);
+    assert(!inherited.has_value());
+    assert(!error.empty());
+
+    restore_env();
 }
 
 void TestProtocolRoundTrip() {
@@ -225,6 +309,34 @@ void TestProtocolRoundTrip() {
     assert(parsed.expected_call_count == 42);
     assert(parsed.timeout_ms == 5000);
 
+    command = {};
+    command.kind = ProtocolCommandKind::fill_ui_ref;
+    command.ui_ref = "e7";
+    command.text = "hello world";
+    assert(pal4::inject::ParseProtocolCommand(
+        pal4::inject::FormatProtocolCommand(command),
+        &parsed,
+        &error));
+    assert(parsed.kind == ProtocolCommandKind::fill_ui_ref);
+    assert(parsed.ui_ref == "e7");
+    assert(parsed.text == "hello world");
+
+    command = {};
+    command.kind = ProtocolCommandKind::write_memory;
+    command.address_space = pal4::inject::AddressSpace::ida_ea;
+    command.address = pal4::inject::ida::kIsCsbModeGlobal;
+    command.hex_bytes = "01000000";
+    command.unsafe_code_write = true;
+    assert(pal4::inject::ParseProtocolCommand(
+        pal4::inject::FormatProtocolCommand(command),
+        &parsed,
+        &error));
+    assert(parsed.kind == ProtocolCommandKind::write_memory);
+    assert(parsed.address_space == pal4::inject::AddressSpace::ida_ea);
+    assert(parsed.address == pal4::inject::ida::kIsCsbModeGlobal);
+    assert(parsed.hex_bytes == "01000000");
+    assert(parsed.unsafe_code_write);
+
     ProtocolResponse response{};
     response.ok = true;
     response.status = "snapshot";
@@ -238,26 +350,230 @@ void TestProtocolRoundTrip() {
     assert(parsed_response.fields["bootstrap_ready"] == "1");
 }
 
+void TestUiSnapshotSerialization() {
+    pal4::inject::UiSnapshotTree tree{};
+    tree.root.ref = "e1";
+    tree.root.type = "gui_sheet";
+    tree.root.name = "Desktop";
+    tree.root.path = "Desktop";
+    tree.root.visible = true;
+    tree.root.enabled = true;
+
+    pal4::inject::UiSnapshotNode child{};
+    child.ref = "e2";
+    child.type = "button";
+    child.name = "BtnNewGame";
+    child.path = "Desktop/BtnNewGame";
+    child.text = "New Game";
+    child.rect = {10, 20, 110, 60};
+    child.visible = true;
+    child.enabled = true;
+    child.clickable = true;
+    tree.root.children.push_back(child);
+
+    const std::string payload = pal4::inject::SerializeUiSnapshotTree(tree);
+    pal4::inject::UiSnapshotTree parsed{};
+    std::string error;
+    assert(pal4::inject::ParseUiSnapshotTree(payload, &parsed, &error));
+    assert(pal4::inject::CountUiSnapshotNodes(parsed) == 2);
+    const auto* by_ref = pal4::inject::FindUiSnapshotNodeByRef(parsed, "e2");
+    assert(by_ref);
+    assert(by_ref->name == "BtnNewGame");
+    const auto* by_path = pal4::inject::FindUiSnapshotNodeByPath(parsed, "Desktop/BtnNewGame");
+    assert(by_path);
+    assert(by_path->clickable);
+    assert(pal4::inject::UiSnapshotTreeContainsText(parsed, "Game"));
+    const auto display = pal4::inject::FormatUiSnapshotTreeForDisplay(parsed);
+    assert(display.find("[ref=e2]") != std::string::npos);
+    assert(display.find("BtnNewGame") != std::string::npos);
+}
+
+void TestMemoryDebugHelpers() {
+    pal4::inject::AddressSpace address_space = pal4::inject::AddressSpace::runtime_va;
+    assert(pal4::inject::TryParseAddressSpace("ida_ea", &address_space));
+    assert(address_space == pal4::inject::AddressSpace::ida_ea);
+
+    pal4::inject::MemoryScalarType scalar_type = pal4::inject::MemoryScalarType::u32;
+    assert(pal4::inject::TryParseMemoryScalarType("f64", &scalar_type));
+    assert(scalar_type == pal4::inject::MemoryScalarType::f64);
+    assert(pal4::inject::SizeOfMemoryScalarType(pal4::inject::MemoryScalarType::ptr) == 4);
+
+    std::uint32_t address = 0;
+    assert(pal4::inject::ParseAddressValue("0x1234", &address));
+    assert(address == 0x1234U);
+
+    std::vector<std::uint8_t> bytes;
+    std::string error;
+    assert(pal4::inject::ParseHexBytes("DEADBEEF", &bytes, &error));
+    assert(bytes.size() == 4);
+    assert(bytes[0] == 0xDE);
+    assert(pal4::inject::FormatHexBytes(bytes) == "DEADBEEF");
+
+    assert(pal4::inject::EncodeScalarValue(
+        pal4::inject::MemoryScalarType::u32,
+        "305419896",
+        &bytes,
+        &error));
+    assert(bytes.size() == 4);
+    std::string decoded;
+    assert(pal4::inject::DecodeScalarValue(
+        pal4::inject::MemoryScalarType::u32,
+        bytes,
+        &decoded,
+        &error));
+    assert(decoded == "305419896");
+}
+
+void TestMemoryRuntimeHelpers() {
+    std::string error;
+    auto* writable_page = static_cast<std::uint8_t*>(VirtualAlloc(
+        nullptr,
+        4096,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE));
+    assert(writable_page);
+    std::memset(writable_page, 0x11, 16);
+    const auto writable_address = static_cast<std::uint32_t>(
+        reinterpret_cast<std::uintptr_t>(writable_page));
+
+    pal4::inject::MemoryRegionInfo region{};
+    assert(pal4::inject::QueryMemoryRegion(
+        pal4::inject::AddressSpace::runtime_va,
+        writable_address,
+        &region,
+        &error));
+    assert(region.readable);
+    assert(region.writable);
+    assert(!region.executable);
+
+    std::vector<std::uint8_t> read_bytes;
+    assert(pal4::inject::ReadMemoryRegion(
+        pal4::inject::AddressSpace::runtime_va,
+        writable_address,
+        4,
+        &read_bytes,
+        &region,
+        &error));
+    assert(read_bytes.size() == 4);
+    assert(read_bytes[0] == 0x11);
+
+    std::vector<std::uint8_t> payload{0xAA, 0xBB, 0xCC, 0xDD};
+    std::vector<std::uint8_t> before_bytes;
+    std::vector<std::uint8_t> after_bytes;
+    assert(pal4::inject::WriteMemoryRegion(
+        pal4::inject::AddressSpace::runtime_va,
+        writable_address,
+        payload,
+        false,
+        &region,
+        &before_bytes,
+        &after_bytes,
+        &error));
+    assert(before_bytes[0] == 0x11);
+    assert(after_bytes == payload);
+    assert(std::memcmp(writable_page, payload.data(), payload.size()) == 0);
+    VirtualFree(writable_page, 0, MEM_RELEASE);
+
+    auto* executable_page = static_cast<std::uint8_t*>(VirtualAlloc(
+        nullptr,
+        4096,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE));
+    assert(executable_page);
+    executable_page[0] = 0x90;
+    DWORD old_protect = 0;
+    assert(VirtualProtect(executable_page, 4096, PAGE_EXECUTE_READ, &old_protect));
+    const auto executable_address = static_cast<std::uint32_t>(
+        reinterpret_cast<std::uintptr_t>(executable_page));
+    error.clear();
+    assert(!pal4::inject::WriteMemoryRegion(
+        pal4::inject::AddressSpace::runtime_va,
+        executable_address,
+        std::vector<std::uint8_t>{0xCC},
+        false,
+        &region,
+        &before_bytes,
+        &after_bytes,
+        &error));
+    assert(error.find("unsafe_code_write") != std::string::npos);
+    assert(pal4::inject::WriteMemoryRegion(
+        pal4::inject::AddressSpace::runtime_va,
+        executable_address,
+        std::vector<std::uint8_t>{0xCC},
+        true,
+        &region,
+        &before_bytes,
+        &after_bytes,
+        &error));
+    assert(executable_page[0] == 0xCC);
+    VirtualFree(executable_page, 0, MEM_RELEASE);
+}
+
 void TestInjectControlPanelModel() {
     const auto rows = pal4::inject::BuildInjectControlPanelRows();
-    assert(rows.size() == 15);
-    assert(rows.front().id == HookId::process_ui_event);
-    assert(rows.front().allow_mode_change);
-    assert(rows[7].id == HookId::cegui_renderer_constructor_2);
-    assert(rows[8].id == HookId::cegui_system_initialize);
-    assert(rows[9].id == HookId::load_font_file);
-    assert(rows[10].id == HookId::setup_minimap_texture);
-    assert(rows[11].id == HookId::camera_update_matrix);
-    assert(rows[12].id == HookId::d3d9_set_present_parameters);
-    assert(rows[13].id == HookId::pal4_main_wndproc);
-    assert(rows[13].allow_mode_change);
-    assert(rows[14].id == HookId::handle_player_input_events);
-    assert(!rows[14].allow_mode_change);
+    assert(rows.size() == 18);
+
+    const auto find_row =
+        [&rows](const HookId id) -> const pal4::inject::InjectControlPanelRow* {
+            for (const auto& row : rows) {
+                if (row.id == id) {
+                    return &row;
+                }
+            }
+            return nullptr;
+        };
+
+    const auto* process_ui_row = find_row(HookId::process_ui_event);
+    assert(process_ui_row);
+    assert(process_ui_row->page == pal4::inject::InjectControlPanelPage::input_ui);
+    assert(process_ui_row->group_label == std::wstring_view(L"\u754c\u9762\u4e0e\u8f93\u5165"));
+    assert(process_ui_row->label == std::wstring_view(L"\u754c\u9762\u4e8b\u4ef6\u66ff\u6362"));
+    assert(process_ui_row->allow_mode_change);
+
+    const auto* wndproc_row = find_row(HookId::pal4_main_wndproc);
+    assert(wndproc_row);
+    assert(wndproc_row->allow_mode_change);
+
+    const auto* handle_player_input_row = find_row(HookId::handle_player_input_events);
+    assert(handle_player_input_row);
+    assert(!handle_player_input_row->allow_mode_change);
+
+    const auto* gi_talk_row = find_row(HookId::gi_talk);
+    assert(gi_talk_row);
+    assert(gi_talk_row->page == pal4::inject::InjectControlPanelPage::script_text);
+    assert(gi_talk_row->group_label == std::wstring_view(L"\u811a\u672c\u4e0e\u6587\u672c"));
+
+    const auto* renderer_row = find_row(HookId::cegui_renderer_constructor_2);
+    assert(renderer_row);
+    assert(renderer_row->page == pal4::inject::InjectControlPanelPage::render_visual);
+    assert(renderer_row->group_label == std::wstring_view(L"\u6e32\u67d3\u4e0e\u753b\u9762"));
+
+    const auto* combat_number_row = find_row(HookId::combat_console_set_image_position);
+    assert(combat_number_row);
+    assert(!combat_number_row->label.empty());
+    assert(combat_number_row->allow_mode_change);
+
+    const auto* combat_result_row = find_row(HookId::ui_show_combat_result);
+    assert(combat_result_row);
+    assert(combat_result_row->group_label == std::wstring_view(L"\u6e32\u67d3\u4e0e\u753b\u9762"));
+
+    const auto* camera_row = find_row(HookId::camera_update_matrix);
+    assert(camera_row);
+    assert(camera_row->page == pal4::inject::InjectControlPanelPage::camera);
+    assert(camera_row->group_label == std::wstring_view(L"\u76f8\u673a"));
 
     const auto modes = pal4::inject::BuildInjectControlPanelModes();
     assert(modes.size() == 4);
     assert(modes[0] == pal4::inject::HookMode::observe_only);
     assert(modes[3] == pal4::inject::HookMode::replace_strict);
+    assert(pal4::inject::BuildInjectControlPanelPageLabel(pal4::inject::InjectControlPanelPage::overview) ==
+           std::wstring_view(L"\u6982\u89c8"));
+    assert(pal4::inject::BuildInjectControlPanelPageLabel(pal4::inject::InjectControlPanelPage::render_visual) ==
+           std::wstring_view(L"\u6e32\u67d3\u4e0e\u753b\u9762"));
+    assert(pal4::inject::BuildInjectControlPanelModeLabel(pal4::inject::HookMode::observe_only) ==
+           std::wstring_view(L"\u4ec5\u89c2\u5bdf"));
+    assert(pal4::inject::BuildInjectControlPanelModeLabel(pal4::inject::HookMode::replace_strict) ==
+           std::wstring_view(L"\u5f3a\u5236\u66ff\u6362"));
     assert(pal4::inject::FindInjectControlPanelModeIndex(pal4::inject::HookMode::mirror_compare) == 1);
     assert(pal4::inject::InjectControlPanelModeFromIndex(2) == pal4::inject::HookMode::replace_with_fallback);
     assert(pal4::inject::InjectControlPanelModeFromIndex(99) == pal4::inject::HookMode::observe_only);
@@ -270,16 +586,19 @@ void TestInjectSettingsRoundTrip() {
         HookId::process_ui_event,
         pal4::inject::HookMode::replace_with_fallback,
         pal4::inject::HookMode::replace_with_fallback,
+        true,
     });
     settings.hooks.push_back({
         HookId::d3d9_set_present_parameters,
         pal4::inject::HookMode::observe_only,
         pal4::inject::HookMode::replace_with_fallback,
+        false,
     });
     settings.hooks.push_back({
         HookId::load_font_file,
         pal4::inject::HookMode::replace_with_fallback,
         pal4::inject::HookMode::replace_with_fallback,
+        true,
     });
 
     std::string error;
@@ -303,9 +622,11 @@ void TestInjectSettingsRoundTrip() {
     const auto* d3d9_present = find_hook(HookId::d3d9_set_present_parameters);
     assert(d3d9_present);
     assert(d3d9_present->active_mode == pal4::inject::HookMode::replace_with_fallback);
+    assert(!d3d9_present->log_enabled);
     const auto* load_font_file = find_hook(HookId::load_font_file);
     assert(load_font_file);
     assert(load_font_file->mode == pal4::inject::HookMode::replace_with_fallback);
+    assert(load_font_file->log_enabled);
 
     const auto temp_path =
         std::filesystem::temp_directory_path() / "pal4_inject_settings_unit_test.ini";
@@ -511,6 +832,31 @@ void TestCeguiWidescreenPlanMath() {
     assert(plan_1920_1080.uniform_scale == 1.8F);
     assert(plan_1920_1080.horizontal_bias_pixels == 240.0F);
     assert(plan_1920_1080.logical_horizontal_padding > 133.33F && plan_1920_1080.logical_horizontal_padding < 133.34F);
+    const float centered_ui_x =
+        pal4::inject::ComputeCenteredUiLogicalX(plan_1920_1080, 102.0F);
+    assert(centered_ui_x > 235.33F && centered_ui_x < 235.34F);
+
+    const float minimap_logical_x = pal4::inject::ComputeWidescreenHudLogicalX(
+        plan_1920_1080,
+        0.0F,
+        pal4::inject::WidescreenHudAnchor::left_edge);
+    assert(minimap_logical_x < -133.3F && minimap_logical_x > -133.4F);
+    const float minimap_screen_x =
+        pal4::inject::ProjectWidescreenLogicalXToPhysicalPixels(
+            plan_1920_1080,
+            minimap_logical_x);
+    assert(minimap_screen_x > -0.001F && minimap_screen_x < 0.001F);
+
+    const float portrait_logical_x = pal4::inject::ComputeWidescreenHudLogicalX(
+        plan_1920_1080,
+        704.0F,
+        pal4::inject::WidescreenHudAnchor::right_edge);
+    assert(portrait_logical_x > 837.33F && portrait_logical_x < 837.34F);
+    const float portrait_screen_x =
+        pal4::inject::ProjectWidescreenLogicalXToPhysicalPixels(
+            plan_1920_1080,
+            portrait_logical_x);
+    assert(portrait_screen_x > 1747.19F && portrait_screen_x < 1747.21F);
 
     float mouse_x = 0.0F;
     float mouse_y = 0.0F;
@@ -543,17 +889,13 @@ void TestCeguiWidescreenPlanMath() {
 
     const auto minimap_1920_1080 = pal4::inject::BuildWidescreenMinimapPlacement(1920, 1080);
     assert(minimap_1920_1080.apply);
-    assert(minimap_1920_1080.x == 244);
+    assert(minimap_1920_1080.x == 4);
     assert(minimap_1920_1080.y == 719);
     assert(minimap_1920_1080.width == 311);
     assert(minimap_1920_1080.height == 311);
 
     const auto minimap_1280_800 = pal4::inject::BuildWidescreenMinimapPlacement(1280, 800);
-    assert(minimap_1280_800.apply);
-    assert(minimap_1280_800.x == 109);
-    assert(minimap_1280_800.y == 532);
-    assert(minimap_1280_800.width == 231);
-    assert(minimap_1280_800.height == 231);
+    assert(!minimap_1280_800.apply);
 }
 
 void TestCeguiDynamicFontResyncMath() {
@@ -679,165 +1021,63 @@ ProtocolResponse ReadPalivState(const std::string& pipe_name) {
     return SendCommand(pipe_name, command);
 }
 
-struct MenuButtonTarget {
-    std::string window_name;
-    int left = 0;
-    int top = 0;
-    int right = 0;
-    int bottom = 0;
-};
-
-std::filesystem::path ResolveMainWindowLayoutPath() {
-    char* game_root_env = nullptr;
-    std::size_t game_root_len = 0;
-    _dupenv_s(&game_root_env, &game_root_len, "PAL4_GAME_ROOT");
-    const std::filesystem::path game_root = game_root_env
-        ? std::filesystem::path(std::string(game_root_env, game_root_len ? game_root_len - 1 : 0))
-        : std::filesystem::path();
-    free(game_root_env);
-    return game_root / "gamedata" / "decompressedData" / "ui" / "layouts" / "MainWindow.xml";
-}
-
-std::filesystem::path ResolveMenuWindowLayoutPath() {
-    char* game_root_env = nullptr;
-    std::size_t game_root_len = 0;
-    _dupenv_s(&game_root_env, &game_root_len, "PAL4_GAME_ROOT");
-    const std::filesystem::path game_root = game_root_env
-        ? std::filesystem::path(std::string(game_root_env, game_root_len ? game_root_len - 1 : 0))
-        : std::filesystem::path();
-    free(game_root_env);
-    return game_root / "gamedata" / "decompressedData" / "ui" / "layouts" / "menuWindow.xml";
-}
-
-std::optional<MenuButtonTarget> ParseMenuButtonTarget(
-    const std::filesystem::path& xml_path,
-    const std::vector<std::string>& candidate_names) {
-    if (!std::filesystem::exists(xml_path)) {
-        return std::nullopt;
-    }
-
-    std::ifstream file(xml_path);
-    if (!file) {
-        return std::nullopt;
-    }
-
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    const std::string xml = buffer.str();
-
-    for (const auto& name : candidate_names) {
-        const std::string marker = "Name=\"" + name + "\"";
-        const auto name_pos = xml.find(marker);
-        if (name_pos == std::string::npos) {
-            continue;
-        }
-
-        const auto window_start = xml.rfind("<Window", name_pos);
-        const auto window_end = xml.find("</Window>", name_pos);
-        if (window_start == std::string::npos || window_end == std::string::npos) {
-            continue;
-        }
-
-        const auto window_xml = xml.substr(window_start, window_end - window_start);
-        const auto rect_marker = "UnifiedAreaRect\" Value=\"{{0.000000,";
-        const auto rect_pos = window_xml.find(rect_marker);
-        if (rect_pos == std::string::npos) {
-            continue;
-        }
-        const auto value_begin = rect_pos + std::string("UnifiedAreaRect\" Value=\"").size();
-        const auto value_end = window_xml.find('"', value_begin);
-        if (value_end == std::string::npos) {
-            continue;
-        }
-
-        const std::string rect_value = window_xml.substr(value_begin, value_end - value_begin);
-        float x0 = 0.0F;
-        float y0 = 0.0F;
-        float x1 = 0.0F;
-        float y1 = 0.0F;
-        if (std::sscanf(
-                rect_value.c_str(),
-                "{{%*f,%f},{%*f,%f},{%*f,%f},{%*f,%f}}",
-                &x0,
-                &y0,
-                &x1,
-                &y1) != 4) {
-            continue;
-        }
-
-        MenuButtonTarget target{};
-        target.window_name = name;
-        target.left = static_cast<int>(x0);
-        target.top = static_cast<int>(y0);
-        target.right = static_cast<int>(x1);
-        target.bottom = static_cast<int>(y1);
-        return target;
-    }
-
-    return std::nullopt;
-}
-
-std::optional<MenuButtonTarget> ResolveButtonTarget(const std::string& logical_name) {
-    if (logical_name == "new_game") {
-        return ParseMenuButtonTarget(ResolveMainWindowLayoutPath(), {"BtnNewGame", "NewGameBtn"});
-    }
-    if (logical_name == "exit_game") {
-        return ParseMenuButtonTarget(ResolveMainWindowLayoutPath(), {"BtnExit", "ExitBtn"});
-    }
-    if (logical_name == "confirm_exit") {
-        const auto layout = ResolveMenuWindowLayoutPath();
-        auto target = ParseMenuButtonTarget(layout, {"BtnModel"});
-        const auto parent = ParseMenuButtonTarget(layout, {"PanelMenu"});
-        if (target.has_value() && parent.has_value()) {
-            target->left += parent->left;
-            target->right += parent->left;
-            target->top += parent->top;
-            target->bottom += parent->top;
-        }
-        return target;
-    }
-    return std::nullopt;
-}
-
-std::uint32_t PackClientPoint(const int x, const int y) {
-    return static_cast<std::uint32_t>((y & 0xFFFF) << 16) |
-        static_cast<std::uint32_t>(x & 0xFFFF);
-}
-
-void ClickClientPoint(
-    const std::string& pipe_name,
-    const int x,
-    const int y,
-    const DWORD settle_ms = 80) {
-    const auto lparam = PackClientPoint(x, y);
+pal4::inject::UiSnapshotTree ReadUiSnapshot(const std::string& pipe_name) {
     ProtocolCommand command{};
-    command.kind = ProtocolCommandKind::enqueue_ui_message;
-
-    command.ui_message = {WM_MOUSEMOVE, 0, lparam, false};
-    auto response = SendCommand(pipe_name, command);
+    command.kind = ProtocolCommandKind::snapshot_ui;
+    const auto response = SendCommand(pipe_name, command);
     assert(response.ok);
-    std::this_thread::sleep_for(std::chrono::milliseconds(settle_ms));
+    const auto tree_it = response.fields.find("tree");
+    assert(tree_it != response.fields.end());
 
-    command.ui_message = {WM_LBUTTONDOWN, MK_LBUTTON, lparam, false};
-    response = SendCommand(pipe_name, command);
-    assert(response.ok);
-    std::this_thread::sleep_for(std::chrono::milliseconds(settle_ms));
-
-    command.ui_message = {WM_LBUTTONUP, 0, lparam, false};
-    response = SendCommand(pipe_name, command);
-    assert(response.ok);
-    std::this_thread::sleep_for(std::chrono::milliseconds(settle_ms));
+    pal4::inject::UiSnapshotTree tree{};
+    std::string error;
+    const bool parsed = pal4::inject::ParseUiSnapshotTree(tree_it->second, &tree, &error);
+    if (!parsed) {
+        std::cerr << "ParseUiSnapshotTree failed: " << error << "\n";
+    }
+    assert(parsed);
+    return tree;
 }
 
-void ClickMenuButton(const std::string& pipe_name, const std::string& logical_name) {
-    const auto target = ResolveButtonTarget(logical_name);
-    if (!target.has_value()) {
-        std::cerr << "failed to resolve menu target: " << logical_name << "\n";
+const pal4::inject::UiSnapshotNode* FindUiNodeByName(
+    const pal4::inject::UiSnapshotNode& node,
+    const std::string_view name) {
+    if (node.name == name) {
+        return &node;
     }
-    assert(target.has_value());
-    const int center_x = (target->left + target->right) / 2;
-    const int center_y = (target->top + target->bottom) / 2;
-    ClickClientPoint(pipe_name, center_x, center_y);
+    for (const auto& child : node.children) {
+        if (const auto* found = FindUiNodeByName(child, name)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+std::string WaitForUiNodeRefByName(
+    const std::string& pipe_name,
+    const std::string_view name,
+    const DWORD timeout_ms) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (std::chrono::steady_clock::now() < deadline) {
+        const auto tree = ReadUiSnapshot(pipe_name);
+        if (const auto* node = FindUiNodeByName(tree.root, name)) {
+            return node->ref;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return {};
+}
+
+void ClickUiRef(const std::string& pipe_name, const std::string& ref) {
+    ProtocolCommand command{};
+    command.kind = ProtocolCommandKind::click_ui_ref;
+    command.ui_ref = ref;
+    const auto response = SendCommand(pipe_name, command);
+    if (!response.ok) {
+        std::cerr << "click_ui_ref failed: ref=" << ref
+                  << " message=" << response.message << "\n";
+    }
+    assert(response.ok);
 }
 
 void SendWindowClose(const std::string& pipe_name) {
@@ -1119,6 +1359,34 @@ void CleanupHarness(IntegrationHarness* harness) {
     harness->process.Close();
 }
 
+ProtocolResponse ReadMemoryViaProtocol(
+    const std::string& pipe_name,
+    const pal4::inject::AddressSpace address_space,
+    const std::uint32_t address,
+    const std::uint32_t size) {
+    ProtocolCommand command{};
+    command.kind = ProtocolCommandKind::read_memory;
+    command.address_space = address_space;
+    command.address = address;
+    command.size = size;
+    return SendCommand(pipe_name, command);
+}
+
+ProtocolResponse WriteMemoryViaProtocol(
+    const std::string& pipe_name,
+    const pal4::inject::AddressSpace address_space,
+    const std::uint32_t address,
+    const std::string_view bytes,
+    const bool unsafe_code_write) {
+    ProtocolCommand command{};
+    command.kind = ProtocolCommandKind::write_memory;
+    command.address_space = address_space;
+    command.address = address;
+    command.hex_bytes = std::string(bytes);
+    command.unsafe_code_write = unsafe_code_write;
+    return SendCommand(pipe_name, command);
+}
+
 void TestSkipLogoToMenuScenario() {
     auto harness = LaunchHarness();
     assert(WaitForSnapshotField(harness.pipe_name, "bootstrap_ready", "1", 5000));
@@ -1128,12 +1396,18 @@ void TestSkipLogoToMenuScenario() {
         1,
         15000));
     assert(WaitForSnapshotField(harness.pipe_name, "last_font_sync_ok", "1", 5000));
+    const auto new_game_ref = WaitForUiNodeRefByName(harness.pipe_name, "BtnNewGame", 20000);
+    const auto exit_ref = WaitForUiNodeRefByName(harness.pipe_name, "BtnExit", 20000);
+    assert(!new_game_ref.empty());
+    assert(!exit_ref.empty());
     CleanupHarness(&harness);
 }
 
 void TestMenuNewGameTransitionScenario() {
     auto harness = LaunchHarness();
-    ClickMenuButton(harness.pipe_name, "new_game");
+    const auto new_game_ref = WaitForUiNodeRefByName(harness.pipe_name, "BtnNewGame", 20000);
+    assert(!new_game_ref.empty());
+    ClickUiRef(harness.pipe_name, new_game_ref);
 
     for (int i = 0; i < 24; ++i) {
         PressKey(harness.pipe_name, VK_ESCAPE, false, 120);
@@ -1148,15 +1422,85 @@ void TestMenuNewGameTransitionScenario() {
 
 void TestMenuExitScenario() {
     auto harness = LaunchHarness();
-    ClickMenuButton(harness.pipe_name, "exit_game");
+    const auto exit_ref = WaitForUiNodeRefByName(harness.pipe_name, "BtnExit", 20000);
+    assert(!exit_ref.empty());
+    ClickUiRef(harness.pipe_name, exit_ref);
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    ClickMenuButton(harness.pipe_name, "confirm_exit");
+    const auto confirm_ref = WaitForUiNodeRefByName(harness.pipe_name, "BtnModel", 10000);
+    assert(!confirm_ref.empty());
+    ClickUiRef(harness.pipe_name, confirm_ref);
 
     if (!WaitForProcessExit(harness.process.process_info.hProcess, 3000)) {
         SendWindowClose(harness.pipe_name);
     }
     assert(WaitForProcessExit(harness.process.process_info.hProcess, 10000));
     harness.process.Close();
+}
+
+void TestMemoryDebugScenario() {
+    auto harness = LaunchHarness();
+    assert(WaitForSnapshotField(harness.pipe_name, "bootstrap_ready", "1", 5000));
+    const auto state = ReadUiState(harness.pipe_name);
+    const auto module_base_it = state.fields.find("main_module_base");
+    assert(module_base_it != state.fields.end());
+
+    std::uint32_t module_base = 0;
+    assert(pal4::inject::ParseAddressValue(module_base_it->second, &module_base));
+    const auto runtime_address = static_cast<std::uint32_t>(
+        pal4::inject::ResolveScriptModeGlobalAddress(module_base));
+
+    const auto by_ida = ReadMemoryViaProtocol(
+        harness.pipe_name,
+        pal4::inject::AddressSpace::ida_ea,
+        pal4::inject::ida::kIsCsbModeGlobal,
+        4);
+    assert(by_ida.ok);
+    const auto by_va = ReadMemoryViaProtocol(
+        harness.pipe_name,
+        pal4::inject::AddressSpace::runtime_va,
+        runtime_address,
+        4);
+    assert(by_va.ok);
+    assert(by_ida.fields.at("bytes") == by_va.fields.at("bytes"));
+
+    std::vector<std::uint8_t> current_bytes;
+    std::string error;
+    assert(pal4::inject::ParseHexBytes(by_ida.fields.at("bytes"), &current_bytes, &error));
+    const bool enable_csb = current_bytes[0] == 0;
+    const std::string new_value = enable_csb ? "01000000" : "00000000";
+    const auto write_response = WriteMemoryViaProtocol(
+        harness.pipe_name,
+        pal4::inject::AddressSpace::runtime_va,
+        runtime_address,
+        new_value,
+        false);
+    assert(write_response.ok);
+    const auto verify_response = ReadMemoryViaProtocol(
+        harness.pipe_name,
+        pal4::inject::AddressSpace::runtime_va,
+        runtime_address,
+        4);
+    assert(verify_response.ok);
+    assert(verify_response.fields.at("bytes") == new_value);
+
+    const auto restore_response = WriteMemoryViaProtocol(
+        harness.pipe_name,
+        pal4::inject::AddressSpace::runtime_va,
+        runtime_address,
+        by_ida.fields.at("bytes"),
+        false);
+    assert(restore_response.ok);
+
+    const auto unsafe_rejected = WriteMemoryViaProtocol(
+        harness.pipe_name,
+        pal4::inject::AddressSpace::ida_ea,
+        pal4::inject::ida::kProcessUiEvent,
+        "90",
+        false);
+    assert(!unsafe_rejected.ok);
+    assert(unsafe_rejected.message.find("unsafe_code_write") != std::string::npos);
+
+    CleanupHarness(&harness);
 }
 
 void MaybeRunIntegrationSmoke() {
@@ -1171,6 +1515,7 @@ void MaybeRunIntegrationSmoke() {
     }
 
     TestSkipLogoToMenuScenario();
+    TestMemoryDebugScenario();
 
     char* run_full = nullptr;
     std::size_t run_full_len = 0;
@@ -1195,9 +1540,13 @@ int main() {
     TestDpiAwarenessStrings();
     TestMsaaLevelStrings();
     TestScriptModeStrings();
+    TestInheritedScriptModeOverride();
     TestInjectControlPanelModel();
     TestInjectSettingsRoundTrip();
     TestProtocolRoundTrip();
+    TestUiSnapshotSerialization();
+    TestMemoryDebugHelpers();
+    TestMemoryRuntimeHelpers();
     TestInputLogic();
     TestInputQueue();
     TestRuntimeEventLog();

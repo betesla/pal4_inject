@@ -9,6 +9,7 @@
 #endif
 #include <windows.h>
 
+#include "hook_logging.h"
 #include "pal4inject/camera_pitch_guard.h"
 #include "runtime_state.h"
 
@@ -51,7 +52,7 @@ void MaybeLogCameraPitchClamp(
         << " original_second_angle=" << original_pitch
         << " normalized_second_angle=" << NormalizeAngle360(original_pitch)
         << " applied_second_angle=" << clamped_pitch;
-    GetRuntimeState().AppendEventLog(out.str());
+    AppendHookEventLog(HookId::camera_update_matrix, out.str());
 }
 
 int __fastcall Hook_CameraUpdateMatrix(

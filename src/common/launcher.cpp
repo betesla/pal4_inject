@@ -615,6 +615,14 @@ bool SendPipeCommand(
         }
         return false;
     }
+    DWORD pipe_mode = PIPE_READMODE_MESSAGE;
+    if (!SetNamedPipeHandleState(pipe, &pipe_mode, nullptr, nullptr)) {
+        if (error) {
+            *error = "SetNamedPipeHandleState failed: " + FormatWindowsError(GetLastError());
+        }
+        CloseHandle(pipe);
+        return false;
+    }
 
     bool ok = false;
     do {
@@ -629,30 +637,25 @@ bool SendPipeCommand(
 
         response->clear();
         for (;;) {
-            char buffer[4096];
+            char buffer[65536];
             DWORD read = 0;
             if (!ReadFile(pipe, buffer, sizeof(buffer), &read, nullptr)) {
                 const DWORD read_error = GetLastError();
                 if (read_error == ERROR_MORE_DATA) {
                     response->append(buffer, buffer + read);
+                    continue;
+                } else if (read_error == ERROR_BROKEN_PIPE) {
+                    break;
                 } else {
                     if (error) {
                         *error = "ReadFile(pipe) failed: " + FormatWindowsError(read_error);
                     }
                     break;
                 }
-            } else {
+            } else if (read != 0) {
                 response->append(buffer, buffer + read);
             }
-
-            DWORD bytes_available = 0;
-            if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &bytes_available, nullptr)) {
-                if (error) {
-                    *error = "PeekNamedPipe failed: " + FormatWindowsError(GetLastError());
-                }
-                break;
-            }
-            if (bytes_available == 0) {
+            if (read == 0) {
                 break;
             }
         }

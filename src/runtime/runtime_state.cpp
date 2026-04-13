@@ -23,6 +23,7 @@ void RuntimeState::InitializeInventory(const std::vector<HookDescriptor>& invent
         status.id = descriptor.id;
         status.mode = descriptor.mode;
         status.preferred_active_mode = DefaultPreferredActiveMode(descriptor);
+        status.log_enabled = true;
         hook_statuses_.push_back(status);
     }
 }
@@ -162,6 +163,22 @@ HookMode RuntimeState::GetPreferredActiveHookMode(const HookId id) const {
     return HookMode::replace_with_fallback;
 }
 
+void RuntimeState::SetHookLogEnabled(const HookId id, const bool enabled) {
+    std::scoped_lock lock(mutex_);
+    if (auto* status = FindHookStatusUnlocked(id)) {
+        status->log_enabled = enabled;
+    }
+    state_cv_.notify_all();
+}
+
+bool RuntimeState::GetHookLogEnabled(const HookId id) const {
+    std::scoped_lock lock(mutex_);
+    if (const auto* status = FindHookStatusUnlocked(id)) {
+        return status->log_enabled;
+    }
+    return true;
+}
+
 void RuntimeState::SetHookError(const HookId id, const std::string_view error) {
     std::scoped_lock lock(mutex_);
     if (auto* status = FindHookStatusUnlocked(id)) {
@@ -278,6 +295,7 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.pipe_ready = pipe_ready_;
     snapshot.ui_dispatch_ready = ui_dispatch_ready_;
     snapshot.crash_handler_ready = crash_handler_ready_;
+    snapshot.main_module_base = main_module_base_;
     snapshot.msaa_level = msaa_level_;
     snapshot.current_paliv_entry = current_paliv_entry;
     snapshot.last_paliv_entry_observed = last_paliv_entry_observed_;

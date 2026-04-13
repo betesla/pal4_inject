@@ -131,6 +131,20 @@ const char* ToString(const ProtocolCommandKind kind) noexcept {
         return "read_event_log";
     case ProtocolCommandKind::set_hook_mode:
         return "set_hook_mode";
+    case ProtocolCommandKind::snapshot_ui:
+        return "snapshot_ui";
+    case ProtocolCommandKind::click_ui_ref:
+        return "click_ui_ref";
+    case ProtocolCommandKind::fill_ui_ref:
+        return "fill_ui_ref";
+    case ProtocolCommandKind::type_text:
+        return "type_text";
+    case ProtocolCommandKind::query_memory:
+        return "query_memory";
+    case ProtocolCommandKind::read_memory:
+        return "read_memory";
+    case ProtocolCommandKind::write_memory:
+        return "write_memory";
     case ProtocolCommandKind::shutdown:
         return "shutdown";
     }
@@ -181,6 +195,31 @@ std::string FormatProtocolCommand(const ProtocolCommand& command) {
     case ProtocolCommandKind::set_hook_mode:
         out += " hook=" + std::string(ToString(command.hook_id));
         out += " mode=" + std::string(ToString(command.hook_mode));
+        break;
+    case ProtocolCommandKind::click_ui_ref:
+        out += " ref=" + EscapeProtocolToken(command.ui_ref);
+        break;
+    case ProtocolCommandKind::fill_ui_ref:
+        out += " ref=" + EscapeProtocolToken(command.ui_ref);
+        out += " text=" + EscapeProtocolToken(command.text);
+        break;
+    case ProtocolCommandKind::type_text:
+        out += " text=" + EscapeProtocolToken(command.text);
+        break;
+    case ProtocolCommandKind::query_memory:
+        out += " space=" + std::string(ToString(command.address_space));
+        out += " addr=" + FormatHexValue(command.address);
+        break;
+    case ProtocolCommandKind::read_memory:
+        out += " space=" + std::string(ToString(command.address_space));
+        out += " addr=" + FormatHexValue(command.address);
+        out += " size=" + std::to_string(command.size);
+        break;
+    case ProtocolCommandKind::write_memory:
+        out += " space=" + std::string(ToString(command.address_space));
+        out += " addr=" + FormatHexValue(command.address);
+        out += " bytes=" + EscapeProtocolToken(command.hex_bytes);
+        out += " unsafe_code_write=" + std::string(command.unsafe_code_write ? "1" : "0");
         break;
     default:
         break;
@@ -295,6 +334,35 @@ bool ParseProtocolCommand(
                 }
                 return false;
             }
+        } else if (key == "space") {
+            if (!TryParseAddressSpace(value, &parsed.address_space)) {
+                if (error) {
+                    *error = "invalid address space";
+                }
+                return false;
+            }
+        } else if (key == "addr") {
+            if (!ParseUint32Value(value, &parsed.address)) {
+                if (error) {
+                    *error = "invalid address";
+                }
+                return false;
+            }
+        } else if (key == "size") {
+            if (!ParseUint32Value(value, &parsed.size)) {
+                if (error) {
+                    *error = "invalid size";
+                }
+                return false;
+            }
+        } else if (key == "ref") {
+            parsed.ui_ref = value;
+        } else if (key == "text") {
+            parsed.text = value;
+        } else if (key == "bytes") {
+            parsed.hex_bytes = value;
+        } else if (key == "unsafe_code_write") {
+            parsed.unsafe_code_write = (value == "1" || value == "true");
         }
     }
 

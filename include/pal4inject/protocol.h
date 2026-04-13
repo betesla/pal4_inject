@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 
+#include "pal4inject/memory_debug.h"
 #include "pal4inject/types.h"
 
 namespace pal4::inject {
@@ -20,6 +21,13 @@ enum class ProtocolCommandKind : std::uint8_t {
     wait_for_paliv_state,
     read_event_log,
     set_hook_mode,
+    snapshot_ui,
+    click_ui_ref,
+    fill_ui_ref,
+    type_text,
+    query_memory,
+    read_memory,
+    write_memory,
     shutdown,
 };
 
@@ -32,7 +40,14 @@ struct ProtocolCommand {
     std::uint64_t expected_call_count = 0;
     std::uint32_t expected_paliv_entry = 0;
     std::uint32_t timeout_ms = 0;
+    AddressSpace address_space = AddressSpace::runtime_va;
+    std::uint32_t address = 0;
+    std::uint32_t size = 0;
     bool key_up = false;
+    bool unsafe_code_write = false;
+    std::string ui_ref;
+    std::string text;
+    std::string hex_bytes;
 };
 
 struct ProtocolResponse {

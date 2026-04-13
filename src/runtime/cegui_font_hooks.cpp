@@ -11,6 +11,7 @@
 #include <windows.h>
 
 #include "cegui_bindings.h"
+#include "hook_logging.h"
 #include "pal4inject/cegui_font_resync.h"
 #include "pal4inject/ida_addresses.h"
 #include "runtime_state.h"
@@ -33,37 +34,6 @@ struct ScopedCeguiString {
         }
     }
 };
-
-void AppendRuntimeDebugLog(const std::string_view line) {
-    char temp_path[MAX_PATH];
-    const DWORD temp_len = GetTempPathA(MAX_PATH, temp_path);
-    if (temp_len == 0 || temp_len >= MAX_PATH) {
-        return;
-    }
-
-    std::string log_path = std::string(temp_path, temp_len);
-    if (!log_path.empty() && log_path.back() != '\\') {
-        log_path.push_back('\\');
-    }
-    log_path += "pal4_inject_runtime.log";
-
-    HANDLE file = CreateFileA(
-        log_path.c_str(),
-        FILE_APPEND_DATA,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr,
-        OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr);
-    if (file == INVALID_HANDLE_VALUE) {
-        return;
-    }
-
-    const std::string payload = std::string(line) + "\r\n";
-    DWORD written = 0;
-    WriteFile(file, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr);
-    CloseHandle(file);
-}
 
 std::uintptr_t MainModuleBase() {
     auto& state = GetRuntimeState();
@@ -113,9 +83,7 @@ std::string FormatFloatCompact(const float value) {
 }
 
 void LogFontEvent(const std::string_view text) {
-    auto& state = GetRuntimeState();
-    state.AppendEventLog(text);
-    AppendRuntimeDebugLog(text);
+    AppendHookEventLog(HookId::load_font_file, text);
 }
 
 std::string BuildFontSummary(

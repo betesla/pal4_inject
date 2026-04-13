@@ -38,6 +38,7 @@ bool SavePersistedRuntimePreferences(std::string* error) {
             status.id,
             status.mode,
             status.preferred_active_mode,
+            status.log_enabled,
         });
     }
     return SaveInjectPersistedSettings(RuntimePreferencesPath(), settings, error);
@@ -104,6 +105,25 @@ void ApplyMsaaPreference(
     }
 }
 
+void ApplyHookLogPreference(
+    const HookId id,
+    const bool enabled,
+    const bool persist,
+    const bool update_last_ui_event) {
+    auto& state = GetRuntimeState();
+    state.SetHookLogEnabled(id, enabled);
+    if (update_last_ui_event) {
+        state.SetLastUiEvent(
+            std::string("inject_control:log:") + ToString(id) + "=" + (enabled ? "on" : "off"));
+    }
+    if (persist) {
+        std::string error;
+        if (!SavePersistedRuntimePreferences(&error)) {
+            RecordPersistenceError(error);
+        }
+    }
+}
+
 bool LoadPersistedRuntimePreferences(std::string* error) {
     InjectPersistedSettings settings{};
     if (!LoadInjectPersistedSettings(RuntimePreferencesPath(), &settings, error)) {
@@ -112,6 +132,7 @@ bool LoadPersistedRuntimePreferences(std::string* error) {
 
     for (const auto& hook : settings.hooks) {
         GetRuntimeState().SetPreferredActiveHookMode(hook.id, hook.active_mode);
+        GetRuntimeState().SetHookLogEnabled(hook.id, hook.log_enabled);
         ApplyHookModePreference(hook.id, hook.mode, false, false);
     }
     ApplyMsaaPreference(settings.msaa_level, false, false);

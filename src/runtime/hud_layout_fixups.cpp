@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "cegui_bindings.h"
+#include "hook_logging.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
 #include "runtime_state.h"
@@ -177,7 +178,7 @@ void LogHudLayoutFixups(
         << " width=" << plan.width
         << " height=" << plan.height
         << " changed=" << changed_count;
-    GetRuntimeState().AppendEventLog(out.str());
+    AppendHookEventLog(HookId::cegui_renderer_constructor_2, out.str());
 }
 
 }  // namespace

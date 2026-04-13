@@ -36,8 +36,9 @@ constexpr int kPageMargin = 14;
 constexpr int kSummaryLabelWidth = 90;
 constexpr int kNameWidth = 230;
 constexpr int kToggleWidth = 72;
+constexpr int kLogWidth = 72;
 constexpr int kComboWidth = 210;
-constexpr int kStatusWidth = 490;
+constexpr int kStatusWidth = 408;
 constexpr int kRowHeight = 28;
 constexpr int kSectionHeight = 22;
 constexpr int kPageTitleHeight = 22;
@@ -45,6 +46,7 @@ constexpr int kPageNoteHeight = 36;
 constexpr int kColumnHeaderHeight = 20;
 constexpr int kHookToggleBaseId = 1000;
 constexpr int kHookComboBaseId = 2000;
+constexpr int kHookLogToggleBaseId = 2500;
 constexpr int kMsaaComboId = 3000;
 constexpr int kMsaaStatusId = 3001;
 constexpr int kOverviewStatusId = 3002;
@@ -59,6 +61,7 @@ struct PanelRowRuntime {
     InjectControlPanelRow row{};
     HWND label = nullptr;
     HWND toggle = nullptr;
+    HWND log_toggle = nullptr;
     HWND combo = nullptr;
     HWND status = nullptr;
 };
@@ -568,6 +571,7 @@ void UpdateHookRowDisplay(
     const bool installed = status && status->installed;
     const bool allow_toggle = runtime.row.allow_mode_change && installed;
     EnableWindow(runtime.toggle, allow_toggle);
+    EnableWindow(runtime.log_toggle, TRUE);
 
     const bool combo_interaction_active = IsComboInteractionActive(runtime.combo);
     if (!combo_interaction_active) {
@@ -584,6 +588,11 @@ void UpdateHookRowDisplay(
         runtime.toggle,
         BM_SETCHECK,
         status->mode == HookMode::observe_only ? BST_UNCHECKED : BST_CHECKED,
+        0);
+    SendMessageW(
+        runtime.log_toggle,
+        BM_SETCHECK,
+        status->log_enabled ? BST_CHECKED : BST_UNCHECKED,
         0);
 
     if (!combo_interaction_active) {
@@ -727,17 +736,18 @@ int BuildHookPageHeader(
 
     CreateStaticControl(panel, L"\u529f\u80fd", kPageMargin, y, kNameWidth, kColumnHeaderHeight);
     CreateStaticControl(panel, L"\u542f\u7528", kPageMargin + kNameWidth, y, kToggleWidth, kColumnHeaderHeight);
+    CreateStaticControl(panel, L"\u65e5\u5fd7", kPageMargin + kNameWidth + kToggleWidth, y, kLogWidth, kColumnHeaderHeight);
     CreateStaticControl(
         panel,
         L"\u6a21\u5f0f",
-        kPageMargin + kNameWidth + kToggleWidth,
+        kPageMargin + kNameWidth + kToggleWidth + kLogWidth,
         y,
         kComboWidth,
         kColumnHeaderHeight);
     CreateStaticControl(
         panel,
         L"\u8fd0\u884c\u72b6\u6001",
-        kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
+        kPageMargin + kNameWidth + kToggleWidth + kLogWidth + kComboWidth + 10,
         y,
         kStatusWidth,
         kColumnHeaderHeight);
@@ -764,9 +774,17 @@ void BuildHookRowsForPage(
             kToggleWidth,
             20,
             kHookToggleBaseId + row_index);
+        const HWND log_toggle = CreateButtonControl(
+            panel,
+            L"\u65e5\u5fd7",
+            kPageMargin + kNameWidth + kToggleWidth + 8,
+            y + 2,
+            kLogWidth,
+            20,
+            kHookLogToggleBaseId + row_index);
         const HWND combo = CreateComboControl(
             panel,
-            kPageMargin + kNameWidth + kToggleWidth,
+            kPageMargin + kNameWidth + kToggleWidth + kLogWidth,
             y,
             kComboWidth,
             240,
@@ -775,11 +793,11 @@ void BuildHookRowsForPage(
         const HWND status = CreateStaticControl(
             panel,
             L"",
-            kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
+            kPageMargin + kNameWidth + kToggleWidth + kLogWidth + kComboWidth + 10,
             y + 5,
             kStatusWidth,
             20);
-        PanelRows().push_back({row, label, toggle, combo, status});
+        PanelRows().push_back({row, label, toggle, log_toggle, combo, status});
         y += kRowHeight;
     }
 }
@@ -788,6 +806,22 @@ void BuildHookPage(const HWND panel, const InjectControlPanelPage page) {
     int y = kPageMargin;
     y = BuildHookPageHeader(panel, page, y, page == InjectControlPanelPage::render_visual);
     BuildHookRowsForPage(panel, page, y);
+}
+
+LRESULT CALLBACK PagePanelProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+    switch (message) {
+    case WM_COMMAND:
+    case WM_NOTIFY: {
+        const HWND root = GetAncestor(hwnd, GA_ROOT);
+        if (root && root != hwnd) {
+            return SendMessageW(root, message, wparam, lparam);
+        }
+        break;
+    }
+    default:
+        break;
+    }
+    return DefWindowProcW(hwnd, message, wparam, lparam);
 }
 
 void BuildPanelControls(const HWND hwnd) {
@@ -845,6 +879,7 @@ void BuildPanelControls(const HWND hwnd) {
             nullptr,
             nullptr);
         ApplyFont(panel);
+        SetWindowLongPtrW(panel, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&PagePanelProc));
         g_page_panels[static_cast<std::size_t>(PageIndex(page))] = panel;
     }
 
@@ -925,8 +960,8 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
             notify_code == BN_CLICKED) {
             const int row_index = control_id - kHookToggleBaseId;
             auto& row = PanelRows()[static_cast<std::size_t>(row_index)];
-            const bool enabled =
-                SendMessageW(row.toggle, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            const bool enabled = GetRuntimeState().GetHookMode(row.row.id) == HookMode::observe_only;
+            SendMessageW(row.toggle, BM_SETCHECK, enabled ? BST_CHECKED : BST_UNCHECKED, 0);
             const HookMode next_mode = enabled
                 ? ResolveEnabledHookMode(row.row.id)
                 : HookMode::observe_only;
@@ -945,6 +980,17 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
                 InjectControlPanelModeFromIndex(selected),
                 true,
                 true);
+            RefreshPanelContent(hwnd);
+            return 0;
+        }
+        if (control_id >= kHookLogToggleBaseId &&
+            control_id < kHookLogToggleBaseId + static_cast<int>(PanelRows().size()) &&
+            notify_code == BN_CLICKED) {
+            const int row_index = control_id - kHookLogToggleBaseId;
+            auto& row = PanelRows()[static_cast<std::size_t>(row_index)];
+            const bool enabled = !GetRuntimeState().GetHookLogEnabled(row.row.id);
+            SendMessageW(row.log_toggle, BM_SETCHECK, enabled ? BST_CHECKED : BST_UNCHECKED, 0);
+            ApplyHookLogPreference(row.row.id, enabled, true, true);
             RefreshPanelContent(hwnd);
             return 0;
         }

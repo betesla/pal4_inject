@@ -8,11 +8,17 @@
 ## Runtime Shape
 - `pal4_injector_launcher.exe`
   - `CreateProcessA(..., CREATE_SUSPENDED)`
+  - 若指定 `--script-mode cs|csb`，在恢复主线程前写入 `g_IsCSBMode @ 0x8C27FC`
+  - 同时通过继承环境变量把请求模式传给子进程，供 injected runtime 在 bootstrap 期复核
   - 远程写入 `pal4_runtime_x86.dll` 路径
   - `CreateRemoteThread(LoadLibraryW)`
   - 等待 named event
   - 默认在 ready event 后恢复主线程
-  - 测试侧再通过 named pipe 读取 `read_ui_state`
+  - agent / 测试侧再通过 named pipe 读取 `read_ui_state` / `snapshot_ui` / memory debug 命令
+- `pal4_inject_cli.exe`
+  - 只做 pipe 客户端与人类可读输出
+  - `snapshot -> click/fill/type/press -> snapshot`
+  - `mem-query/read/write` 与 `wait-path/wait-text`
 - `pal4_runtime_x86.dll`
   - `DllMain` 只拉起 bootstrap thread
 - bootstrap thread 负责：
@@ -34,12 +40,22 @@
     - IDA-backed hook metadata
   - `camera_pitch_guard.cpp`
     - second-angle 归一化与绝对安全区夹紧
+  - `cegui_font_resync.cpp`
+    - 已知 dynamic UI 字体识别与目标字体分辨率计算
   - `input_logic.cpp`
     - 可测试的 `ProcessUIEvent` 纯消息翻译逻辑
   - `protocol.cpp`
     - named pipe 文本协议编解码
+  - `ui_snapshot.cpp`
+    - UI 快照树结构、序列化/反序列化、显示格式化
+  - `memory_debug.cpp`
+    - 地址空间 / scalar type / hex bytes 编解码
   - `launcher.cpp`
-    - 进程创建、远程注入、ready 检查、pipe 请求
+    - 进程创建、远程脚本模式覆盖、子进程环境传播、DLL 注入、ready 检查、pipe 请求
+  - `script_mode_override.cpp`
+    - `g_IsCSBMode` 地址解析
+    - 本地脚本模式读写
+    - 继承脚本模式环境变量解析
   - `crash_capture.cpp`
     - 异常码筛选、crash summary 格式化、artifact 命名
   - `inject_control_panel.cpp`
@@ -48,14 +64,29 @@
     - 本地用户目录下的面板 / 画质设置持久化
 - `src/runtime`
   - `runtime_state.cpp`
-    - bootstrap / pipe / hook call count / last UI event / last error / crash artifacts
+    - bootstrap / pipe / hook call count / last UI event / last error / font sync / crash artifacts
   - `hook_manager.cpp`
     - x86 inline detour、trampoline、prologue 校验、卸载
+    - bootstrap hook 按稳定优先级排序安装；实验性 hook 可后置且失败不阻断主链
   - `cegui_bindings.cpp`
     - CEGUIBase 导出解析
+    - Window tree / name / text / focus / editbox / geometry 绑定
+  - `cegui_font_hooks.cpp`
+    - `LoadFontFile` seam
+    - 已知 dynamic UI 字体的运行时重同步
+  - `ui_snapshot_runtime.cpp`
+    - CEGUI gui sheet 枚举
+    - 最近一次 `snapshot_ui` 的 ref cache
+    - `click_ui_ref / fill_ui_ref / type_text` runtime side effect
   - `cegui_renderer_hooks.cpp`
     - shared `CEGUI_Renderer_Constructor_2` widescreen pillarbox patch
     - object-local synthetic vtable for centered wide-aspect rendering
+  - `battle_ui_layout_hooks.cpp`
+    - `SetProperties_4C2550` 的战斗调用点筛选与 `x` 偏移补偿
+    - `ui_showCombatHint / ui_showCombatHint2` 浮动提示窗居中修正
+  - `hud_layout_fixups.cpp`
+    - gameplay HUD edge-anchor fixups for `minimap.xml` / `portrait.xml`
+    - runtime restore/apply path when widescreen renderer mode changes
   - `d3d9_quality_hooks.cpp`
     - `D3D9SetPresentParameters` seam
     - 通过原始多重采样探测路径接入 `MSAA` 请求值
@@ -69,16 +100,24 @@
     - VEH / unhandled exception handler、crash report、minidump
   - `inject_control_window.cpp`
     - 原生 Win32 控制面板、`MSAA` 选项、hook 快速开关和 mode 下拉框、`Ctrl+F10` 隐藏/显示
+    - 每条 hook 独立的 `日志` 勾选框，可只打开某一项的运行时诊断输出
     - 初始吸附游戏窗口；手动拖动后停止自动跟随
     - 作为游戏窗口 owned popup 存在，减少焦点切回游戏时的外部窗体干扰
   - `runtime_preferences.cpp`
     - 把 panel 改动统一转成 runtime side effect
     - 保存 / 加载 remembered hook mode 与 `MSAA` 设置
+  - `memory_debug_runtime.cpp`
+    - `IDA EA / runtime VA` 解析
+    - `VirtualQuery` region 探测
+    - 受控内存读写、回读校验、代码页 unsafe gate
   - `ipc_server.cpp`
     - `ping / hook_status / enqueue_ui_message / simulate_key / read_ui_state / read_paliv_state / set_hook_mode / shutdown`
-    - `read_ui_state` 同时导出 crash capture 状态和最近一次 artifact 路径
+    - `snapshot_ui / click_ui_ref / fill_ui_ref / type_text`
+    - `query_memory / read_memory / write_memory`
+    - `read_ui_state` 同时导出 crash capture 状态、最近一次 artifact 路径，以及 `requested_script_mode / script_mode / script_mode_flag / main_module_base`
   - `bootstrap.cpp`
     - bootstrap 主流程
+    - 复核 launcher 期请求的脚本模式，必要时补写并记录日志
 
 ## Current Behavior Boundary
 - 已默认安装的 Hook：
@@ -90,11 +129,15 @@
   - `InitializeDirectInput`
   - `giTalk` 脚本执行入口
   - `CEGUI_Renderer_Constructor_2`
+  - `LoadFontFile`
   - `SetupMinimapTexture`
+  - `SetProperties_4C2550`（战斗调用点筛选）
+  - `ui_showCombatHint`
+  - `ui_showCombatHint2`
   - `Camera_UpdateMatrix`
   - `D3D9SetPresentParameters`
-- 只做 inventory、不默认安装：
   - `PAL4_Main_WndProc`
+- 只做 inventory、不默认安装：
   - `HandlePlayerInputEvents`
 - `ProcessUIEvent` 当前是 `replace_with_fallback`
   - 已直接接管：
@@ -105,6 +148,18 @@
     - 滚轮
     - `WM_MOUSELEAVE`
   - 其余消息仍回落到原始 trampoline
+- `snapshot_ui`
+  - 从当前 CEGUI gui sheet 递归导出确定性窗口树
+  - ref 使用 `e1/e2/...`
+  - 旧 ref 在下一次 `snapshot_ui` 后失效
+- `click_ui_ref / fill_ui_ref`
+  - 优先走 `HandleUIMessageAndProcess / ProcessUIEvent` seam
+  - 不依赖前台 OS 窗口消息队列
+- memory debug
+  - `query_memory` 暴露 region state / type / protect / readable / writable / executable
+  - `read_memory` 单次上限 1024 bytes
+  - `write_memory` 单次上限 512 bytes
+  - executable page 默认拒绝写；必须显式 `unsafe_code_write=1`
 - `giTalk`
   - 不 hook `0x5D8DA0` 注册壳
   - 当前 hook 的是已注册脚本回调 `ProxyClass_Vtable12 @ 0x5DFB10`
@@ -115,6 +170,12 @@
   - 通过 object-local synthetic vtable 只改当前 renderer 对象的 `doRender` / `getRenderRect`
   - 不直接改 `CEGUIBase.dll` 的全局 vtable，也不假设 renderer 对象有 `1280x800` 变体那么大的内存布局
   - minimap 贴图区域额外通过 `SetupMinimapTexture` hook 按同一套 wide plan 重算 `x / y / width / height`
+  - 战斗内程序控制的浮动数字、状态图标和胜利图会在命中的 `SetProperties_4C2550` 调用点上补一层 `logical_horizontal_padding`
+  - `ui_showCombatHint / ui_showCombatHint2` 这两类浮动提示窗会在原始 `setPosition + 居中` 后整体右移到中央 4:3 UI 框
+  - gameplay HUD 不再完全跟随居中的 4:3 框：
+    - `minimap.xml` 关键窗口改靠左下
+    - `portrait.xml` 关键窗口改靠右上
+    - 与 `SetupMinimapTexture` 的左下角纹理重排保持一致
 - inject control panel
   - 不依赖 PAL4 自己的 CEGUI widget 体系
   - 采用单独的原生 Win32 tool window，避免在 PAL4 UI 资源未完全稳定前把新的调试面板绑死在游戏 CEGUI 上
@@ -126,9 +187,18 @@
 
 ## Testing Strategy
 - 单元测试默认只跑纯逻辑与协议测试。
+- 还覆盖：
+  - UI snapshot 树序列化 / ref 查找
+  - scalar / hex / address space helper
+  - 进程内 scratch page 读写与 executable page unsafe gate
 - 真正的原始 EXE 注入 smoke 由环境变量显式开启：
   - `PAL4_INJECT_RUN_INTEGRATION=1`
   - `PAL4_GAME_ROOT=<真实游戏目录>`
+- 集成 smoke 会验证：
+  - `snapshot_ui` 可见主菜单按钮 ref
+  - `snapshot -> click` 菜单驱动
+  - `mem-read --ida` 与 `mem-read --va` 一致
+  - 数据页写入恢复、代码页 unsafe 拒绝
 - 完整菜单场景默认不在每次集成 smoke 中启用：
   - `PAL4_INJECT_RUN_FULL_SCENARIOS=1`
 - 这样本地默认开发循环不依赖真实游戏窗口，也避免无意中启动长时间挂着的进程。
@@ -139,4 +209,6 @@
 - 当前高优先级结论：
   - PAL4 主 UI 的 `system / systemBold / dialog_simsun` 都是 `Dynamic` 字体
   - 原字体定义本身已经开启 `AutoScaled="true"` 和 `AntiAlias="true"`
-  - 当前 inject 宽屏补丁在 renderer 层对 CEGUI 顶点做统一缩放，因此文字模糊更像是 glyph quad 被再次非整数缩放后的采样问题，而不只是“字体没开抗锯齿”
+  - 当前 Phase 1 修复会在 `LoadFontFile` 成功创建已知 dynamic 字体后，保持 `NativeHorzRes=800 / NativeVertRes=600`，再按中央有效 UI 区域尺寸重发 `notifyScreenResolution`
+  - 不再在 `CEGUI_System_Initialize` 返回后立刻枚举字体对象，避免早期探针触发 `abort(0)` / 非正常终止
+  - 上游 CEGUI 源码还显示：dynamic font glyph atlas 由 `fontName + "_auto_glyph_images"` 这类 imageset 承载，renderer 侧可以进一步按字体 atlas texture 做专项处理

@@ -68,6 +68,7 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
     for (const auto& [_, hook] : sorted_hooks) {
         out << "hook." << ToString(hook.id) << ".mode=" << ToString(hook.mode) << '\n';
         out << "hook." << ToString(hook.id) << ".active_mode=" << ToString(hook.active_mode) << '\n';
+        out << "hook." << ToString(hook.id) << ".log_enabled=" << (hook.log_enabled ? "1" : "0") << '\n';
     }
     return out.str();
 }
@@ -157,6 +158,17 @@ bool ParseInjectPersistedSettings(
             if (!TryParseHookMode(value, &setting.active_mode)) {
                 if (error) {
                     *error = "invalid hook active_mode value: " + value;
+                }
+                return false;
+            }
+        } else if (field_name == "log_enabled") {
+            if (value == "1" || value == "true" || value == "on") {
+                setting.log_enabled = true;
+            } else if (value == "0" || value == "false" || value == "off") {
+                setting.log_enabled = false;
+            } else {
+                if (error) {
+                    *error = "invalid hook log_enabled value: " + value;
                 }
                 return false;
             }

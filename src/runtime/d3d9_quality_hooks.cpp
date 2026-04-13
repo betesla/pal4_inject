@@ -8,6 +8,7 @@
 #endif
 #include <windows.h>
 
+#include "hook_logging.h"
 #include "pal4inject/ida_addresses.h"
 #include "runtime_state.h"
 
@@ -17,37 +18,6 @@ namespace {
 using D3d9SetPresentParametersFn = int (__cdecl*)(int*, int, int);
 
 D3d9SetPresentParametersFn g_original_d3d9_set_present_parameters = nullptr;
-
-void AppendRuntimeDebugLog(const std::string_view line) {
-    char temp_path[MAX_PATH];
-    const DWORD temp_len = GetTempPathA(MAX_PATH, temp_path);
-    if (temp_len == 0 || temp_len >= MAX_PATH) {
-        return;
-    }
-
-    std::string log_path = std::string(temp_path, temp_len);
-    if (!log_path.empty() && log_path.back() != '\\') {
-        log_path.push_back('\\');
-    }
-    log_path += "pal4_inject_runtime.log";
-
-    HANDLE file = CreateFileA(
-        log_path.c_str(),
-        FILE_APPEND_DATA,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr,
-        OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr);
-    if (file == INVALID_HANDLE_VALUE) {
-        return;
-    }
-
-    const std::string payload = std::string(line) + "\r\n";
-    DWORD written = 0;
-    WriteFile(file, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr);
-    CloseHandle(file);
-}
 
 std::uint32_t RequestedMsaaTypeForLevel(const MsaaLevel level) noexcept {
     switch (level) {
@@ -143,8 +113,7 @@ void LogMsaaEvent(
         << " present_type=" << snapshot.applied_type
         << " present_quality=" << snapshot.applied_quality
         << " result=" << result;
-    GetRuntimeState().AppendEventLog(out.str());
-    AppendRuntimeDebugLog(out.str());
+    AppendHookEventLog(HookId::d3d9_set_present_parameters, out.str());
 }
 
 }  // namespace

@@ -13,6 +13,7 @@
 #endif
 #include <windows.h>
 
+#include "hook_logging.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
 #include "hud_layout_fixups.h"
@@ -399,7 +400,7 @@ void LogWidescreenPatchApplied(
         << " uniform_scale=" << plan.uniform_scale
         << " bias_px=" << plan.horizontal_bias_pixels
         << " logical_pad=" << plan.logical_horizontal_padding;
-    GetRuntimeState().AppendEventLog(out.str());
+    AppendHookEventLog(HookId::cegui_renderer_constructor_2, out.str());
 }
 
 void LogWidescreenPatchSkipped(
@@ -413,7 +414,7 @@ void LogWidescreenPatchSkipped(
         << " width=" << plan.width
         << " height=" << plan.height
         << " skipped=" << reason;
-    GetRuntimeState().AppendEventLog(out.str());
+    AppendHookEventLog(HookId::cegui_renderer_constructor_2, out.str());
 }
 
 void* __fastcall Hook_CeguiRendererConstructor2(void* self, void*) {

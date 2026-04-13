@@ -74,6 +74,7 @@ struct HookStatus {
     HookId id = HookId::process_ui_event;
     HookMode mode = HookMode::observe_only;
     HookMode preferred_active_mode = HookMode::replace_with_fallback;
+    bool log_enabled = true;
     bool installed = false;
     std::uint64_t call_count = 0;
     std::string last_error;

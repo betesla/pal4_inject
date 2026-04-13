@@ -14,6 +14,11 @@ void ApplyHookModePreference(
     HookMode mode,
     bool persist,
     bool update_last_ui_event);
+void ApplyHookLogPreference(
+    HookId id,
+    bool enabled,
+    bool persist,
+    bool update_last_ui_event);
 void ApplyMsaaPreference(
     MsaaLevel level,
     bool persist,

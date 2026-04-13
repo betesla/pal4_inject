@@ -2,6 +2,7 @@
 
 #include <iomanip>
 #include <sstream>
+#include <vector>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -11,15 +12,20 @@
 #include "cegui_renderer_hooks.h"
 #include "hook_manager.h"
 #include "input_hooks.h"
+#include "memory_debug_runtime.h"
+#include "pal4inject/memory_debug.h"
 #include "pal4inject/protocol.h"
 #include "pal4inject/script_mode_override.h"
+#include "pal4inject/ui_snapshot.h"
 #include "runtime_preferences.h"
 #include "runtime_state.h"
+#include "ui_snapshot_runtime.h"
 
 namespace pal4::inject {
 namespace {
 
 HANDLE g_ipc_thread = nullptr;
+constexpr DWORD kPipeBufferSize = 65536;
 
 void AppendRuntimeDebugLog(const std::string_view line) {
     char temp_path[MAX_PATH];
@@ -81,6 +87,26 @@ std::string HexValue(const std::uint32_t value) {
     return out.str();
 }
 
+void AppendMemoryRegionFields(
+    const MemoryRegionInfo& region,
+    ProtocolResponse* response) {
+    if (!response) {
+        return;
+    }
+    response->fields["address_space"] = ToString(region.address_space);
+    response->fields["input_address"] = HexValue(region.input_address);
+    response->fields["resolved_address"] = HexValue(region.resolved_address);
+    response->fields["region_base"] = HexValue(region.base);
+    response->fields["region_allocation_base"] = HexValue(region.allocation_base);
+    response->fields["region_size"] = HexValue(region.region_size);
+    response->fields["region_state"] = DescribeMemoryState(region.state);
+    response->fields["region_type"] = DescribeMemoryType(region.type);
+    response->fields["region_protect"] = DescribeMemoryProtect(region.protect);
+    response->fields["region_readable"] = region.readable ? "1" : "0";
+    response->fields["region_writable"] = region.writable ? "1" : "0";
+    response->fields["region_executable"] = region.executable ? "1" : "0";
+}
+
 std::string BuildHookSummary(const std::vector<HookStatus>& statuses) {
     std::ostringstream out;
     bool first = true;
@@ -113,6 +139,8 @@ ProtocolResponse BuildSnapshotResponse() {
     response.fields["pipe_ready"] = snapshot.pipe_ready ? "1" : "0";
     response.fields["ui_dispatch_ready"] = snapshot.ui_dispatch_ready ? "1" : "0";
     response.fields["crash_handler_ready"] = snapshot.crash_handler_ready ? "1" : "0";
+    response.fields["main_module_base"] =
+        HexValue(static_cast<std::uint32_t>(snapshot.main_module_base));
     response.fields["msaa_level"] = ToString(snapshot.msaa_level);
     response.fields["current_paliv_entry"] = HexValue(snapshot.current_paliv_entry);
     response.fields["last_paliv_entry_observed"] = HexValue(snapshot.last_paliv_entry_observed);
@@ -235,6 +263,123 @@ ProtocolResponse DispatchCommand(const ProtocolCommand& command) {
         response.fields["hook"] = ToString(command.hook_id);
         response.fields["mode"] = ToString(command.hook_mode);
         return response;
+    case ProtocolCommandKind::snapshot_ui: {
+        UiSnapshotTree tree{};
+        std::string error;
+        const bool ok = CaptureAndCacheUiSnapshot(&tree, &error);
+        response.ok = ok;
+        response.status = ok ? "snapshot_ui" : "error";
+        if (!ok) {
+            response.message = error;
+            return response;
+        }
+        response.fields["node_count"] = std::to_string(CountUiSnapshotNodes(tree));
+        response.fields["tree"] = SerializeUiSnapshotTree(tree);
+        return response;
+    }
+    case ProtocolCommandKind::click_ui_ref: {
+        std::string error;
+        const bool ok = ClickCachedUiSnapshotRef(command.ui_ref, &error);
+        response.ok = ok;
+        response.status = ok ? "click_ui_ref" : "error";
+        response.fields["ref"] = command.ui_ref;
+        if (!ok) {
+            response.message = error;
+        }
+        return response;
+    }
+    case ProtocolCommandKind::fill_ui_ref: {
+        std::string error;
+        const bool ok = FillCachedUiSnapshotRef(command.ui_ref, command.text, &error);
+        response.ok = ok;
+        response.status = ok ? "fill_ui_ref" : "error";
+        response.fields["ref"] = command.ui_ref;
+        response.fields["text_size"] = std::to_string(command.text.size());
+        if (!ok) {
+            response.message = error;
+        }
+        return response;
+    }
+    case ProtocolCommandKind::type_text: {
+        std::string error;
+        const bool ok = TypeIntoFocusedUiWindow(command.text, &error);
+        response.ok = ok;
+        response.status = ok ? "type_text" : "error";
+        response.fields["text_size"] = std::to_string(command.text.size());
+        if (!ok) {
+            response.message = error;
+        }
+        return response;
+    }
+    case ProtocolCommandKind::query_memory: {
+        MemoryRegionInfo region{};
+        std::string error;
+        const bool ok = QueryMemoryRegion(command.address_space, command.address, &region, &error);
+        response.ok = ok;
+        response.status = ok ? "query_memory" : "error";
+        if (!ok) {
+            response.message = error;
+            return response;
+        }
+        AppendMemoryRegionFields(region, &response);
+        return response;
+    }
+    case ProtocolCommandKind::read_memory: {
+        MemoryRegionInfo region{};
+        std::vector<std::uint8_t> bytes;
+        std::string error;
+        const bool ok = ReadMemoryRegion(
+            command.address_space,
+            command.address,
+            command.size,
+            &bytes,
+            &region,
+            &error);
+        response.ok = ok;
+        response.status = ok ? "read_memory" : "error";
+        if (!ok) {
+            response.message = error;
+            return response;
+        }
+        AppendMemoryRegionFields(region, &response);
+        response.fields["bytes"] = FormatHexBytes(bytes);
+        response.fields["size"] = std::to_string(bytes.size());
+        return response;
+    }
+    case ProtocolCommandKind::write_memory: {
+        MemoryRegionInfo region{};
+        std::vector<std::uint8_t> before_bytes;
+        std::vector<std::uint8_t> after_bytes;
+        std::vector<std::uint8_t> payload;
+        std::string error;
+        if (!ParseHexBytes(command.hex_bytes, &payload, &error)) {
+            response.ok = false;
+            response.status = "error";
+            response.message = error;
+            return response;
+        }
+        const bool ok = WriteMemoryRegion(
+            command.address_space,
+            command.address,
+            payload,
+            command.unsafe_code_write,
+            &region,
+            &before_bytes,
+            &after_bytes,
+            &error);
+        response.ok = ok;
+        response.status = ok ? "write_memory" : "error";
+        if (!ok) {
+            response.message = error;
+            return response;
+        }
+        AppendMemoryRegionFields(region, &response);
+        response.fields["bytes"] = FormatHexBytes(payload);
+        response.fields["before_bytes"] = FormatHexBytes(before_bytes);
+        response.fields["after_bytes"] = FormatHexBytes(after_bytes);
+        response.fields["unsafe_code_write"] = command.unsafe_code_write ? "1" : "0";
+        return response;
+    }
     case ProtocolCommandKind::shutdown:
         response.status = "shutdown";
         response.fields["shutting_down"] = "1";
@@ -265,8 +410,8 @@ DWORD WINAPI IpcServerThreadProc(LPVOID) {
             PIPE_ACCESS_DUPLEX,
             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
             1,
-            4096,
-            4096,
+            kPipeBufferSize,
+            kPipeBufferSize,
             0,
             nullptr);
         if (pipe == INVALID_HANDLE_VALUE) {
@@ -286,7 +431,7 @@ DWORD WINAPI IpcServerThreadProc(LPVOID) {
             continue;
         }
 
-        char buffer[4096];
+        char buffer[kPipeBufferSize];
         DWORD read = 0;
         ProtocolResponse response{};
         if (!ReadFile(pipe, buffer, sizeof(buffer) - 1, &read, nullptr)) {

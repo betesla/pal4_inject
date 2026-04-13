@@ -13,6 +13,7 @@ struct PersistedHookSetting {
     HookId id = HookId::process_ui_event;
     HookMode mode = HookMode::observe_only;
     HookMode active_mode = HookMode::replace_with_fallback;
+    bool log_enabled = true;
 };
 
 struct InjectPersistedSettings {

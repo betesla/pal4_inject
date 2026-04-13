@@ -8,6 +8,7 @@
 #endif
 #include <windows.h>
 
+#include "hook_logging.h"
 #include "inject_control_window.h"
 #include "runtime_state.h"
 
@@ -90,7 +91,7 @@ LRESULT __stdcall Hook_Pal4_Main_WndProc(
             << " path=ignore_minimize_for_inject_control"
             << " next_hwnd=0x" << std::hex << std::uppercase
             << reinterpret_cast<std::uintptr_t>(reinterpret_cast<HWND>(lparam));
-        state.AppendEventLog(out.str());
+        AppendHookEventLog(HookId::pal4_main_wndproc, out.str());
         state.SetLastUiEvent("PAL4_Main_WndProc:WM_ACTIVATE:inject_control");
         return 0;
     }
@@ -98,7 +99,8 @@ LRESULT __stdcall Hook_Pal4_Main_WndProc(
     if (SuppressionWindowStillValid() &&
         msg == WM_SYSCOMMAND &&
         (wparam & 0xFFF0u) == SC_MINIMIZE) {
-        state.AppendEventLog(
+        AppendHookEventLog(
+            HookId::pal4_main_wndproc,
             "hook=pal4_main_wndproc msg=WM_SYSCOMMAND path=suppress_sc_minimize_after_inject_control");
         state.SetLastUiEvent("PAL4_Main_WndProc:WM_SYSCOMMAND:inject_control");
         return 0;
@@ -107,7 +109,8 @@ LRESULT __stdcall Hook_Pal4_Main_WndProc(
     if (SuppressionWindowStillValid() &&
         msg == WM_SIZE &&
         wparam == SIZE_MINIMIZED) {
-        state.AppendEventLog(
+        AppendHookEventLog(
+            HookId::pal4_main_wndproc,
             "hook=pal4_main_wndproc msg=WM_SIZE path=suppress_size_minimized_after_inject_control");
         state.SetLastUiEvent("PAL4_Main_WndProc:WM_SIZE:inject_control");
         return 0;

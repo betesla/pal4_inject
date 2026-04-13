@@ -39,6 +39,8 @@ public:
     HookMode GetHookMode(HookId id) const;
     void SetPreferredActiveHookMode(HookId id, HookMode mode);
     HookMode GetPreferredActiveHookMode(HookId id) const;
+    void SetHookLogEnabled(HookId id, bool enabled);
+    bool GetHookLogEnabled(HookId id) const;
     void SetHookError(HookId id, std::string_view error);
     void ClearHookError(HookId id);
     void SetMsaaLevel(MsaaLevel level);

@@ -16,6 +16,7 @@
 #include "cegui_font_hooks.h"
 #include "d3d9_quality_hooks.h"
 #include "hud_layout_fixups.h"
+#include "hook_logging.h"
 #include "minimap_hooks.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
@@ -25,37 +26,6 @@
 
 namespace pal4::inject {
 namespace {
-
-void AppendRuntimeDebugLog(const std::string_view line) {
-    char temp_path[MAX_PATH];
-    const DWORD temp_len = GetTempPathA(MAX_PATH, temp_path);
-    if (temp_len == 0 || temp_len >= MAX_PATH) {
-        return;
-    }
-
-    std::string log_path = std::string(temp_path, temp_len);
-    if (!log_path.empty() && log_path.back() != '\\') {
-        log_path.push_back('\\');
-    }
-    log_path += "pal4_inject_runtime.log";
-
-    HANDLE file = CreateFileA(
-        log_path.c_str(),
-        FILE_APPEND_DATA,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr,
-        OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr);
-    if (file == INVALID_HANDLE_VALUE) {
-        return;
-    }
-
-    const std::string payload = std::string(line) + "\r\n";
-    DWORD written = 0;
-    WriteFile(file, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr);
-    CloseHandle(file);
-}
 
 using ProcessUiEventFn = bool (__thiscall*)(void*, HWND, UINT, WPARAM, LPARAM);
 using HandleUiMessageAndProcessFn = char (__thiscall*)(void*, HWND, UINT, WPARAM, LPARAM);
@@ -137,6 +107,30 @@ std::string FormatWindowsError(const DWORD code) {
     return text;
 }
 
+BOOL CALLBACK FindCurrentProcessWindowProc(HWND hwnd, LPARAM lparam) {
+    if (!IsWindowVisible(hwnd) || GetWindow(hwnd, GW_OWNER) != nullptr) {
+        return TRUE;
+    }
+
+    DWORD process_id = 0;
+    GetWindowThreadProcessId(hwnd, &process_id);
+    if (process_id != GetCurrentProcessId()) {
+        return TRUE;
+    }
+
+    auto* out = reinterpret_cast<HWND*>(lparam);
+    if (out) {
+        *out = hwnd;
+    }
+    return FALSE;
+}
+
+HWND FindCurrentProcessWindow() {
+    HWND hwnd = nullptr;
+    EnumWindows(&FindCurrentProcessWindowProc, reinterpret_cast<LPARAM>(&hwnd));
+    return hwnd;
+}
+
 std::string FormatPointer(const void* value) {
     std::ostringstream out;
     out << "0x" << std::hex << std::uppercase << reinterpret_cast<std::uintptr_t>(value);
@@ -176,9 +170,8 @@ int* ReadGameConfigPointer() {
     return config_ptr_address ? *config_ptr_address : nullptr;
 }
 
-void LogHookEvent(const std::string_view text) {
-    GetRuntimeState().AppendEventLog(text);
-    AppendRuntimeDebugLog(text);
+void LogHookEvent(const HookId id, const std::string_view text) {
+    AppendHookEventLog(id, text);
 }
 
 ProcessUiDispatchResult CallOriginalProcessUiEvent(
@@ -547,7 +540,7 @@ void LogProcessUiDispatch(
     if (!result.error.empty()) {
         out << " error=" << result.error;
     }
-    LogHookEvent(out.str());
+    LogHookEvent(hook_id, out.str());
 }
 
 bool SimulateKeyPressMirror(
@@ -582,7 +575,7 @@ bool SimulateKeyPressMirror(
     if (!key_up.error.empty()) {
         out << " error=" << key_up.error;
     }
-    LogHookEvent(out.str());
+    LogHookEvent(HookId::simulate_key_press_and_release, out.str());
     return key_up.handled;
 }
 
@@ -599,7 +592,7 @@ void LogLowLevelObserveOnlyHook(
     if (!extra.empty()) {
         out << ' ' << extra;
     }
-    LogHookEvent(out.str());
+    LogHookEvent(hook_id, out.str());
 }
 
 }  // namespace
@@ -636,6 +629,7 @@ char __fastcall Hook_HandleUiMessageAndProcess(
     const HookMode handle_mode = state.GetHookMode(HookId::handle_ui_message);
     if (handle_mode == HookMode::observe_only || handle_mode == HookMode::mirror_compare) {
         LogHookEvent(
+            HookId::handle_ui_message,
             std::string("hook=handle_ui_message mode=") + ToString(handle_mode) +
             " path=fallback_original msg=" + DescribeWindowsMessage(msg));
         return g_original_handle_ui_message
@@ -667,7 +661,7 @@ char __fastcall Hook_HandleUiMessageAndProcess(
             esc_log << " error=" << esc_error;
             state.SetLastError(esc_error);
         }
-        LogHookEvent(esc_log.str());
+        LogHookEvent(HookId::handle_ui_message, esc_log.str());
     }
 
     ReadCurrentPalivEntry();
@@ -680,7 +674,7 @@ char __fastcall Hook_HandleUiMessageAndProcess(
     if (!result.error.empty()) {
         log_line << " error=" << result.error;
     }
-    LogHookEvent(log_line.str());
+    LogHookEvent(HookId::handle_ui_message, log_line.str());
     return *message_handled;
 }
 
@@ -693,6 +687,7 @@ bool __fastcall Hook_SimulateKeyPressAndRelease(
     const HookMode mode = state.GetHookMode(HookId::simulate_key_press_and_release);
     if (mode == HookMode::observe_only || mode == HookMode::mirror_compare) {
         LogHookEvent(
+            HookId::simulate_key_press_and_release,
             std::string("hook=simulate_key_press_and_release mode=") + ToString(mode) +
             " path=fallback_original key=" + std::to_string(wide_char));
         return g_original_simulate_key_press_and_release
@@ -752,9 +747,10 @@ char __cdecl Hook_GiTalk(void* text_arg, void* voice_key_arg) {
 
     const HookMode mode = state.GetHookMode(HookId::gi_talk);
     if (mode == HookMode::observe_only || mode == HookMode::mirror_compare) {
-        LogHookEvent(
-            std::string("hook=gi_talk mode=") + ToString(mode) +
-            " path=fallback_original");
+    LogHookEvent(
+        HookId::gi_talk,
+        std::string("hook=gi_talk mode=") + ToString(mode) +
+        " path=fallback_original");
         return g_original_gi_talk
             ? g_original_gi_talk(text_arg, voice_key_arg)
             : 0;
@@ -766,7 +762,7 @@ char __cdecl Hook_GiTalk(void* text_arg, void* voice_key_arg) {
         << " original_text_arg=" << FormatPointer(text_arg)
         << " voice_key_arg=" << FormatPointer(voice_key_arg)
         << " rewritten_text=GBK:D2D1D7A2C8EB";
-    LogHookEvent(out.str());
+    LogHookEvent(HookId::gi_talk, out.str());
 
     if (!g_original_gi_talk) {
         state.SetHookError(HookId::gi_talk, "original giTalk trampoline is null");
@@ -858,10 +854,13 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
 
 bool DispatchUiMessageCommand(const UiMessageCommand& command, std::string* error) {
     if (!command.bypass_os_queue) {
-        const HWND hwnd = GetForegroundWindow();
+        HWND hwnd = FindCurrentProcessWindow();
+        if (!hwnd) {
+            hwnd = GetForegroundWindow();
+        }
         if (!hwnd) {
             if (error) {
-                *error = "GetForegroundWindow failed: " + FormatWindowsError(GetLastError());
+                *error = "failed to resolve a target window for OS queue dispatch";
             }
             return false;
         }
@@ -876,6 +875,7 @@ bool DispatchUiMessageCommand(const UiMessageCommand& command, std::string* erro
             return false;
         }
         LogHookEvent(
+            HookId::process_ui_event,
             std::string("dispatch_ui_message path=os_queue msg=") +
             DescribeWindowsMessage(command.msg));
         return true;
@@ -919,6 +919,7 @@ bool DispatchUiMessageCommand(const UiMessageCommand& command, std::string* erro
     ReadCurrentPalivEntry();
     GetRuntimeState().SetLastUiEvent(std::string("dispatch:") + DescribeWindowsMessage(command.msg));
     LogHookEvent(
+        HookId::handle_ui_message,
         std::string("dispatch_ui_message path=seam msg=") +
         DescribeWindowsMessage(command.msg) +
         " handled=" + std::to_string(handled != 0));
@@ -984,7 +985,7 @@ bool RefreshUiDispatchReady(std::string* reason) {
         *reason = ready ? std::string() : local_reason;
     }
     if (!previous && ready) {
-        LogHookEvent(std::string("ui_dispatch_ready=") + (ready ? "1" : "0"));
+        LogHookEvent(HookId::process_ui_event, std::string("ui_dispatch_ready=") + (ready ? "1" : "0"));
     }
     return ready;
 }

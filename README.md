@@ -60,12 +60,13 @@ I:\PAL4\projects\pal4_inject\build\Debug\pal4_injector_launcher.exe `
 
 ## 产物
 - `pal4_runtime_x86.dll`
+- `pal4_inject_cli.exe`
 - `pal4_injector_launcher.exe`
 - `pal4_inject_tests.exe`
 
 ## 当前范围
 - launcher 采用 suspended 启动 + `LoadLibraryW` 远程线程注入。
-- runtime DLL 通过 named event + named pipe 暴露 ready 信号和测试控制面。
+- runtime DLL 通过 named event + named pipe 暴露 ready 信号、agent/control CLI 和测试控制面。
 - runtime DLL 还会拉起一个原生 Win32 注入控制面板：
   - 默认显示在游戏窗口右上角附近
   - 默认会先跟随游戏窗口定位；用户手动拖动后就不再强制吸附
@@ -75,6 +76,10 @@ I:\PAL4\projects\pal4_inject\build\Debug\pal4_injector_launcher.exe `
   - `Ctrl+F10` 隐藏 / 显示面板
   - 作为游戏窗口的 owned popup 存在，避免点回游戏时像独立外部工具窗一样被压下去
 - Hook 框架内置 x86 inline detour，不依赖第三方 Hook 库。
+- `pal4_inject_cli.exe` 会复用同一条 named pipe，提供：
+  - `snapshot / click / fill / type / press`
+  - `state / event-log / wait-path / wait-text`
+  - `mem-query / mem-read / mem-read-scalar / mem-write-bytes / mem-write-scalar`
 - bootstrap 早期安装 crash capture：
   - `AddVectoredExceptionHandler`
   - `SetUnhandledExceptionFilter`
@@ -97,15 +102,43 @@ I:\PAL4\projects\pal4_inject\build\Debug\pal4_injector_launcher.exe `
   - `D3D9SetPresentParameters` multisample override seam
 - `PAL4_Main_WndProc` 和 `HandlePlayerInputEvents` 目前只保留 inventory，不默认安装。
 
+## Agent / Debug CLI
+- 连接方式：
+  - `pal4_inject_cli.exe --pipe <named-pipe> <command>`
+  - `pal4_inject_cli.exe --pid <game-pid> <command>`
+- 常用 UI 闭环：
+
+```powershell
+I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 snapshot
+I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 click e7
+I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 press Escape
+```
+
+- 常用内存调试：
+
+```powershell
+I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 mem-query --ida 0x8C27FC
+I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 mem-read --ida 0x8C27FC --size 4
+I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 mem-write-scalar --ida 0x8C27FC --type u32 1
+```
+
+- `snapshot` 会输出 CEGUI 当前窗口树，并给每个节点分配 `e1/e2/...` 引用。
+- `click/fill` 只接受最近一次 `snapshot` 生成的 ref；重新 `snapshot` 后旧 ref 会失效。
+- `mem-write-*` 默认允许数据页写入；若目标页可执行，必须显式加 `--unsafe-code-write`。
+- `state` 除了原有 runtime 状态，还会导出 `main_module_base`，方便 `IDA EA -> runtime VA` 换算。
+
 ## Widescreen UI
 - 对 `1280x800`，原 EXE 已有专门的宽屏 renderer 变体，保持原行为。
 - 对共享 `CEGUI_Renderer_Constructor_2` 路径上的宽屏分辨率（例如 `1600x900`、`1680x1050`、`1920x1080`）：
   - 注入 runtime 会把 UI 改成按高度等比缩放
   - 计算左右 pillarbox 留白
   - 居中显示 4:3 逻辑 UI，而不是把 UI 横向拉伸铺满整个窗口
+- 游戏内常驻 HUD 会额外补一层“贴边”修正，尽量接近原版 `1280x800` 的宽屏摆法：
+  - `minimap.xml` 可见部件改为靠左下
+  - `portrait.xml` 可见部件改为靠右上
 - 小地图纹理区域也会同步按同一套宽屏 plan 重定位：
-  - 不再继续按“整屏宽度缩放”去摆放小地图图片
-  - 避免小地图内容超出已经居中后的 UI 边框
+  - 不再继续按“居中 4:3 UI 框”的偏移去摆放小地图图片
+  - 改成和左下角 HUD 框体对齐，避免图像仍停在屏幕中部
 
 ## Crash Capture
 - runtime 常规日志：
@@ -143,5 +176,9 @@ I:\PAL4\projects\pal4_inject\build\Debug\pal4_injector_launcher.exe `
 ## 测试
 - `pal4_inject_tests.exe`
   - 默认跑纯单元测试
-  - 若设置 `PAL4_INJECT_RUN_INTEGRATION=1` 且 `PAL4_GAME_ROOT` 指向真实游戏目录，则追加 logo/menu 注入 smoke
-  - 若额外设置 `PAL4_INJECT_RUN_FULL_SCENARIOS=1`，则继续跑 `NewGame` / `Exit` 的完整菜单场景
+  - 若设置 `PAL4_INJECT_RUN_INTEGRATION=1` 且 `PAL4_GAME_ROOT` 指向真实游戏目录，则追加：
+    - `snapshot_ui` 看见 `BtnNewGame / BtnExit`
+    - `mem-read --ida` 与 `mem-read --va` 一致性
+    - 安全数据页写入 + 恢复
+    - 代码页无 `unsafe` 写入拒绝
+  - 若额外设置 `PAL4_INJECT_RUN_FULL_SCENARIOS=1`，则继续跑 `snapshot -> click` 驱动的 `NewGame` / `Exit` 完整菜单场景
