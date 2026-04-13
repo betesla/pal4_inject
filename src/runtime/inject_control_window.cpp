@@ -1016,7 +1016,9 @@ DWORD WINAPI ControlWindowThreadProc(LPVOID) {
         return 1;
     }
 
-    ShowWindow(g_control_hwnd, SW_SHOW);
+    // Showing the tool window without activation avoids kicking PAL4 into a
+    // minimize-on-deactivate path during startup.
+    ShowWindow(g_control_hwnd, SW_SHOWNOACTIVATE);
     UpdateWindow(g_control_hwnd);
 
     MSG msg{};
