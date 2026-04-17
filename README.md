@@ -46,7 +46,7 @@ cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
   - GUI 会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、全屏/窗口化、宽屏和垂直同步
   - 分辨率列表分为“常用分辨率”和“主显示器支持”两个页签
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
-  - 当前内置版本为 `v0.1.0`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
+  - 当前内置版本为 `v0.1.1`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
 
 示例：
 

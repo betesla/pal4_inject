@@ -634,6 +634,13 @@ void ShowResolutionTab(GuiLaunchState* state, const int tab_index) {
     ShowWindow(state->display_list, tab_index == 1 ? SW_SHOW : SW_HIDE);
 }
 
+void InsertResolutionTab(const HWND tab, const int index, const wchar_t* title) {
+    TCITEMW item{};
+    item.mask = TCIF_TEXT;
+    item.pszText = const_cast<wchar_t*>(title);
+    SendMessageW(tab, TCM_INSERTITEMW, static_cast<WPARAM>(index), reinterpret_cast<LPARAM>(&item));
+}
+
 LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     auto* state = reinterpret_cast<GuiLaunchState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     switch (message) {
@@ -730,12 +737,8 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
             nullptr);
         state->resolution_tab = GetDlgItem(hwnd, kResolutionTabId);
         SendMessageW(state->resolution_tab, WM_SETFONT, reinterpret_cast<WPARAM>(default_font), TRUE);
-        TCITEMW tab_item{};
-        tab_item.mask = TCIF_TEXT;
-        tab_item.pszText = const_cast<wchar_t*>(L"常用分辨率");
-        TabCtrl_InsertItem(state->resolution_tab, 0, &tab_item);
-        tab_item.pszText = const_cast<wchar_t*>(L"主显示器支持");
-        TabCtrl_InsertItem(state->resolution_tab, 1, &tab_item);
+        InsertResolutionTab(state->resolution_tab, 0, L"常用分辨率");
+        InsertResolutionTab(state->resolution_tab, 1, L"主显示器支持");
 
         state->common_list = CreateWindowExW(
             WS_EX_CLIENTEDGE,
