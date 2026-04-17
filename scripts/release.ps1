@@ -157,6 +157,27 @@ function Invoke-GiteeApi {
     }
 }
 
+function Find-GiteeReleaseByTag {
+    param(
+        [string]$ApiBase,
+        [string]$Token,
+        [string]$Version
+    )
+
+    $uri = "$ApiBase/releases?access_token=$([uri]::EscapeDataString($Token))"
+    $releases = Invoke-GiteeApi -Method Get -Uri $uri
+    if ($null -eq $releases) {
+        return $null
+    }
+
+    foreach ($candidate in $releases) {
+        if ($candidate.tag_name -eq $Version) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
 function Get-ReleaseNotes {
     param(
         [string]$Version,
@@ -175,7 +196,6 @@ function Get-ReleaseNotes {
 function Send-GiteeReleaseAsset {
     param(
         [string]$UploadUri,
-        [string]$Token,
         [string]$AssetPath
     )
 
@@ -184,7 +204,6 @@ function Send-GiteeReleaseAsset {
     $content = New-Object System.Net.Http.MultipartFormDataContent
     $fileStream = [System.IO.File]::OpenRead($AssetPath)
     try {
-        $content.Add((New-Object System.Net.Http.StringContent($Token)), "access_token")
         $fileContent = New-Object System.Net.Http.StreamContent($fileStream)
         $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/zip")
         $content.Add($fileContent, "file", (Split-Path -Leaf $AssetPath))
@@ -340,10 +359,10 @@ function Publish-GiteeRelease {
     $token = Get-GiteeToken -ExplicitToken $AccessToken
     $apiBase = "https://gitee.com/api/v5/repos/$owner/$name"
 
-    $release = Invoke-GiteeApi `
-        -Method Get `
-        -Uri "$apiBase/releases/$([uri]::EscapeDataString($Version))?access_token=$([uri]::EscapeDataString($token))" `
-        -AllowNotFound
+    $release = Find-GiteeReleaseByTag `
+        -ApiBase $apiBase `
+        -Token $token `
+        -Version $Version
 
     $payload = @{
         access_token = $token
@@ -377,7 +396,9 @@ function Publish-GiteeRelease {
         }
     }
 
-    $uploaded = Send-GiteeReleaseAsset -UploadUri $attachFilesUri -Token $token -AssetPath $AssetPath
+    $uploaded = Send-GiteeReleaseAsset `
+        -UploadUri "$attachFilesUri?access_token=$([uri]::EscapeDataString($token))" `
+        -AssetPath $AssetPath
     return [PSCustomObject]@{
         ReleaseUrl = "https://gitee.com/$Repository/releases/tag/$Version"
         AssetName = $assetName

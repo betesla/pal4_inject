@@ -112,6 +112,11 @@ struct ReleaseInfo {
     std::wstring source_name;
 };
 
+bool StartsWith(const std::wstring_view text, const std::wstring_view prefix) {
+    return text.size() >= prefix.size() &&
+        text.substr(0, prefix.size()) == prefix;
+}
+
 std::wstring ShortenPathForDisplay(const std::filesystem::path& path) {
     const std::wstring text = path.wstring();
     constexpr std::size_t kMaxLength = 72;
@@ -241,6 +246,158 @@ std::optional<std::string> ExtractJsonStringField(
     return std::nullopt;
 }
 
+std::optional<std::string> ExtractTopLevelJsonStringField(
+    const std::string& json,
+    const std::string& key) {
+    int depth = 0;
+    bool in_string = false;
+    bool escape = false;
+
+    for (std::size_t index = 0; index < json.size(); ++index) {
+        const char ch = json[index];
+        if (in_string) {
+            if (escape) {
+                escape = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escape = true;
+                continue;
+            }
+            if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if (ch == '"') {
+            if (depth != 1) {
+                in_string = true;
+                continue;
+            }
+
+            const std::size_t key_begin = index + 1;
+            std::size_t key_end = key_begin;
+            bool key_escape = false;
+            for (; key_end < json.size(); ++key_end) {
+                const char key_ch = json[key_end];
+                if (key_escape) {
+                    key_escape = false;
+                    continue;
+                }
+                if (key_ch == '\\') {
+                    key_escape = true;
+                    continue;
+                }
+                if (key_ch == '"') {
+                    break;
+                }
+            }
+            if (key_end >= json.size()) {
+                return std::nullopt;
+            }
+
+            const std::string current_key = json.substr(key_begin, key_end - key_begin);
+            index = key_end;
+            if (current_key != key) {
+                in_string = false;
+                continue;
+            }
+
+            std::size_t value_pos = key_end + 1;
+            while (value_pos < json.size() && std::isspace(static_cast<unsigned char>(json[value_pos]))) {
+                ++value_pos;
+            }
+            if (value_pos >= json.size() || json[value_pos] != ':') {
+                return std::nullopt;
+            }
+            ++value_pos;
+            while (value_pos < json.size() && std::isspace(static_cast<unsigned char>(json[value_pos]))) {
+                ++value_pos;
+            }
+            if (value_pos >= json.size() || json[value_pos] != '"') {
+                return std::nullopt;
+            }
+
+            std::string value;
+            bool value_escape = false;
+            for (std::size_t value_index = value_pos + 1; value_index < json.size(); ++value_index) {
+                const char value_ch = json[value_index];
+                if (value_escape) {
+                    switch (value_ch) {
+                    case 'n':
+                        value.push_back('\n');
+                        break;
+                    case 'r':
+                        value.push_back('\r');
+                        break;
+                    case 't':
+                        value.push_back('\t');
+                        break;
+                    case '\\':
+                    case '"':
+                    case '/':
+                        value.push_back(value_ch);
+                        break;
+                    default:
+                        value.push_back(value_ch);
+                        break;
+                    }
+                    value_escape = false;
+                    continue;
+                }
+                if (value_ch == '\\') {
+                    value_escape = true;
+                    continue;
+                }
+                if (value_ch == '"') {
+                    return value;
+                }
+                value.push_back(value_ch);
+            }
+            return std::nullopt;
+        }
+
+        if (ch == '{' || ch == '[') {
+            ++depth;
+        } else if ((ch == '}' || ch == ']') && depth > 0) {
+            --depth;
+        }
+    }
+    return std::nullopt;
+}
+
+std::wstring BuildPreferredReleaseUrl(
+    const wchar_t* fallback_page_url,
+    const std::wstring_view source_name,
+    const std::string& tag_name,
+    const std::string& payload) {
+    const auto top_level_html_url = ExtractTopLevelJsonStringField(payload, "html_url");
+    if (top_level_html_url && !top_level_html_url->empty()) {
+        return WideFromUtf8(*top_level_html_url);
+    }
+
+    if (source_name == L"Gitee" && fallback_page_url && *fallback_page_url) {
+        std::wstring release_page = fallback_page_url;
+        if (!tag_name.empty() && !StartsWith(release_page, L"https://gitee.com/")) {
+            return release_page;
+        }
+        if (!tag_name.empty()) {
+            if (!release_page.empty() && release_page.back() == L'/') {
+                release_page.pop_back();
+            }
+            return release_page + L"/tag/" + WideFromUtf8(tag_name);
+        }
+    }
+
+    const auto asset_download_url = ExtractJsonStringField(payload, "browser_download_url");
+    if (asset_download_url && !asset_download_url->empty()) {
+        return WideFromUtf8(*asset_download_url);
+    }
+
+    return fallback_page_url ? std::wstring(fallback_page_url) : std::wstring();
+}
+
 bool FetchLatestReleaseInfo(
     const wchar_t* api_url,
     const wchar_t* fallback_page_url,
@@ -297,11 +454,11 @@ bool FetchLatestReleaseInfo(
     }
 
     out->tag_name = *tag_name;
-    out->html_url = WideFromUtf8(ExtractJsonStringField(payload, "html_url").value_or(""));
-    // Do not fall back to a generic "url" field: Gitee may expose API/user URLs there.
-    if (out->html_url.empty()) {
-        out->html_url = fallback_page_url;
-    }
+    out->html_url = BuildPreferredReleaseUrl(
+        fallback_page_url,
+        source_name,
+        out->tag_name,
+        payload);
     out->body = ExtractJsonStringField(payload, "body").value_or("");
     if (out->body.empty()) {
         out->body = ExtractJsonStringField(payload, "description").value_or("");
