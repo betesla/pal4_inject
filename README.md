@@ -36,7 +36,7 @@ cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
 - 新增脚本模式切换：
   - `--script-mode cs`
   - `--script-mode csb`
-  - 不传参数直接双击 `PAL4_inject.exe` 时，会弹出中文 GUI 选择 `CS` 或 `CSB`
+  - 不传参数直接双击 `PAL4_inject.exe` 时，会弹出中文 GUI 选择 `CS` 或 `CSB`，默认使用 `CSB`
 - 发布启动入口：
   - 发布使用时，把 `dist` 目录里的文件复制到 PAL4 游戏安装目录
   - `PAL4_inject.exe` 放在游戏目录根部，和 `PAL4.exe` 同级
@@ -46,7 +46,8 @@ cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
   - GUI 会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、全屏/窗口化、宽屏和垂直同步
   - 分辨率列表分为“常用分辨率”和“主显示器支持”两个页签
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
-  - 当前内置版本为 `v0.1.1`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
+  - GUI 右上角显示当前版本和作者信息，点击 `B站 @北风7P` 可打开作者主页
+  - 当前内置版本为 `v0.1.2`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
 
 示例：
 
@@ -73,6 +74,23 @@ I:\PAL4\projects\pal4_inject\build\Debug\PAL4_inject.exe `
 - `cli.exe`
 - `PAL4_inject.exe`
 - `pal4_inject_tests.exe`
+
+## 发布脚本
+一键构建 Release、运行测试、刷新 `dist`、生成 zip，并创建或更新 GitHub / Gitee Release：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1
+```
+
+脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.1.2` 会生成 tag/release 版本 `v0.1.2`，产物为 `PAL4_inject_v0.1.2_win32.zip`。如只想本地打包、不发布 GitHub Release：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubRelease -SkipGiteeRelease
+```
+
+如果 `dist\PAL4.exe` 已存在，脚本会在刷新 `dist` 时保留它，并把它一同打入发布 zip；不要把 `PAL4.exe` 提交进 git。
+
+发布前脚本会要求没有未提交的源码改动；如本地不存在同名 tag，会自动在当前提交创建 tag，并推送当前分支和 tag。Gitee 发布需要设置 `GITEE_TOKEN` 或 `GITEE_ACCESS_TOKEN`，也可以传 `-GiteeAccessToken <token>`；如只发布 GitHub，可加 `-SkipGiteeRelease`。
 
 ## 当前范围
 - launcher 采用 suspended 启动 + `LoadLibraryW` 远程线程注入。

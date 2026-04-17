@@ -55,11 +55,13 @@ constexpr int kFullscreenRadioId = 1011;
 constexpr int kWidescreenCheckId = 1012;
 constexpr int kVsyncCheckId = 1013;
 constexpr int kCheckUpdateButtonId = 1014;
+constexpr int kAuthorLinkId = 1015;
 constexpr UINT kAutoCheckUpdateMessage = WM_APP + 10;
 constexpr const wchar_t kGiteeLatestReleaseUrl[] = L"https://gitee.com/api/v5/repos/betesla/pal4_inject/releases/latest";
 constexpr const wchar_t kGiteeReleasePageUrl[] = L"https://gitee.com/betesla/pal4_inject/releases";
 constexpr const wchar_t kGitHubLatestReleaseUrl[] = L"https://api.github.com/repos/betesla/pal4_inject/releases/latest";
 constexpr const wchar_t kGitHubReleasePageUrl[] = L"https://github.com/betesla/pal4_inject/releases/latest";
+constexpr const wchar_t kAuthorHomepageUrl[] = L"https://space.bilibili.com/109801988";
 
 struct Resolution {
     int width = 800;
@@ -90,7 +92,7 @@ struct GuiLaunchState {
     std::filesystem::path game_exe;
     std::filesystem::path runtime_dll;
     std::filesystem::path config_path;
-    pal4::inject::ScriptMode script_mode = pal4::inject::ScriptMode::cs;
+    pal4::inject::ScriptMode script_mode = pal4::inject::ScriptMode::csb;
     GameConfig config;
     std::vector<Resolution> common_resolutions;
     std::vector<Resolution> display_resolutions;
@@ -144,6 +146,15 @@ HWND CreateLabel(
         SendMessageW(hwnd, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
     }
     return hwnd;
+}
+
+HFONT CreateUnderlineFontFrom(const HFONT base_font) {
+    LOGFONTW log_font{};
+    if (!GetObjectW(base_font, sizeof(log_font), &log_font)) {
+        return nullptr;
+    }
+    log_font.lfUnderline = TRUE;
+    return CreateFontIndirectW(&log_font);
 }
 
 void ShowGuiError(const std::wstring& error) {
@@ -665,10 +676,33 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
             CLEARTYPE_QUALITY,
             DEFAULT_PITCH | FF_SWISS,
             L"Microsoft YaHei UI");
+        HFONT link_font = CreateUnderlineFontFrom(default_font);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
         SetPropW(hwnd, L"PAL4InjectTitleFont", title_font);
+        SetPropW(hwnd, L"PAL4InjectLinkFont", link_font);
 
         CreateLabel(hwnd, L"PAL4 注入启动器", 24, 20, 360, 34, title_font);
+        const std::wstring version_text =
+            L"版本 " + WideFromUtf8(pal4::inject::kPal4InjectVersion) + L"  |  作者：";
+        CreateLabel(hwnd, version_text, 354, 27, 144, 20, default_font);
+        const HWND author_link = CreateWindowExW(
+            0,
+            L"STATIC",
+            L"B站 @北风7P",
+            WS_CHILD | WS_VISIBLE | SS_NOTIFY,
+            500,
+            27,
+            94,
+            20,
+            hwnd,
+            reinterpret_cast<HMENU>(kAuthorLinkId),
+            GetModuleHandleW(nullptr),
+            nullptr);
+        SendMessageW(
+            author_link,
+            WM_SETFONT,
+            reinterpret_cast<WPARAM>(link_font ? link_font : default_font),
+            TRUE);
         CreateLabel(
             hwnd,
             L"请选择脚本模式后启动游戏。启动后可在游戏内按 Ctrl+J 显示或隐藏注入面板。",
@@ -720,7 +754,7 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
             nullptr);
         SendMessageW(cs_radio, WM_SETFONT, reinterpret_cast<WPARAM>(default_font), TRUE);
         SendMessageW(csb_radio, WM_SETFONT, reinterpret_cast<WPARAM>(default_font), TRUE);
-        SendMessageW(cs_radio, BM_SETCHECK, BST_CHECKED, 0);
+        SendMessageW(csb_radio, BM_SETCHECK, BST_CHECKED, 0);
 
         CreateWindowExW(
             0,
@@ -958,6 +992,10 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
     case WM_COMMAND: {
         const int control_id = LOWORD(wparam);
         const int notify_code = HIWORD(wparam);
+        if (control_id == kAuthorLinkId && notify_code == STN_CLICKED) {
+            ShellExecuteW(hwnd, L"open", kAuthorHomepageUrl, nullptr, nullptr, SW_SHOWNORMAL);
+            return 0;
+        }
         if (control_id == kRadioCsId) {
             state->script_mode = pal4::inject::ScriptMode::cs;
             return 0;
@@ -1022,8 +1060,29 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
             RemovePropW(hwnd, L"PAL4InjectTitleFont");
             DeleteObject(title_font);
         }
+        if (const HANDLE link_font = GetPropW(hwnd, L"PAL4InjectLinkFont")) {
+            RemovePropW(hwnd, L"PAL4InjectLinkFont");
+            DeleteObject(link_font);
+        }
         PostQuitMessage(0);
         return 0;
+    }
+    case WM_CTLCOLORSTATIC: {
+        const HWND child = reinterpret_cast<HWND>(lparam);
+        if (child && GetDlgCtrlID(child) == kAuthorLinkId) {
+            const HDC dc = reinterpret_cast<HDC>(wparam);
+            SetTextColor(dc, RGB(0, 90, 180));
+            SetBkMode(dc, TRANSPARENT);
+            return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+        }
+        break;
+    }
+    case WM_SETCURSOR: {
+        if (reinterpret_cast<HWND>(wparam) == GetDlgItem(hwnd, kAuthorLinkId)) {
+            SetCursor(LoadCursorW(nullptr, MAKEINTRESOURCEW(32649)));
+            return TRUE;
+        }
+        break;
     }
     default:
         break;
@@ -1164,16 +1223,6 @@ int main(int argc, char** argv) {
         }
         std::cerr << result.error << "\n";
         return 1;
-    }
-
-    if (gui_mode) {
-        const std::wstring message =
-            L"游戏已启动。\n\n进程 ID: " + std::to_wstring(result.process_id) +
-            L"\n脚本模式: " + std::wstring(
-                pal4::inject::ToString(result.script_mode),
-                pal4::inject::ToString(result.script_mode) + std::strlen(pal4::inject::ToString(result.script_mode))) +
-            L"\n\n游戏内按 Ctrl+J 可以显示或隐藏注入面板。";
-        MessageBoxW(nullptr, message.c_str(), L"PAL4 注入启动器", MB_ICONINFORMATION | MB_OK);
     }
 
     std::cout
