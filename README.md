@@ -48,7 +48,7 @@ cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
   - 分辨率列表分为“常用分辨率”和“主显示器支持”两个页签
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
   - GUI 右上角显示当前版本和作者信息，点击 `B站 @北风7P` 可打开作者主页
-  - 当前内置版本为 `v0.1.3`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
+  - 当前内置版本为 `v0.1.4`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
 
 示例：
 
@@ -83,7 +83,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\PAL4_inject.exe `
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1
 ```
 
-脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.1.3` 会生成 tag/release 版本 `v0.1.3`，产物为 `PAL4_inject_v0.1.3_win32.zip`。如只想本地打包、不发布 GitHub Release：
+脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.1.4` 会生成 tag/release 版本 `v0.1.4`，产物为 `PAL4_inject_v0.1.4_win32.zip`。如只想本地打包、不发布 GitHub Release：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubRelease -SkipGiteeRelease
