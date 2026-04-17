@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(pal4_inject LANGUAGES CXX)
+project(pal4_inject VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,6 +26,7 @@ set(PAL4_INJECT_BUILD_INFO_HEADER ${PAL4_INJECT_GENERATED_DIR}/pal4inject_build_
 
 add_custom_target(pal4_inject_build_info ALL
     COMMAND ${CMAKE_COMMAND}
+        -DVERSION=v${PROJECT_VERSION}
         -DOUTPUT=${PAL4_INJECT_BUILD_INFO_HEADER}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/generate_build_info.cmake
     BYPRODUCTS ${PAL4_INJECT_BUILD_INFO_HEADER}
@@ -106,7 +107,7 @@ add_executable(pal4_injector_launcher
     src/launcher/main.cpp
 )
 target_link_libraries(pal4_injector_launcher PRIVATE pal4_inject_common)
-target_link_libraries(pal4_injector_launcher PRIVATE gdi32)
+target_link_libraries(pal4_injector_launcher PRIVATE gdi32 comctl32 wininet)
 set_target_properties(pal4_injector_launcher PROPERTIES
     OUTPUT_NAME "PAL4_inject"
     WIN32_EXECUTABLE TRUE
