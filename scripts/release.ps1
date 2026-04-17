@@ -376,7 +376,7 @@ function Publish-GiteeRelease {
         $payload["target_commitish"] = "main"
         $release = Invoke-GiteeApi -Method Post -Uri "$apiBase/releases" -Body $payload
     } else {
-        $release = Invoke-GiteeApi -Method Patch -Uri "$apiBase/releases/$([uri]::EscapeDataString($Version))" -Body $payload
+        $release = Invoke-GiteeApi -Method Patch -Uri "$apiBase/releases/$($release.id)" -Body $payload
     }
 
     if (-not $release.id) {
