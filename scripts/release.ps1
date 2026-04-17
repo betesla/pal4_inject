@@ -167,12 +167,9 @@ function Get-ReleaseNotes {
         return Get-Content -LiteralPath $ReleaseNotesPath -Raw
     }
 
-    return @(
-        "PAL4 Inject $Version",
-        "",
-        "Install:",
-        "Extract the archive into the PAL4 game install directory so PAL4_inject.exe sits next to PAL4.exe and the pal4_inject folder stays in the same directory."
-    ) -join "`n"
+    $installGuide = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(
+        "5a6J6KOF5pa55byP77yaCjEuIOS4i+i9veW5tuino+WOi+acrOWPkeW4g+WMheOAggoyLiDlsIbop6PljovlkI7nmoTmiYDmnInmlofku7blpI3liLbliLAgUEFMNCDmuLjmiI/lronoo4Xnm67lvZXvvIzkvb8gUEFMNF9pbmplY3QuZXhlIOS4jiBQQUw0LmV4ZSDkvY3kuo7lkIzkuIDnm67lvZXjgIIKMy4g5L+d5oyBIHBhbDRfaW5qZWN0IOaWh+S7tuWkueS4jiBQQUw0X2luamVjdC5leGUg5ZCM57qn77yM5LiN6KaB5Y+q5aSN5Yi2IGV4ZeOAggo0LiDlj4zlh7sgUEFMNF9pbmplY3QuZXhlIOWQr+WKqOa4uOaIj+OAgg=="))
+    return "PAL4 Inject $Version`n`n$installGuide"
 }
 
 function Send-GiteeReleaseAsset {
