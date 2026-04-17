@@ -183,7 +183,7 @@
 - crash capture
   - 不尝试拦截并吞掉异常
   - 只负责在进程终止前写出 crash report / minidump
-  - 默认 artifact 位置在 `%TEMP%`
+  - 默认 artifact 位置在发布目录的 `pal4_inject` 子目录，与注入配置和 runtime log 统一管理
 
 ## Testing Strategy
 - 单元测试默认只跑纯逻辑与协议测试。

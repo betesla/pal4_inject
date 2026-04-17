@@ -95,7 +95,7 @@ void TestHookInventory() {
         }
         if (hook.id == HookId::gi_talk) {
             found_gi_talk = true;
-            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
             assert(hook.patch_span == 8);
         }
         if (hook.id == HookId::cegui_renderer_constructor_2) {
@@ -106,7 +106,7 @@ void TestHookInventory() {
         }
         if (hook.id == HookId::cegui_system_initialize) {
             found_cegui_system_init = true;
-            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
             assert(hook.patch_span == 13);
             assert(hook.ida_ea == pal4::inject::ida::kCeguiSystemInitialize);
             assert(hook.bootstrap_required);
@@ -121,7 +121,7 @@ void TestHookInventory() {
         }
         if (hook.id == HookId::setup_minimap_texture) {
             found_setup_minimap_texture = true;
-            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
             assert(hook.patch_span == 8);
             assert(hook.ida_ea == pal4::inject::ida::kSetupMinimapTexture);
             assert(hook.bootstrap_order < 900);
@@ -694,6 +694,8 @@ void TestInputQueue() {
 void TestRuntimeEventLog() {
     auto& state = pal4::inject::GetRuntimeState();
     state.InitializeInventory(pal4::inject::BuildHookInventorySkeleton());
+    assert(!state.GetHookLogEnabled(HookId::process_ui_event));
+    assert(!state.GetHookLogEnabled(HookId::load_font_file));
     state.SetMsaaLevel(pal4::inject::MsaaLevel::x2);
     state.AppendEventLog("event-1");
     state.AppendEventLog("event-2");

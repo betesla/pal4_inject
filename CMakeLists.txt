@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(pal4_inject VERSION 0.1.2 LANGUAGES CXX)
+project(pal4_inject VERSION 0.1.3 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -48,6 +48,7 @@ add_library(pal4_inject_common STATIC
     src/common/launcher.cpp
     src/common/memory_debug.cpp
     src/common/protocol.cpp
+    src/common/runtime_paths.cpp
     src/common/script_mode_override.cpp
     src/common/ui_snapshot.cpp
     src/common/types.cpp

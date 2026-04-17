@@ -18,7 +18,7 @@
 - `tests`
   - 单元测试与可选的原始 EXE 集成测试
 - `docs`
-  - 架构与 Hook inventory 文档
+  - 架构、Hook inventory 与控制面板说明文档
 
 ## 构建
 必须使用 Win32/x86 生成器。
@@ -42,12 +42,13 @@ cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
   - `PAL4_inject.exe` 放在游戏目录根部，和 `PAL4.exe` 同级
   - `PAL4_inject.exe` 是 GUI 程序，双击启动时不会弹出 CMD 黑窗口
   - 注入相关文件放在游戏目录下的 `pal4_inject` 子目录，便于后续覆盖更新
+  - 注入配置、runtime log、crash report / dump 等运行产物也统一放在 `pal4_inject` 子目录
   - 双击 `PAL4_inject.exe` 后由 GUI 选择 `CS` 或 `CSB`
   - GUI 会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、全屏/窗口化、宽屏和垂直同步
   - 分辨率列表分为“常用分辨率”和“主显示器支持”两个页签
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
   - GUI 右上角显示当前版本和作者信息，点击 `B站 @北风7P` 可打开作者主页
-  - 当前内置版本为 `v0.1.2`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
+  - 当前内置版本为 `v0.1.3`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
 
 示例：
 
@@ -82,7 +83,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\PAL4_inject.exe `
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1
 ```
 
-脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.1.2` 会生成 tag/release 版本 `v0.1.2`，产物为 `PAL4_inject_v0.1.2_win32.zip`。如只想本地打包、不发布 GitHub Release：
+脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.1.3` 会生成 tag/release 版本 `v0.1.3`，产物为 `PAL4_inject_v0.1.3_win32.zip`。如只想本地打包、不发布 GitHub Release：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubRelease -SkipGiteeRelease
@@ -100,7 +101,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
   - 默认会先跟随游戏窗口定位；用户手动拖动后就不再强制吸附
   - 顶部单独暴露 `MSAA` 画质项
   - 每个 hook 一行，带快速开关、`HookMode` 下拉框和状态栏
-  - 面板配置会记忆到本地用户目录，下次启动自动恢复
+  - 面板配置会记忆到游戏目录下的 `pal4_inject\inject_panel_settings.ini`，下次启动自动恢复
   - `Ctrl+J` 显示 / 隐藏面板
   - 作为游戏窗口的 owned popup 存在，避免点回游戏时像独立外部工具窗一样被压下去
 - Hook 框架内置 x86 inline detour，不依赖第三方 Hook 库。
@@ -111,7 +112,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
 - bootstrap 早期安装 crash capture：
   - `AddVectoredExceptionHandler`
   - `SetUnhandledExceptionFilter`
-  - 崩溃时把文本报告和 minidump 写到 `%TEMP%`
+  - 崩溃时把文本报告和 minidump 写到游戏目录下的 `pal4_inject`
 - bootstrap 期间会自动应用一个最小相机补丁：
   - 把主游戏流程里的竖直 pitch 相对窗口从 `±20` 放宽到 `±89`
   - 把竖直鼠标缩放对齐到横向鼠标缩放
@@ -170,11 +171,11 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
 
 ## Crash Capture
 - runtime 常规日志：
-  - `%TEMP%\\pal4_inject_runtime.log`
+  - `pal4_inject\\pal4_inject_runtime.log`
 - 崩溃文本报告：
-  - `%TEMP%\\pal4_inject_crash_pid*_tid*_code*_tick*.txt`
+  - `pal4_inject\\pal4_inject_crash_pid*_tid*_code*_tick*.txt`
 - 崩溃 minidump：
-  - `%TEMP%\\pal4_inject_crash_pid*_tid*_code*_tick*.dmp`
+  - `pal4_inject\\pal4_inject_crash_pid*_tid*_code*_tick*.dmp`
 - `read_ui_state` 快照会额外暴露：
   - `crash_handler_ready`
   - `last_crash_report_path`
@@ -182,6 +183,8 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - `last_crash_summary`
 
 ## Inject Control Panel
+- 详细中文说明见：
+  - [docs/control_panel_guide.md](I:/PAL4/projects/pal4_inject/docs/control_panel_guide.md)
 - 注入后会创建 `PAL4 Inject Control` 小面板，但默认隐藏；按 `Ctrl+J` 显示 / 隐藏。
 - 面板会先显示一个独立的 `Render MSAA` 选项：
   - 当前支持 `off / 2x / 4x / 8x`

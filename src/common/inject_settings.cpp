@@ -7,10 +7,7 @@
 #include <map>
 #include <sstream>
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
+#include "pal4inject/runtime_paths.h"
 
 namespace pal4::inject {
 namespace {
@@ -31,26 +28,10 @@ std::string TrimAscii(const std::string_view text) {
     return std::string(text.substr(begin, end - begin));
 }
 
-std::filesystem::path ResolveLocalAppDataRoot() {
-    char buffer[MAX_PATH]{};
-    const DWORD len = GetEnvironmentVariableA("LOCALAPPDATA", buffer, MAX_PATH);
-    if (len != 0 && len < MAX_PATH) {
-        return std::filesystem::path(std::string(buffer, len));
-    }
-
-    char temp_path[MAX_PATH]{};
-    const DWORD temp_len = GetTempPathA(MAX_PATH, temp_path);
-    if (temp_len != 0 && temp_len < MAX_PATH) {
-        return std::filesystem::path(std::string(temp_path, temp_len));
-    }
-    return std::filesystem::current_path();
-}
-
 }  // namespace
 
 std::filesystem::path DefaultInjectSettingsPath() {
-    auto root = ResolveLocalAppDataRoot();
-    root /= "PAL4Inject";
+    auto root = InjectDataDirectory();
     root /= "inject_panel_settings.ini";
     return root;
 }

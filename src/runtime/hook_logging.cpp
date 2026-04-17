@@ -1,5 +1,6 @@
 #include "hook_logging.h"
 
+#include <filesystem>
 #include <fstream>
 #include <string>
 
@@ -8,6 +9,7 @@
 #endif
 #include <windows.h>
 
+#include "pal4inject/runtime_paths.h"
 #include "runtime_state.h"
 
 namespace pal4::inject {
@@ -23,17 +25,12 @@ void AppendHookEventLog(const HookId id, const std::string_view text) {
 
     GetRuntimeState().AppendEventLog(text);
 
-    char temp_path[MAX_PATH]{};
-    const DWORD temp_len = GetTempPathA(MAX_PATH, temp_path);
-    if (temp_len == 0 || temp_len >= MAX_PATH) {
+    const auto log_path = RuntimeLogPath();
+    std::error_code ec;
+    std::filesystem::create_directories(log_path.parent_path(), ec);
+    if (ec) {
         return;
     }
-
-    std::string log_path(temp_path, temp_len);
-    if (!log_path.empty() && log_path.back() != '\\') {
-        log_path.push_back('\\');
-    }
-    log_path += "pal4_inject_runtime.log";
 
     std::ofstream output(log_path, std::ios::app | std::ios::binary);
     if (!output) {

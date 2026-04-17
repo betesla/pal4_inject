@@ -23,7 +23,7 @@ void RuntimeState::InitializeInventory(const std::vector<HookDescriptor>& invent
         status.id = descriptor.id;
         status.mode = descriptor.mode;
         status.preferred_active_mode = DefaultPreferredActiveMode(descriptor);
-        status.log_enabled = true;
+        status.log_enabled = false;
         hook_statuses_.push_back(status);
     }
 }
@@ -176,7 +176,7 @@ bool RuntimeState::GetHookLogEnabled(const HookId id) const {
     if (const auto* status = FindHookStatusUnlocked(id)) {
         return status->log_enabled;
     }
-    return true;
+    return false;
 }
 
 void RuntimeState::SetHookError(const HookId id, const std::string_view error) {

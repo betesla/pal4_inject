@@ -12,6 +12,7 @@
 #include <DbgHelp.h>
 
 #include "pal4inject/crash_capture.h"
+#include "pal4inject/runtime_paths.h"
 #include "runtime_state.h"
 
 namespace pal4::inject {
@@ -54,24 +55,24 @@ std::string FormatWindowsError(const DWORD code) {
 }
 
 std::filesystem::path BuildCrashDirectory() {
-    char temp_path[MAX_PATH];
-    const DWORD temp_len = GetTempPathA(MAX_PATH, temp_path);
-    if (temp_len == 0 || temp_len >= MAX_PATH) {
-        return std::filesystem::current_path();
-    }
-
-    std::filesystem::path path(std::string(temp_path, temp_len));
+    const auto path = CrashArtifactDirectory();
     std::error_code ec;
     std::filesystem::create_directories(path, ec);
     return path;
 }
 
 std::filesystem::path BuildRuntimeLogPath() {
-    return BuildCrashDirectory() / "pal4_inject_runtime.log";
+    return RuntimeLogPath();
 }
 
 void AppendRuntimeDebugLog(const std::string_view line) {
-    std::ofstream file(BuildRuntimeLogPath(), std::ios::binary | std::ios::app);
+    const auto log_path = BuildRuntimeLogPath();
+    std::error_code ec;
+    std::filesystem::create_directories(log_path.parent_path(), ec);
+    if (ec) {
+        return;
+    }
+    std::ofstream file(log_path, std::ios::binary | std::ios::app);
     if (!file) {
         return;
     }

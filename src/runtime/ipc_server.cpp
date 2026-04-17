@@ -1,5 +1,6 @@
 #include "ipc_server.h"
 
+#include <filesystem>
 #include <iomanip>
 #include <sstream>
 #include <vector>
@@ -15,6 +16,7 @@
 #include "memory_debug_runtime.h"
 #include "pal4inject/memory_debug.h"
 #include "pal4inject/protocol.h"
+#include "pal4inject/runtime_paths.h"
 #include "pal4inject/script_mode_override.h"
 #include "pal4inject/ui_snapshot.h"
 #include "runtime_preferences.h"
@@ -28,20 +30,15 @@ HANDLE g_ipc_thread = nullptr;
 constexpr DWORD kPipeBufferSize = 65536;
 
 void AppendRuntimeDebugLog(const std::string_view line) {
-    char temp_path[MAX_PATH];
-    const DWORD temp_len = GetTempPathA(MAX_PATH, temp_path);
-    if (temp_len == 0 || temp_len >= MAX_PATH) {
+    const auto log_path = RuntimeLogPath();
+    std::error_code ec;
+    std::filesystem::create_directories(log_path.parent_path(), ec);
+    if (ec) {
         return;
     }
 
-    std::string log_path = std::string(temp_path, temp_len);
-    if (!log_path.empty() && log_path.back() != '\\') {
-        log_path.push_back('\\');
-    }
-    log_path += "pal4_inject_runtime.log";
-
     HANDLE file = CreateFileA(
-        log_path.c_str(),
+        log_path.string().c_str(),
         FILE_APPEND_DATA,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
         nullptr,

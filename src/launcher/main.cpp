@@ -298,9 +298,7 @@ bool FetchLatestReleaseInfo(
 
     out->tag_name = *tag_name;
     out->html_url = WideFromUtf8(ExtractJsonStringField(payload, "html_url").value_or(""));
-    if (out->html_url.empty()) {
-        out->html_url = WideFromUtf8(ExtractJsonStringField(payload, "url").value_or(""));
-    }
+    // Do not fall back to a generic "url" field: Gitee may expose API/user URLs there.
     if (out->html_url.empty()) {
         out->html_url = fallback_page_url;
     }
