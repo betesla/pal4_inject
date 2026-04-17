@@ -55,6 +55,7 @@ constexpr int kFooterLabelId = 4000;
 constexpr int kShutdownButtonId = 4001;
 constexpr int kTabControlId = 4100;
 constexpr int kToggleHotkeyId = 1;
+constexpr UINT kToggleHotkeyVk = 'J';
 constexpr UINT kForceCloseMessage = WM_APP + 1;
 
 struct PanelRowRuntime {
@@ -638,7 +639,7 @@ void RefreshPanelContent(const HWND hwnd) {
     }
 
     std::wstring footer =
-        L"Ctrl+F10 \u663e\u793a/\u9690\u85cf | \u914d\u7f6e=" + RuntimePreferencesPath().wstring() +
+        L"Ctrl+J \u663e\u793a/\u9690\u85cf | \u914d\u7f6e=" + RuntimePreferencesPath().wstring() +
         L" | \u5d29\u6e83\u6355\u83b7=" + BuildSwitchLabel(state.CrashHandlerReady()) +
         L" | build=" + WideFromNarrow(kPal4InjectBuildId);
     if (const HWND footer_label = GetDlgItem(hwnd, kFooterLabelId)) {
@@ -919,7 +920,7 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
         InitCommonControlsEx(&controls);
         BuildPanelControls(hwnd);
         SetTimer(hwnd, kRefreshTimerId, 300, nullptr);
-        RegisterHotKey(hwnd, kToggleHotkeyId, MOD_CONTROL | MOD_NOREPEAT, VK_F10);
+        RegisterHotKey(hwnd, kToggleHotkeyId, MOD_CONTROL | MOD_NOREPEAT, kToggleHotkeyVk);
         RefreshPanelPlacement(hwnd);
         RefreshPanelContent(hwnd);
         return 0;
@@ -1062,10 +1063,8 @@ DWORD WINAPI ControlWindowThreadProc(LPVOID) {
         return 1;
     }
 
-    // Showing the tool window without activation avoids kicking PAL4 into a
-    // minimize-on-deactivate path during startup.
-    ShowWindow(g_control_hwnd, SW_SHOWNOACTIVATE);
-    UpdateWindow(g_control_hwnd);
+    // Keep the window hidden at startup, but still created so Ctrl+J can
+    // toggle it through WM_HOTKEY without disturbing the game.
 
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {

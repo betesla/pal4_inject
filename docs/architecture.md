@@ -6,20 +6,20 @@
 - 先从最小 UI seam 入手，再逐层把输入与更高层逻辑掏到 DLL / 新模块里。
 
 ## Runtime Shape
-- `pal4_injector_launcher.exe`
+- `PAL4_inject.exe`
   - `CreateProcessA(..., CREATE_SUSPENDED)`
   - 若指定 `--script-mode cs|csb`，在恢复主线程前写入 `g_IsCSBMode @ 0x8C27FC`
   - 同时通过继承环境变量把请求模式传给子进程，供 injected runtime 在 bootstrap 期复核
-  - 远程写入 `pal4_runtime_x86.dll` 路径
+  - 远程写入 `runtime.dll` 路径
   - `CreateRemoteThread(LoadLibraryW)`
   - 等待 named event
   - 默认在 ready event 后恢复主线程
   - agent / 测试侧再通过 named pipe 读取 `read_ui_state` / `snapshot_ui` / memory debug 命令
-- `pal4_inject_cli.exe`
+- `cli.exe`
   - 只做 pipe 客户端与人类可读输出
   - `snapshot -> click/fill/type/press -> snapshot`
   - `mem-query/read/write` 与 `wait-path/wait-text`
-- `pal4_runtime_x86.dll`
+- `runtime.dll`
   - `DllMain` 只拉起 bootstrap thread
 - bootstrap thread 负责：
     - 记录主模块基址

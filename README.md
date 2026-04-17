@@ -30,21 +30,27 @@ cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
 
 ## 启动
 - 兼容旧方式：
-  - `pal4_injector_launcher.exe --game-root <包含 launch.exe 的目录>`
+  - `PAL4_inject.exe --game-root <包含 launch.exe 的目录>`
 - 新增直接指定目标 EXE：
-  - `pal4_injector_launcher.exe --exe <完整 exe 路径>`
+  - `PAL4_inject.exe --exe <完整 exe 路径>`
 - 新增脚本模式切换：
   - `--script-mode cs`
   - `--script-mode csb`
-  - 不传时保持游戏原始默认值
+  - 不传参数直接双击 `PAL4_inject.exe` 时，会弹出中文 GUI 选择 `CS` 或 `CSB`
+- 发布启动入口：
+  - 发布使用时，把 `dist` 目录里的文件复制到 PAL4 游戏安装目录
+  - `PAL4_inject.exe` 放在游戏目录根部，和 `PAL4.exe` 同级
+  - `PAL4_inject.exe` 是 GUI 程序，双击启动时不会弹出 CMD 黑窗口
+  - 注入相关文件放在游戏目录下的 `pal4_inject` 子目录，便于后续覆盖更新
+  - 双击 `PAL4_inject.exe` 后由 GUI 选择 `CS` 或 `CSB`
 
 示例：
 
 ```powershell
-I:\PAL4\projects\pal4_inject\build\Debug\pal4_injector_launcher.exe `
+I:\PAL4\projects\pal4_inject\build\Debug\PAL4_inject.exe `
   --exe I:\Games\original\PAL4.exe `
   --script-mode cs `
-  --dll I:\PAL4\projects\pal4_inject\build\Debug\pal4_runtime_x86.dll
+  --dll I:\PAL4\projects\pal4_inject\build\Debug\runtime.dll
 ```
 
 脚本模式切换当前通过启动器在进程恢复前写入 `launch.exe` 的
@@ -59,24 +65,24 @@ I:\PAL4\projects\pal4_inject\build\Debug\pal4_injector_launcher.exe `
 导出到 `read_ui_state` 快照里。
 
 ## 产物
-- `pal4_runtime_x86.dll`
-- `pal4_inject_cli.exe`
-- `pal4_injector_launcher.exe`
+- `runtime.dll`
+- `cli.exe`
+- `PAL4_inject.exe`
 - `pal4_inject_tests.exe`
 
 ## 当前范围
 - launcher 采用 suspended 启动 + `LoadLibraryW` 远程线程注入。
 - runtime DLL 通过 named event + named pipe 暴露 ready 信号、agent/control CLI 和测试控制面。
 - runtime DLL 还会拉起一个原生 Win32 注入控制面板：
-  - 默认显示在游戏窗口右上角附近
+  - 默认隐藏，按 `Ctrl+J` 显示 / 隐藏
   - 默认会先跟随游戏窗口定位；用户手动拖动后就不再强制吸附
   - 顶部单独暴露 `MSAA` 画质项
   - 每个 hook 一行，带快速开关、`HookMode` 下拉框和状态栏
   - 面板配置会记忆到本地用户目录，下次启动自动恢复
-  - `Ctrl+F10` 隐藏 / 显示面板
+  - `Ctrl+J` 显示 / 隐藏面板
   - 作为游戏窗口的 owned popup 存在，避免点回游戏时像独立外部工具窗一样被压下去
 - Hook 框架内置 x86 inline detour，不依赖第三方 Hook 库。
-- `pal4_inject_cli.exe` 会复用同一条 named pipe，提供：
+- `cli.exe` 会复用同一条 named pipe，提供：
   - `snapshot / click / fill / type / press`
   - `state / event-log / wait-path / wait-text`
   - `mem-query / mem-read / mem-read-scalar / mem-write-bytes / mem-write-scalar`
@@ -104,22 +110,22 @@ I:\PAL4\projects\pal4_inject\build\Debug\pal4_injector_launcher.exe `
 
 ## Agent / Debug CLI
 - 连接方式：
-  - `pal4_inject_cli.exe --pipe <named-pipe> <command>`
-  - `pal4_inject_cli.exe --pid <game-pid> <command>`
+  - `cli.exe --pipe <named-pipe> <command>`
+  - `cli.exe --pid <game-pid> <command>`
 - 常用 UI 闭环：
 
 ```powershell
-I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 snapshot
-I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 click e7
-I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 press Escape
+I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 snapshot
+I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 click e7
+I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 press Escape
 ```
 
 - 常用内存调试：
 
 ```powershell
-I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 mem-query --ida 0x8C27FC
-I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 mem-read --ida 0x8C27FC --size 4
-I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 mem-write-scalar --ida 0x8C27FC --type u32 1
+I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-query --ida 0x8C27FC
+I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-read --ida 0x8C27FC --size 4
+I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --ida 0x8C27FC --type u32 1
 ```
 
 - `snapshot` 会输出 CEGUI 当前窗口树，并给每个节点分配 `e1/e2/...` 引用。
@@ -154,7 +160,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\pal4_inject_cli.exe --pid 1234 mem-writ
   - `last_crash_summary`
 
 ## Inject Control Panel
-- 注入后会出现 `PAL4 Inject Control` 小面板。
+- 注入后会创建 `PAL4 Inject Control` 小面板，但默认隐藏；按 `Ctrl+J` 显示 / 隐藏。
 - 面板会先显示一个独立的 `Render MSAA` 选项：
   - 当前支持 `off / 2x / 4x / 8x`
   - 改动会记忆，但真正生效要等下一次 D3D9 reset 或下一次启动

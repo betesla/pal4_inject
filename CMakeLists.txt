@@ -99,18 +99,29 @@ add_library(pal4_runtime_x86 SHARED
 )
 target_link_libraries(pal4_runtime_x86 PRIVATE pal4_inject_runtime_core)
 set_target_properties(pal4_runtime_x86 PROPERTIES
-    OUTPUT_NAME "pal4_runtime_x86"
+    OUTPUT_NAME "runtime"
 )
 
 add_executable(pal4_injector_launcher
     src/launcher/main.cpp
 )
 target_link_libraries(pal4_injector_launcher PRIVATE pal4_inject_common)
+target_link_libraries(pal4_injector_launcher PRIVATE gdi32)
+set_target_properties(pal4_injector_launcher PROPERTIES
+    OUTPUT_NAME "PAL4_inject"
+    WIN32_EXECUTABLE TRUE
+)
+if(MSVC)
+    target_link_options(pal4_injector_launcher PRIVATE /ENTRY:mainCRTStartup)
+endif()
 
 add_executable(pal4_inject_cli
     src/cli/main.cpp
 )
 target_link_libraries(pal4_inject_cli PRIVATE pal4_inject_common)
+set_target_properties(pal4_inject_cli PROPERTIES
+    OUTPUT_NAME "cli"
+)
 
 if(PAL4_INJECT_BUILD_TESTS)
     enable_testing()
@@ -135,7 +146,7 @@ foreach(target
 )
     if(TARGET ${target})
         if(MSVC)
-            target_compile_options(${target} PRIVATE /W4 /permissive- /FS)
+            target_compile_options(${target} PRIVATE /W4 /permissive- /FS /utf-8)
         else()
             target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
         endif()

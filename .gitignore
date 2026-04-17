@@ -4,3 +4,4 @@ build/
 *.obj
 pal4Exception.log
 pal4Logfile.log
+dist/

@@ -37,7 +37,7 @@ struct CliOptions {
 
 void PrintUsage() {
     std::cout
-        << "Usage: pal4_inject_cli (--pipe <name> | --pid <pid>) <command> [args]\n"
+        << "Usage: cli (--pipe <name> | --pid <pid>) <command> [args]\n"
         << "Commands:\n"
         << "  snapshot\n"
         << "  snapshot-raw\n"
