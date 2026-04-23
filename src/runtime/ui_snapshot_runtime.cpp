@@ -402,6 +402,49 @@ const UiSnapshotNode* FindFocusedEditableNode(const UiSnapshotNode& node) {
     return nullptr;
 }
 
+bool ContainsInsensitiveAscii(
+    const std::string_view haystack,
+    const std::string_view needle) {
+    if (needle.empty() || haystack.size() < needle.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i + needle.size() <= haystack.size(); ++i) {
+        bool match = true;
+        for (std::size_t j = 0; j < needle.size(); ++j) {
+            char lhs = haystack[i + j];
+            char rhs = needle[j];
+            if (lhs >= 'A' && lhs <= 'Z') {
+                lhs = static_cast<char>(lhs - 'A' + 'a');
+            }
+            if (rhs >= 'A' && rhs <= 'Z') {
+                rhs = static_cast<char>(rhs - 'A' + 'a');
+            }
+            if (lhs != rhs) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const UiSnapshotNode* FindNodeByNameInsensitive(
+    const UiSnapshotNode& node,
+    const std::string_view name) {
+    if (ContainsInsensitiveAscii(node.name, name) && node.name.size() == name.size()) {
+        return &node;
+    }
+    for (const auto& child : node.children) {
+        if (const auto* found = FindNodeByNameInsensitive(child, name)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 bool CaptureAndCacheUiSnapshot(UiSnapshotTree* out, std::string* error) {
@@ -421,6 +464,22 @@ bool ClickCachedUiSnapshotRef(const std::string_view ref, std::string* error) {
         return false;
     }
     return DispatchClientClick(node, error);
+}
+
+bool ClickLikelySystemMenuCloseButton(std::string* error) {
+    UiSnapshotTree tree{};
+    if (!CaptureUiSnapshotInternal(false, &tree, error)) {
+        return false;
+    }
+
+    const UiSnapshotNode* close_button = FindNodeByNameInsensitive(tree.root, "btnClose");
+    if (!close_button) {
+        if (error) {
+            *error = "failed to locate system-menu close button btnClose";
+        }
+        return false;
+    }
+    return DispatchClientClick(*close_button, error);
 }
 
 bool FillCachedUiSnapshotRef(
