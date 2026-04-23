@@ -20,6 +20,14 @@ public:
     void SetPipeReady(bool ready);
     void SetUiDispatchReady(bool ready);
     void SetCrashHandlerReady(bool ready);
+    void SetGamepadEnabled(bool enabled);
+    bool GamepadEnabled() const;
+    void SetGamepadLogEnabled(bool enabled);
+    bool GamepadLogEnabled() const;
+    void SetGamepadConnected(bool connected);
+    bool GamepadConnected() const;
+    void SetGamepadContext(GamepadInputContext context);
+    GamepadInputContext GetGamepadContext() const;
     bool BootstrapReady() const;
     bool HooksReady() const;
     bool PipeReady() const;
@@ -85,6 +93,10 @@ private:
     bool pipe_ready_ = false;
     bool ui_dispatch_ready_ = false;
     bool crash_handler_ready_ = false;
+    bool gamepad_enabled_ = true;
+    bool gamepad_log_enabled_ = false;
+    bool gamepad_connected_ = false;
+    GamepadInputContext gamepad_context_ = GamepadInputContext::gameplay;
     std::uintptr_t main_module_base_ = 0;
     std::string ready_event_name_;
     std::string pipe_name_;

@@ -9,8 +9,9 @@ namespace pal4::inject {
 
 enum class InjectControlPanelPage : std::uint8_t {
     overview = 0,
-    input_ui,
-    script_text,
+    ui_resolution,
+    input_interaction,
+    script_runtime,
     render_visual,
     camera,
 };
@@ -20,6 +21,7 @@ struct InjectControlPanelRow {
     InjectControlPanelPage page = InjectControlPanelPage::overview;
     std::wstring_view group_label{};
     std::wstring_view label{};
+    std::string_view hook_name{};
     bool allow_mode_change = true;
 };
 

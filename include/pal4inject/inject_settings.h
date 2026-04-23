@@ -19,6 +19,8 @@ struct PersistedHookSetting {
 struct InjectPersistedSettings {
     MsaaLevel msaa_level = MsaaLevel::off;
     UiTextureFilter ui_texture_filter = UiTextureFilter::nearest;
+    bool gamepad_enabled = true;
+    bool gamepad_log_enabled = false;
     std::vector<PersistedHookSetting> hooks;
 };
 

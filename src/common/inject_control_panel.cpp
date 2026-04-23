@@ -5,6 +5,15 @@ namespace {
 
 InjectControlPanelPage BuildPage(const HookId id) {
     switch (id) {
+    case HookId::cegui_renderer_constructor_2:
+    case HookId::cegui_system_initialize:
+    case HookId::load_font_file:
+    case HookId::dialog_handle_text_display:
+    case HookId::setup_minimap_texture:
+    case HookId::combat_console_set_image_position:
+    case HookId::combat_console_set_image_position_2:
+    case HookId::ui_show_combat_result:
+        return InjectControlPanelPage::ui_resolution;
     case HookId::process_ui_event:
     case HookId::handle_ui_message:
     case HookId::simulate_key_press_and_release:
@@ -13,16 +22,9 @@ InjectControlPanelPage BuildPage(const HookId id) {
     case HookId::initialize_direct_input:
     case HookId::pal4_main_wndproc:
     case HookId::handle_player_input_events:
-        return InjectControlPanelPage::input_ui;
+        return InjectControlPanelPage::input_interaction;
     case HookId::gi_talk:
-    case HookId::load_font_file:
-        return InjectControlPanelPage::script_text;
-    case HookId::cegui_renderer_constructor_2:
-    case HookId::cegui_system_initialize:
-    case HookId::setup_minimap_texture:
-    case HookId::combat_console_set_image_position:
-    case HookId::combat_console_set_image_position_2:
-    case HookId::ui_show_combat_result:
+        return InjectControlPanelPage::script_runtime;
     case HookId::d3d9_set_present_parameters:
         return InjectControlPanelPage::render_visual;
     case HookId::camera_update_matrix:
@@ -41,16 +43,18 @@ std::wstring_view BuildGroupLabel(const HookId id) {
     case HookId::initialize_direct_input:
     case HookId::pal4_main_wndproc:
     case HookId::handle_player_input_events:
-        return L"\u754c\u9762\u4e0e\u8f93\u5165";
-    case HookId::gi_talk:
-    case HookId::load_font_file:
-        return L"\u811a\u672c\u4e0e\u6587\u672c";
+        return L"\u8f93\u5165\u4e0e\u4ea4\u4e92";
     case HookId::cegui_renderer_constructor_2:
     case HookId::cegui_system_initialize:
+    case HookId::load_font_file:
+    case HookId::dialog_handle_text_display:
     case HookId::setup_minimap_texture:
     case HookId::combat_console_set_image_position:
     case HookId::combat_console_set_image_position_2:
     case HookId::ui_show_combat_result:
+        return L"UI \u5206\u8fa8\u7387\u81ea\u9002\u5e94";
+    case HookId::gi_talk:
+        return L"\u811a\u672c\u4e0e\u5267\u60c5";
     case HookId::d3d9_set_present_parameters:
         return L"\u6e32\u67d3\u4e0e\u753b\u9762";
     case HookId::camera_update_matrix:
@@ -81,6 +85,8 @@ std::wstring_view BuildDisplayLabel(const HookId id) {
         return L"CEGUI \u521d\u59cb\u5316\u89c2\u5bdf";
     case HookId::load_font_file:
         return L"\u52a8\u6001\u5b57\u4f53\u91cd\u540c\u6b65";
+    case HookId::dialog_handle_text_display:
+        return L"\u5bf9\u767d\u5206\u9875\u8bca\u65ad";
     case HookId::setup_minimap_texture:
         return L"\u5c0f\u5730\u56fe\u5bbd\u5c4f\u4fee\u6b63";
     case HookId::combat_console_set_image_position:
@@ -101,28 +107,33 @@ std::wstring_view BuildDisplayLabel(const HookId id) {
     return L"\u672a\u77e5\u529f\u80fd";
 }
 
+std::string_view BuildHookName(const HookId id) {
+    return ToString(id);
+}
+
 }  // namespace
 
 std::vector<InjectControlPanelRow> BuildInjectControlPanelRows() {
     return {
-        {HookId::process_ui_event, BuildPage(HookId::process_ui_event), BuildGroupLabel(HookId::process_ui_event), BuildDisplayLabel(HookId::process_ui_event), true},
-        {HookId::handle_ui_message, BuildPage(HookId::handle_ui_message), BuildGroupLabel(HookId::handle_ui_message), BuildDisplayLabel(HookId::handle_ui_message), true},
-        {HookId::simulate_key_press_and_release, BuildPage(HookId::simulate_key_press_and_release), BuildGroupLabel(HookId::simulate_key_press_and_release), BuildDisplayLabel(HookId::simulate_key_press_and_release), true},
-        {HookId::process_inputs, BuildPage(HookId::process_inputs), BuildGroupLabel(HookId::process_inputs), BuildDisplayLabel(HookId::process_inputs), true},
-        {HookId::update_input_device_state, BuildPage(HookId::update_input_device_state), BuildGroupLabel(HookId::update_input_device_state), BuildDisplayLabel(HookId::update_input_device_state), true},
-        {HookId::initialize_direct_input, BuildPage(HookId::initialize_direct_input), BuildGroupLabel(HookId::initialize_direct_input), BuildDisplayLabel(HookId::initialize_direct_input), true},
-        {HookId::pal4_main_wndproc, BuildPage(HookId::pal4_main_wndproc), BuildGroupLabel(HookId::pal4_main_wndproc), BuildDisplayLabel(HookId::pal4_main_wndproc), true},
-        {HookId::handle_player_input_events, BuildPage(HookId::handle_player_input_events), BuildGroupLabel(HookId::handle_player_input_events), BuildDisplayLabel(HookId::handle_player_input_events), false},
-        {HookId::gi_talk, BuildPage(HookId::gi_talk), BuildGroupLabel(HookId::gi_talk), BuildDisplayLabel(HookId::gi_talk), true},
-        {HookId::load_font_file, BuildPage(HookId::load_font_file), BuildGroupLabel(HookId::load_font_file), BuildDisplayLabel(HookId::load_font_file), true},
-        {HookId::cegui_renderer_constructor_2, BuildPage(HookId::cegui_renderer_constructor_2), BuildGroupLabel(HookId::cegui_renderer_constructor_2), BuildDisplayLabel(HookId::cegui_renderer_constructor_2), true},
-        {HookId::cegui_system_initialize, BuildPage(HookId::cegui_system_initialize), BuildGroupLabel(HookId::cegui_system_initialize), BuildDisplayLabel(HookId::cegui_system_initialize), true},
-        {HookId::setup_minimap_texture, BuildPage(HookId::setup_minimap_texture), BuildGroupLabel(HookId::setup_minimap_texture), BuildDisplayLabel(HookId::setup_minimap_texture), true},
-        {HookId::combat_console_set_image_position, BuildPage(HookId::combat_console_set_image_position), BuildGroupLabel(HookId::combat_console_set_image_position), BuildDisplayLabel(HookId::combat_console_set_image_position), true},
-        {HookId::combat_console_set_image_position_2, BuildPage(HookId::combat_console_set_image_position_2), BuildGroupLabel(HookId::combat_console_set_image_position_2), BuildDisplayLabel(HookId::combat_console_set_image_position_2), true},
-        {HookId::ui_show_combat_result, BuildPage(HookId::ui_show_combat_result), BuildGroupLabel(HookId::ui_show_combat_result), BuildDisplayLabel(HookId::ui_show_combat_result), true},
-        {HookId::d3d9_set_present_parameters, BuildPage(HookId::d3d9_set_present_parameters), BuildGroupLabel(HookId::d3d9_set_present_parameters), BuildDisplayLabel(HookId::d3d9_set_present_parameters), true},
-        {HookId::camera_update_matrix, BuildPage(HookId::camera_update_matrix), BuildGroupLabel(HookId::camera_update_matrix), BuildDisplayLabel(HookId::camera_update_matrix), true},
+        {HookId::process_ui_event, BuildPage(HookId::process_ui_event), BuildGroupLabel(HookId::process_ui_event), BuildDisplayLabel(HookId::process_ui_event), BuildHookName(HookId::process_ui_event), true},
+        {HookId::handle_ui_message, BuildPage(HookId::handle_ui_message), BuildGroupLabel(HookId::handle_ui_message), BuildDisplayLabel(HookId::handle_ui_message), BuildHookName(HookId::handle_ui_message), true},
+        {HookId::simulate_key_press_and_release, BuildPage(HookId::simulate_key_press_and_release), BuildGroupLabel(HookId::simulate_key_press_and_release), BuildDisplayLabel(HookId::simulate_key_press_and_release), BuildHookName(HookId::simulate_key_press_and_release), true},
+        {HookId::process_inputs, BuildPage(HookId::process_inputs), BuildGroupLabel(HookId::process_inputs), BuildDisplayLabel(HookId::process_inputs), BuildHookName(HookId::process_inputs), true},
+        {HookId::update_input_device_state, BuildPage(HookId::update_input_device_state), BuildGroupLabel(HookId::update_input_device_state), BuildDisplayLabel(HookId::update_input_device_state), BuildHookName(HookId::update_input_device_state), true},
+        {HookId::initialize_direct_input, BuildPage(HookId::initialize_direct_input), BuildGroupLabel(HookId::initialize_direct_input), BuildDisplayLabel(HookId::initialize_direct_input), BuildHookName(HookId::initialize_direct_input), true},
+        {HookId::pal4_main_wndproc, BuildPage(HookId::pal4_main_wndproc), BuildGroupLabel(HookId::pal4_main_wndproc), BuildDisplayLabel(HookId::pal4_main_wndproc), BuildHookName(HookId::pal4_main_wndproc), true},
+        {HookId::handle_player_input_events, BuildPage(HookId::handle_player_input_events), BuildGroupLabel(HookId::handle_player_input_events), BuildDisplayLabel(HookId::handle_player_input_events), BuildHookName(HookId::handle_player_input_events), false},
+        {HookId::gi_talk, BuildPage(HookId::gi_talk), BuildGroupLabel(HookId::gi_talk), BuildDisplayLabel(HookId::gi_talk), BuildHookName(HookId::gi_talk), true},
+        {HookId::load_font_file, BuildPage(HookId::load_font_file), BuildGroupLabel(HookId::load_font_file), BuildDisplayLabel(HookId::load_font_file), BuildHookName(HookId::load_font_file), true},
+        {HookId::dialog_handle_text_display, BuildPage(HookId::dialog_handle_text_display), BuildGroupLabel(HookId::dialog_handle_text_display), BuildDisplayLabel(HookId::dialog_handle_text_display), BuildHookName(HookId::dialog_handle_text_display), false},
+        {HookId::cegui_renderer_constructor_2, BuildPage(HookId::cegui_renderer_constructor_2), BuildGroupLabel(HookId::cegui_renderer_constructor_2), BuildDisplayLabel(HookId::cegui_renderer_constructor_2), BuildHookName(HookId::cegui_renderer_constructor_2), true},
+        {HookId::cegui_system_initialize, BuildPage(HookId::cegui_system_initialize), BuildGroupLabel(HookId::cegui_system_initialize), BuildDisplayLabel(HookId::cegui_system_initialize), BuildHookName(HookId::cegui_system_initialize), true},
+        {HookId::setup_minimap_texture, BuildPage(HookId::setup_minimap_texture), BuildGroupLabel(HookId::setup_minimap_texture), BuildDisplayLabel(HookId::setup_minimap_texture), BuildHookName(HookId::setup_minimap_texture), true},
+        {HookId::combat_console_set_image_position, BuildPage(HookId::combat_console_set_image_position), BuildGroupLabel(HookId::combat_console_set_image_position), BuildDisplayLabel(HookId::combat_console_set_image_position), BuildHookName(HookId::combat_console_set_image_position), true},
+        {HookId::combat_console_set_image_position_2, BuildPage(HookId::combat_console_set_image_position_2), BuildGroupLabel(HookId::combat_console_set_image_position_2), BuildDisplayLabel(HookId::combat_console_set_image_position_2), BuildHookName(HookId::combat_console_set_image_position_2), true},
+        {HookId::ui_show_combat_result, BuildPage(HookId::ui_show_combat_result), BuildGroupLabel(HookId::ui_show_combat_result), BuildDisplayLabel(HookId::ui_show_combat_result), BuildHookName(HookId::ui_show_combat_result), true},
+        {HookId::d3d9_set_present_parameters, BuildPage(HookId::d3d9_set_present_parameters), BuildGroupLabel(HookId::d3d9_set_present_parameters), BuildDisplayLabel(HookId::d3d9_set_present_parameters), BuildHookName(HookId::d3d9_set_present_parameters), true},
+        {HookId::camera_update_matrix, BuildPage(HookId::camera_update_matrix), BuildGroupLabel(HookId::camera_update_matrix), BuildDisplayLabel(HookId::camera_update_matrix), BuildHookName(HookId::camera_update_matrix), true},
     };
 }
 
@@ -139,10 +150,12 @@ std::wstring_view BuildInjectControlPanelPageLabel(const InjectControlPanelPage 
     switch (page) {
     case InjectControlPanelPage::overview:
         return L"\u6982\u89c8";
-    case InjectControlPanelPage::input_ui:
-        return L"\u8f93\u5165\u4e0e\u754c\u9762";
-    case InjectControlPanelPage::script_text:
-        return L"\u811a\u672c\u4e0e\u6587\u672c";
+    case InjectControlPanelPage::ui_resolution:
+        return L"UI \u5206\u8fa8\u7387\u81ea\u9002\u5e94";
+    case InjectControlPanelPage::input_interaction:
+        return L"\u8f93\u5165\u4e0e\u4ea4\u4e92";
+    case InjectControlPanelPage::script_runtime:
+        return L"\u811a\u672c\u4e0e\u5267\u60c5";
     case InjectControlPanelPage::render_visual:
         return L"\u6e32\u67d3\u4e0e\u753b\u9762";
     case InjectControlPanelPage::camera:

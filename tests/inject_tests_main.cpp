@@ -23,6 +23,7 @@
 #include "pal4inject/hook_inventory.h"
 #include "pal4inject/ida_addresses.h"
 #include "pal4inject/dpi_awareness.h"
+#include "pal4inject/gamepad.h"
 #include "pal4inject/inject_control_panel.h"
 #include "pal4inject/inject_settings.h"
 #include "pal4inject/input_logic.h"
@@ -88,12 +89,12 @@ void TestHookInventory() {
         assert(hook.patch_span >= 5);
         if (hook.id == HookId::process_ui_event) {
             found_process_ui_event = true;
-            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
             assert(hook.patch_span == 8);
         }
         if (hook.id == HookId::handle_ui_message) {
             found_handle_ui_message = true;
-            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
         }
         if (hook.id == HookId::gi_talk) {
             found_gi_talk = true;
@@ -559,7 +560,7 @@ void TestMemoryRuntimeHelpers() {
 
 void TestInjectControlPanelModel() {
     const auto rows = pal4::inject::BuildInjectControlPanelRows();
-    assert(rows.size() == 18);
+    assert(rows.size() == 19);
 
     const auto find_row =
         [&rows](const HookId id) -> const pal4::inject::InjectControlPanelRow* {
@@ -573,9 +574,10 @@ void TestInjectControlPanelModel() {
 
     const auto* process_ui_row = find_row(HookId::process_ui_event);
     assert(process_ui_row);
-    assert(process_ui_row->page == pal4::inject::InjectControlPanelPage::input_ui);
-    assert(process_ui_row->group_label == std::wstring_view(L"\u754c\u9762\u4e0e\u8f93\u5165"));
+    assert(process_ui_row->page == pal4::inject::InjectControlPanelPage::input_interaction);
+    assert(process_ui_row->group_label == std::wstring_view(L"\u8f93\u5165\u4e0e\u4ea4\u4e92"));
     assert(process_ui_row->label == std::wstring_view(L"\u754c\u9762\u4e8b\u4ef6\u66ff\u6362"));
+    assert(process_ui_row->hook_name == std::string_view("process_ui_event"));
     assert(process_ui_row->allow_mode_change);
 
     const auto* wndproc_row = find_row(HookId::pal4_main_wndproc);
@@ -588,13 +590,21 @@ void TestInjectControlPanelModel() {
 
     const auto* gi_talk_row = find_row(HookId::gi_talk);
     assert(gi_talk_row);
-    assert(gi_talk_row->page == pal4::inject::InjectControlPanelPage::script_text);
-    assert(gi_talk_row->group_label == std::wstring_view(L"\u811a\u672c\u4e0e\u6587\u672c"));
+    assert(gi_talk_row->page == pal4::inject::InjectControlPanelPage::script_runtime);
+    assert(gi_talk_row->group_label == std::wstring_view(L"\u811a\u672c\u4e0e\u5267\u60c5"));
+    assert(gi_talk_row->hook_name == std::string_view("gi_talk"));
+
+    const auto* load_font_file_row = find_row(HookId::load_font_file);
+    assert(load_font_file_row);
+    assert(load_font_file_row->page == pal4::inject::InjectControlPanelPage::ui_resolution);
+    assert(load_font_file_row->hook_name == std::string_view("load_font_file"));
+    assert(load_font_file_row->group_label == std::wstring_view(L"UI \u5206\u8fa8\u7387\u81ea\u9002\u5e94"));
 
     const auto* renderer_row = find_row(HookId::cegui_renderer_constructor_2);
     assert(renderer_row);
-    assert(renderer_row->page == pal4::inject::InjectControlPanelPage::render_visual);
-    assert(renderer_row->group_label == std::wstring_view(L"\u6e32\u67d3\u4e0e\u753b\u9762"));
+    assert(renderer_row->page == pal4::inject::InjectControlPanelPage::ui_resolution);
+    assert(renderer_row->group_label == std::wstring_view(L"UI \u5206\u8fa8\u7387\u81ea\u9002\u5e94"));
+    assert(renderer_row->hook_name == std::string_view("cegui_renderer_constructor_2"));
 
     const auto* combat_number_row = find_row(HookId::combat_console_set_image_position);
     assert(combat_number_row);
@@ -603,7 +613,7 @@ void TestInjectControlPanelModel() {
 
     const auto* combat_result_row = find_row(HookId::ui_show_combat_result);
     assert(combat_result_row);
-    assert(combat_result_row->group_label == std::wstring_view(L"\u6e32\u67d3\u4e0e\u753b\u9762"));
+    assert(combat_result_row->group_label == std::wstring_view(L"UI \u5206\u8fa8\u7387\u81ea\u9002\u5e94"));
 
     const auto* camera_row = find_row(HookId::camera_update_matrix);
     assert(camera_row);
@@ -616,8 +626,14 @@ void TestInjectControlPanelModel() {
     assert(modes[3] == pal4::inject::HookMode::replace_strict);
     assert(pal4::inject::BuildInjectControlPanelPageLabel(pal4::inject::InjectControlPanelPage::overview) ==
            std::wstring_view(L"\u6982\u89c8"));
+    assert(pal4::inject::BuildInjectControlPanelPageLabel(pal4::inject::InjectControlPanelPage::ui_resolution) ==
+           std::wstring_view(L"UI \u5206\u8fa8\u7387\u81ea\u9002\u5e94"));
     assert(pal4::inject::BuildInjectControlPanelPageLabel(pal4::inject::InjectControlPanelPage::render_visual) ==
            std::wstring_view(L"\u6e32\u67d3\u4e0e\u753b\u9762"));
+    assert(pal4::inject::BuildInjectControlPanelPageLabel(pal4::inject::InjectControlPanelPage::input_interaction) ==
+           std::wstring_view(L"\u8f93\u5165\u4e0e\u4ea4\u4e92"));
+    assert(pal4::inject::BuildInjectControlPanelPageLabel(pal4::inject::InjectControlPanelPage::script_runtime) ==
+           std::wstring_view(L"\u811a\u672c\u4e0e\u5267\u60c5"));
     assert(pal4::inject::BuildInjectControlPanelModeLabel(pal4::inject::HookMode::observe_only) ==
            std::wstring_view(L"\u4ec5\u89c2\u5bdf"));
     assert(pal4::inject::BuildInjectControlPanelModeLabel(pal4::inject::HookMode::replace_strict) ==
@@ -631,6 +647,8 @@ void TestInjectSettingsRoundTrip() {
     pal4::inject::InjectPersistedSettings settings{};
     settings.msaa_level = pal4::inject::MsaaLevel::x4;
     settings.ui_texture_filter = pal4::inject::UiTextureFilter::linear;
+    settings.gamepad_enabled = true;
+    settings.gamepad_log_enabled = false;
     settings.hooks.push_back({
         HookId::process_ui_event,
         pal4::inject::HookMode::replace_with_fallback,
@@ -656,6 +674,8 @@ void TestInjectSettingsRoundTrip() {
     assert(pal4::inject::ParseInjectPersistedSettings(text, &parsed, &error));
     assert(parsed.msaa_level == pal4::inject::MsaaLevel::x4);
     assert(parsed.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
+    assert(parsed.gamepad_enabled);
+    assert(!parsed.gamepad_log_enabled);
     assert(parsed.hooks.size() == 3);
     const auto find_hook =
         [&parsed](const HookId id) -> const pal4::inject::PersistedHookSetting* {
@@ -685,7 +705,39 @@ void TestInjectSettingsRoundTrip() {
     assert(pal4::inject::LoadInjectPersistedSettings(temp_path, &loaded, &error));
     assert(loaded.msaa_level == pal4::inject::MsaaLevel::x4);
     assert(loaded.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
+    assert(loaded.gamepad_enabled);
+    assert(!loaded.gamepad_log_enabled);
     std::filesystem::remove(temp_path);
+}
+
+void TestGamepadHelpers() {
+    assert(std::string(pal4::inject::ToString(pal4::inject::GamepadInputContext::gameplay)) == "gameplay");
+    assert(std::string(pal4::inject::ToString(pal4::inject::GamepadInputContext::system_menu)) == "system_menu");
+
+    pal4::inject::GamepadInputContext parsed = pal4::inject::GamepadInputContext::gameplay;
+    assert(pal4::inject::TryParseGamepadInputContext("menu", &parsed));
+    assert(parsed == pal4::inject::GamepadInputContext::menu);
+    assert(!pal4::inject::TryParseGamepadInputContext("unknown", &parsed));
+
+    const auto idle = pal4::inject::BuildGamepadDigitalAxes(1000, 1000, 5000);
+    assert(!idle.up && !idle.down && !idle.left && !idle.right);
+
+    const auto forward_left = pal4::inject::BuildGamepadDigitalAxes(-20000, 20000, 5000);
+    assert(forward_left.up);
+    assert(forward_left.left);
+    assert(!forward_left.down);
+    assert(!forward_left.right);
+
+    assert(pal4::inject::WrapGamepadCycleIndex(0, -1, 7) == 6);
+    assert(pal4::inject::WrapGamepadCycleIndex(6, 1, 7) == 0);
+    assert(pal4::inject::WrapGamepadCycleIndex(0, -1, 6) == 5);
+
+    pal4::inject::GamepadRepeatState repeat{};
+    assert(pal4::inject::ConsumeGamepadRepeat(true, 100, 300, 100, &repeat));
+    assert(!pal4::inject::ConsumeGamepadRepeat(true, 200, 300, 100, &repeat));
+    assert(pal4::inject::ConsumeGamepadRepeat(true, 400, 300, 100, &repeat));
+    assert(!pal4::inject::ConsumeGamepadRepeat(false, 450, 300, 100, &repeat));
+    assert(pal4::inject::ConsumeGamepadRepeat(true, 500, 300, 100, &repeat));
 }
 
 void TestInputLogic() {
@@ -752,6 +804,10 @@ void TestRuntimeEventLog() {
     state.AppendEventLog("event-1");
     state.AppendEventLog("event-2");
     state.SetCrashHandlerReady(true);
+    state.SetGamepadEnabled(true);
+    state.SetGamepadLogEnabled(false);
+    state.SetGamepadConnected(true);
+    state.SetGamepadContext(pal4::inject::GamepadInputContext::system_menu);
     state.SetCrashArtifacts("summary", "report.txt", "dump.dmp");
     state.SetLastFontSync("hook=load_font_file action=resynced", true);
     state.IncrementHookCall(HookId::process_ui_event);
@@ -765,6 +821,10 @@ void TestRuntimeEventLog() {
     assert(snapshot.crash_handler_ready);
     assert(snapshot.msaa_level == pal4::inject::MsaaLevel::x2);
     assert(snapshot.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
+    assert(snapshot.gamepad_enabled);
+    assert(!snapshot.gamepad_log_enabled);
+    assert(snapshot.gamepad_connected);
+    assert(snapshot.gamepad_context == pal4::inject::GamepadInputContext::system_menu);
     assert(snapshot.last_crash_summary == "summary");
     assert(snapshot.last_crash_report_path == "report.txt");
     assert(snapshot.last_crash_dump_path == "dump.dmp");
@@ -1613,6 +1673,7 @@ int main() {
     TestInheritedScriptModeOverride();
     TestInjectControlPanelModel();
     TestInjectSettingsRoundTrip();
+    TestGamepadHelpers();
     TestProtocolRoundTrip();
     TestDynamicFontOversamplePlan();
     TestUiSnapshotSerialization();

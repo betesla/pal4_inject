@@ -83,6 +83,50 @@ bool RuntimeState::CrashHandlerReady() const {
     return crash_handler_ready_;
 }
 
+void RuntimeState::SetGamepadEnabled(const bool enabled) {
+    std::scoped_lock lock(mutex_);
+    gamepad_enabled_ = enabled;
+    state_cv_.notify_all();
+}
+
+bool RuntimeState::GamepadEnabled() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_enabled_;
+}
+
+void RuntimeState::SetGamepadLogEnabled(const bool enabled) {
+    std::scoped_lock lock(mutex_);
+    gamepad_log_enabled_ = enabled;
+    state_cv_.notify_all();
+}
+
+bool RuntimeState::GamepadLogEnabled() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_log_enabled_;
+}
+
+void RuntimeState::SetGamepadConnected(const bool connected) {
+    std::scoped_lock lock(mutex_);
+    gamepad_connected_ = connected;
+    state_cv_.notify_all();
+}
+
+bool RuntimeState::GamepadConnected() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_connected_;
+}
+
+void RuntimeState::SetGamepadContext(const GamepadInputContext context) {
+    std::scoped_lock lock(mutex_);
+    gamepad_context_ = context;
+    state_cv_.notify_all();
+}
+
+GamepadInputContext RuntimeState::GetGamepadContext() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_context_;
+}
+
 void RuntimeState::SetMainModuleBase(const std::uintptr_t base) {
     std::scoped_lock lock(mutex_);
     main_module_base_ = base;
@@ -306,6 +350,10 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.pipe_ready = pipe_ready_;
     snapshot.ui_dispatch_ready = ui_dispatch_ready_;
     snapshot.crash_handler_ready = crash_handler_ready_;
+    snapshot.gamepad_enabled = gamepad_enabled_;
+    snapshot.gamepad_log_enabled = gamepad_log_enabled_;
+    snapshot.gamepad_connected = gamepad_connected_;
+    snapshot.gamepad_context = gamepad_context_;
     snapshot.main_module_base = main_module_base_;
     snapshot.msaa_level = msaa_level_;
     snapshot.ui_texture_filter = ui_texture_filter_;

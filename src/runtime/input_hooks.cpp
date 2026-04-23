@@ -16,6 +16,7 @@
 #include "cegui_font_hooks.h"
 #include "d3d9_quality_hooks.h"
 #include "dialog_pagination_hooks.h"
+#include "gamepad_runtime.h"
 #include "hud_layout_fixups.h"
 #include "hook_logging.h"
 #include "minimap_hooks.h"
@@ -709,6 +710,7 @@ bool __fastcall Hook_SimulateKeyPressAndRelease(
 int __cdecl Hook_ProcessInputs() {
     GetRuntimeState().IncrementHookCall(HookId::process_inputs);
     RefreshWidescreenHudLayoutFixups();
+    TickGamepadInput();
     LogLowLevelObserveOnlyHook(HookId::process_inputs, nullptr);
     return g_original_process_inputs
         ? g_original_process_inputs()

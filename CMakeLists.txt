@@ -41,6 +41,7 @@ add_library(pal4_inject_common STATIC
     src/common/cegui_widescreen.cpp
     src/common/crash_capture.cpp
     src/common/dpi_awareness.cpp
+    src/common/gamepad.cpp
     src/common/hook_inventory.cpp
     src/common/inject_control_panel.cpp
     src/common/inject_settings.cpp
@@ -76,6 +77,7 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/cegui_bindings.cpp
     src/runtime/dialog_pagination_hooks.cpp
     src/runtime/crash_handler.cpp
+    src/runtime/gamepad_runtime.cpp
     src/runtime/hud_layout_fixups.cpp
     src/runtime/hook_logging.cpp
     src/runtime/hook_manager.cpp

@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+#include "pal4inject/gamepad.h"
+
 namespace pal4::inject {
 
 enum class CallingConvention : std::uint8_t {
@@ -99,6 +101,10 @@ struct RuntimeSnapshot {
     bool pipe_ready = false;
     bool ui_dispatch_ready = false;
     bool crash_handler_ready = false;
+    bool gamepad_enabled = true;
+    bool gamepad_log_enabled = false;
+    bool gamepad_connected = false;
+    GamepadInputContext gamepad_context{};
     std::uintptr_t main_module_base = 0;
     MsaaLevel msaa_level = MsaaLevel::off;
     UiTextureFilter ui_texture_filter = UiTextureFilter::nearest;

@@ -41,6 +41,8 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
     out << "version=" << kSettingsVersion << '\n';
     out << "msaa_level=" << ToString(settings.msaa_level) << '\n';
     out << "ui_texture_filter=" << ToString(settings.ui_texture_filter) << '\n';
+    out << "gamepad_enabled=" << (settings.gamepad_enabled ? "1" : "0") << '\n';
+    out << "gamepad_log_enabled=" << (settings.gamepad_log_enabled ? "1" : "0") << '\n';
 
     std::map<int, PersistedHookSetting> sorted_hooks;
     for (const auto& hook : settings.hooks) {
@@ -108,6 +110,22 @@ bool ParseInjectPersistedSettings(
             if (!TryParseUiTextureFilter(value, &out->ui_texture_filter)) {
                 if (error) {
                     *error = "invalid ui_texture_filter value: " + value;
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "gamepad_enabled" || key == "gamepad_log_enabled") {
+            bool* flag = key == "gamepad_enabled"
+                ? &out->gamepad_enabled
+                : &out->gamepad_log_enabled;
+            if (value == "1" || value == "true" || value == "on") {
+                *flag = true;
+            } else if (value == "0" || value == "false" || value == "off") {
+                *flag = false;
+            } else {
+                if (error) {
+                    *error = "invalid " + key + " value: " + value;
                 }
                 return false;
             }

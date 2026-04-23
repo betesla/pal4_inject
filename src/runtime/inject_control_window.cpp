@@ -34,11 +34,12 @@ constexpr int kWindowMargin = 12;
 constexpr int kFooterHeight = 54;
 constexpr int kPageMargin = 14;
 constexpr int kSummaryLabelWidth = 90;
-constexpr int kNameWidth = 230;
+constexpr int kNameWidth = 176;
+constexpr int kHookNameWidth = 250;
 constexpr int kToggleWidth = 72;
 constexpr int kLogWidth = 72;
-constexpr int kComboWidth = 210;
-constexpr int kStatusWidth = 408;
+constexpr int kComboWidth = 170;
+constexpr int kStatusWidth = 216;
 constexpr int kRowHeight = 28;
 constexpr int kSectionHeight = 22;
 constexpr int kPageTitleHeight = 22;
@@ -51,6 +52,7 @@ constexpr int kMsaaComboId = 3000;
 constexpr int kMsaaStatusId = 3001;
 constexpr int kOverviewStatusId = 3002;
 constexpr int kScriptModeStatusId = 3003;
+constexpr int kInputStatusId = 3004;
 constexpr int kUiTextureFilterCheckboxId = 3005;
 constexpr int kUiTextureFilterStatusId = 3006;
 constexpr int kFooterLabelId = 4000;
@@ -63,18 +65,20 @@ constexpr UINT kForceCloseMessage = WM_APP + 1;
 struct PanelRowRuntime {
     InjectControlPanelRow row{};
     HWND label = nullptr;
+    HWND hook_name = nullptr;
     HWND toggle = nullptr;
     HWND log_toggle = nullptr;
     HWND combo = nullptr;
     HWND status = nullptr;
 };
 
-using PageArray = std::array<InjectControlPanelPage, 5>;
+using PageArray = std::array<InjectControlPanelPage, 6>;
 
 constexpr PageArray kPageOrder{
     InjectControlPanelPage::overview,
-    InjectControlPanelPage::input_ui,
-    InjectControlPanelPage::script_text,
+    InjectControlPanelPage::ui_resolution,
+    InjectControlPanelPage::input_interaction,
+    InjectControlPanelPage::script_runtime,
     InjectControlPanelPage::render_visual,
     InjectControlPanelPage::camera,
 };
@@ -86,6 +90,8 @@ HWND g_owner_game_hwnd = nullptr;
 HWND g_tab_hwnd = nullptr;
 std::array<HWND, kPageOrder.size()> g_page_panels{};
 HWND g_overview_status = nullptr;
+HWND g_gamepad_status = nullptr;
+HWND g_input_status = nullptr;
 HWND g_script_mode_status = nullptr;
 HWND g_msaa_combo = nullptr;
 HWND g_msaa_status = nullptr;
@@ -98,6 +104,8 @@ int PageIndex(const InjectControlPanelPage page) noexcept {
 }
 
 void ApplyFont(HWND hwnd);
+int BuildHookPageHeader(HWND panel, InjectControlPanelPage page, int y, bool show_msaa_block);
+void BuildHookRowsForPage(HWND panel, InjectControlPanelPage page, int y);
 
 std::wstring WideFromNarrow(const std::string_view text) {
     if (text.empty()) {
@@ -237,6 +245,67 @@ std::wstring BuildPanelScriptModeText() {
     return text;
 }
 
+std::wstring BuildPanelGamepadText() {
+    auto& state = GetRuntimeState();
+    std::wstring text = L"XInput | \u603b\u5f00\u5173=";
+    text += BuildSwitchLabel(state.GamepadEnabled());
+    text += L" | \u8fde\u63a5=";
+    text += state.GamepadConnected() ? L"\u5df2\u8fde\u63a5" : L"\u672a\u8fde\u63a5";
+    text += L" | \u4e0a\u4e0b\u6587=";
+    switch (state.GetGamepadContext()) {
+    case GamepadInputContext::gameplay:
+        text += L"\u573a\u666f";
+        break;
+    case GamepadInputContext::system_menu:
+        text += L"\u7cfb\u7edf\u754c\u9762";
+        break;
+    case GamepadInputContext::menu:
+        text += L"\u83dc\u5355";
+        break;
+    }
+    return text;
+}
+
+std::wstring BuildInputStatusText() {
+    auto& state = GetRuntimeState();
+    std::wstring text;
+    text += L"\u624b\u67c4\u8fd0\u884c\u72b6\u6001\r\n";
+    text += L"- XInput \u603b\u5f00\u5173\uff1a";
+    text += BuildSwitchLabel(state.GamepadEnabled());
+    text += L"\r\n- \u8bbe\u5907\u8fde\u63a5\uff1a";
+    text += state.GamepadConnected() ? L"\u5df2\u8fde\u63a5" : L"\u672a\u8fde\u63a5";
+    text += L"\r\n- \u5f53\u524d\u4e0a\u4e0b\u6587\uff1a";
+    switch (state.GetGamepadContext()) {
+    case GamepadInputContext::gameplay:
+        text += L"\u573a\u666f";
+        break;
+    case GamepadInputContext::system_menu:
+        text += L"\u7cfb\u7edf\u754c\u9762";
+        break;
+    case GamepadInputContext::menu:
+        text += L"\u83dc\u5355";
+        break;
+    }
+
+    text += L"\r\n\r\n\u9ed8\u8ba4\u6620\u5c04\r\n";
+    text += L"- \u5de6\u6447\u6746\uff1aW/A/S/D \u573a\u666f\u79fb\u52a8\u4e0e\u8f6c\u5411\r\n";
+    text += L"- \u5341\u5b57\u952e\uff1a\u83dc\u5355\u65b9\u5411\u952e\r\n";
+    text += L"- A\uff1a\u786e\u8ba4 / SPACE\r\n";
+    text += L"- B\uff1aEsc\r\n";
+    text += L"- X\uff1a\u9f20\u6807\u5de6\u952e\u6309\u4f4f\r\n";
+    text += L"- Y\uff1aR \u5207\u6362\u8d70/\u8dd1/\u5feb\u8dd1\r\n";
+    text += L"- L3\uff1aF \u81ea\u52a8\u524d\u8fdb\r\n";
+    text += L"- Back\uff1aM \u5c0f\u5730\u56fe\u5f00\u5173\r\n";
+    text += L"- Start\uff1a\u6253\u5f00/\u5173\u95ed\u7cfb\u7edf\u754c\u9762\r\n";
+    text += L"- LB/RB\uff1a\u7cfb\u7edf\u4e3b\u5206\u9875 F1~F7\r\n";
+    text += L"- LT/RT\uff1a\u7eb5\u5411\u5b50\u5207\u6362 1~6 \u5faa\u73af\r\n";
+
+    text += L"\r\n\u8bf4\u660e\r\n";
+    text += L"- \u573a\u666f\u79fb\u52a8\u73b0\u5728\u4f7f\u7528\u5e95\u5c42\u952e\u76d8\u6ce8\u5165\uff0c\u4e0d\u518d\u53ea\u662f UI \u6d88\u606f\r\n";
+    text += L"- \u53f3\u6447\u6746\u3001\u9707\u52a8\u3001\u81ea\u5b9a\u4e49\u952e\u4f4d\u6682\u672a\u652f\u6301";
+    return text;
+}
+
 std::wstring BuildLocalizedHookStatusText(const HookStatus* status) {
     if (!status) {
         return L"\u72b6\u6001\u672a\u77e5";
@@ -295,7 +364,7 @@ std::wstring BuildLocalizedMsaaStatusText(
 std::wstring BuildLocalizedUiTextureFilterStatusText(
     const RuntimeState& state,
     const HookStatus* renderer_hook) {
-    std::wstring text = L"当前 ";
+    std::wstring text = L"\u5f53\u524d ";
     const auto filter = state.GetUiTextureFilter();
     text += filter == UiTextureFilter::nearest ? L"Nearest" : L"Linear";
     text += L" | RenderWare state 9=";
@@ -303,13 +372,13 @@ std::wstring BuildLocalizedUiTextureFilterStatusText(
     if (renderer_hook) {
         if (renderer_hook->mode == HookMode::observe_only ||
             renderer_hook->mode == HookMode::mirror_compare) {
-            text += L" | 宽屏 Hook 未启用";
+            text += L" | \u5bbd\u5c4f Hook \u672a\u542f\u7528";
         } else {
-            text += L" | 调用=";
+            text += L" | \u8c03\u7528=";
             text += WideFromUnsigned(renderer_hook->call_count);
         }
         if (!renderer_hook->last_error.empty()) {
-            text += L" | 错误=";
+            text += L" | \u9519\u8bef=";
             text += WideFromNarrow(renderer_hook->last_error);
         }
     }
@@ -320,12 +389,14 @@ std::wstring BuildPageNote(const InjectControlPanelPage page) {
     switch (page) {
     case InjectControlPanelPage::overview:
         return L"\u67e5\u770b\u5f53\u524d\u6ce8\u5165\u72b6\u6001\uff0c\u5e76\u4ece\u4e0a\u65b9\u9875\u7b7e\u5207\u6362\u5230\u5176\u4ed6\u529f\u80fd\u9762\u677f\u3002";
-    case InjectControlPanelPage::input_ui:
-        return L"\u96c6\u4e2d\u7ba1\u7406\u83dc\u5355\u3001\u952e\u76d8\u3001\u8f93\u5165\u8bbe\u5907\u4e0e\u7126\u70b9\u4fdd\u62a4\u76f8\u5173 Hook\u3002";
-    case InjectControlPanelPage::script_text:
-        return L"\u67e5\u770b\u5bf9\u767d\u3001\u5b57\u4f53\u540c\u6b65\u4e0e\u5267\u672c\u6267\u884c\u76f8\u5173 Hook\u3002";
+    case InjectControlPanelPage::ui_resolution:
+        return L"\u5c06\u5bbd\u5c4f\u5c45\u4e2d\u3001\u5b57\u4f53\u91cd\u540c\u6b65\u3001HUD \u91cd\u6392\u3001\u5c0f\u5730\u56fe\u4e0e\u6218\u6597 UI \u5c45\u4e2d\u7b49 UI \u5206\u8fa8\u7387\u81ea\u9002\u5e94\u4fee\u590d\u6536\u62e2\u5230\u4e00\u4e2a\u4e3b\u9898\u9875\u3002";
+    case InjectControlPanelPage::input_interaction:
+        return L"\u96c6\u4e2d\u67e5\u770b XInput \u72b6\u6001\uff0c\u5e76\u7ba1\u7406\u83dc\u5355\u3001\u952e\u76d8\u3001\u8f93\u5165\u8bbe\u5907\u4e0e\u7126\u70b9\u4fdd\u62a4\u76f8\u5173 Hook\u3002";
+    case InjectControlPanelPage::script_runtime:
+        return L"\u96c6\u4e2d\u67e5\u770b\u5bf9\u767d\u811a\u672c\u3001\u5267\u60c5\u8c03\u5ea6\u7b49\u8fd0\u884c\u65f6\u5267\u60c5\u76f8\u5173 Hook\u3002";
     case InjectControlPanelPage::render_visual:
-        return L"\u96c6\u4e2d\u7ba1\u7406\u5bbd\u5c4f\u3001HUD\u3001\u6218\u6597 UI \u4e0e MSAA \u76f8\u5173\u529f\u80fd\u3002";
+        return L"\u96c6\u4e2d\u7ba1\u7406 MSAA \u3001\u91c7\u6837\u4e0e\u5176\u4ed6\u66f4\u504f\u6e32\u67d3\u7ba1\u7ebf\u7684\u753b\u9762\u8d28\u91cf\u5f00\u5173\u3002";
     case InjectControlPanelPage::camera:
         return L"\u5355\u72ec\u7ba1\u7406\u76f8\u673a\u89d2\u5ea6\u3001\u4fef\u4ef0\u4fdd\u62a4\u548c\u89c6\u89d2\u5b89\u5168\u76f8\u5173 Hook\u3002";
     }
@@ -424,6 +495,30 @@ HWND CreateComboControl(
         L"COMBOBOX",
         L"",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
+        x,
+        y,
+        width,
+        height,
+        parent,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(control_id)),
+        nullptr,
+        nullptr);
+    ApplyFont(control);
+    return control;
+}
+
+HWND CreateReadOnlyTextBox(
+    const HWND parent,
+    const int x,
+    const int y,
+    const int width,
+    const int height,
+    const int control_id) {
+    const HWND control = CreateWindowExW(
+        WS_EX_CLIENTEDGE,
+        L"EDIT",
+        L"",
+        WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_VSCROLL,
         x,
         y,
         width,
@@ -654,6 +749,7 @@ void RefreshPanelContent(const HWND hwnd) {
         const auto* msaa_hook = FindStatus(statuses, HookId::d3d9_set_present_parameters);
         SetWindowTextW(g_msaa_status, BuildLocalizedMsaaStatusText(state, msaa_hook).c_str());
     }
+
     if (g_ui_texture_filter_checkbox) {
         SendMessageW(
             g_ui_texture_filter_checkbox,
@@ -675,8 +771,14 @@ void RefreshPanelContent(const HWND hwnd) {
     if (g_overview_status) {
         SetWindowTextW(g_overview_status, BuildPanelOverviewText().c_str());
     }
+    if (g_gamepad_status) {
+        SetWindowTextW(g_gamepad_status, BuildPanelGamepadText().c_str());
+    }
     if (g_script_mode_status) {
         SetWindowTextW(g_script_mode_status, BuildPanelScriptModeText().c_str());
+    }
+    if (g_input_status) {
+        SetWindowTextW(g_input_status, BuildInputStatusText().c_str());
     }
 
     std::wstring footer =
@@ -700,6 +802,10 @@ void BuildOverviewPage(const HWND panel) {
     g_overview_status = CreateStaticControl(panel, L"", kPageMargin + kSummaryLabelWidth, y + 4, 860, 20, kOverviewStatusId);
     y += kRowHeight;
 
+    CreateStaticControl(panel, L"\u624b\u67c4", kPageMargin, y + 4, kSummaryLabelWidth, 20);
+    g_gamepad_status = CreateStaticControl(panel, L"", kPageMargin + kSummaryLabelWidth, y + 4, 900, 20);
+    y += kRowHeight;
+
     CreateStaticControl(panel, L"\u811a\u672c\u6a21\u5f0f", kPageMargin, y + 4, kSummaryLabelWidth, 20);
     g_script_mode_status = CreateStaticControl(panel, L"", kPageMargin + kSummaryLabelWidth, y + 4, 900, 20, kScriptModeStatusId);
     y += kRowHeight + 10;
@@ -721,12 +827,33 @@ void BuildOverviewPage(const HWND panel) {
 
     CreateStaticControl(
         panel,
-        L"\u63d0\u793a\uff1a\u5df2\u6309\u201c\u6982\u89c8 / \u8f93\u5165\u4e0e\u754c\u9762 / \u811a\u672c\u4e0e\u6587\u672c / \u6e32\u67d3\u4e0e\u753b\u9762 / \u76f8\u673a\u201d\u62c6\u5206\u9875\u7b7e\uff0c"
+        L"\u63d0\u793a\uff1a\u5df2\u6309\u201c\u6982\u89c8 / UI \u5206\u8fa8\u7387\u81ea\u9002\u5e94 / \u8f93\u5165\u4e0e\u4ea4\u4e92 / \u811a\u672c\u4e0e\u5267\u60c5 / \u6e32\u67d3\u4e0e\u753b\u9762 / \u76f8\u673a\u201d\u62c6\u5206\u9875\u7b7e\uff0c"
         L"\u8bf7\u4ece\u4e0a\u65b9\u5207\u6362\u3002",
         kPageMargin,
         y,
         920,
         40);
+}
+
+void BuildInputInteractionPage(const HWND panel) {
+    int y = kPageMargin;
+    y = BuildHookPageHeader(panel, InjectControlPanelPage::input_interaction, y, false);
+    BuildHookRowsForPage(panel, InjectControlPanelPage::input_interaction, y);
+    y += kColumnHeaderHeight + 4;
+    for (const auto& row : BuildInjectControlPanelRows()) {
+        if (row.page == InjectControlPanelPage::input_interaction) {
+            y += kRowHeight;
+        }
+    }
+    y += 8;
+
+    g_input_status = CreateReadOnlyTextBox(
+        panel,
+        kPageMargin,
+        y,
+        980,
+        110,
+        kInputStatusId);
 }
 
 int BuildHookPageHeader(
@@ -760,10 +887,10 @@ int BuildHookPageHeader(
             kMsaaStatusId);
         y += kRowHeight + 6;
 
-        CreateStaticControl(panel, L"UI 采样", kPageMargin, y + 4, kNameWidth, 20);
+        CreateStaticControl(panel, L"UI \u91c7\u6837", kPageMargin, y + 4, kNameWidth, 20);
         g_ui_texture_filter_checkbox = CreateButtonControl(
             panel,
-            L"Nearest / 像素采样",
+            L"Nearest / \u50cf\u7d20\u91c7\u6837",
             kPageMargin + kNameWidth + 8,
             y + 2,
             kComboWidth + 20,
@@ -796,19 +923,20 @@ int BuildHookPageHeader(
     }
 
     CreateStaticControl(panel, L"\u529f\u80fd", kPageMargin, y, kNameWidth, kColumnHeaderHeight);
-    CreateStaticControl(panel, L"\u542f\u7528", kPageMargin + kNameWidth, y, kToggleWidth, kColumnHeaderHeight);
-    CreateStaticControl(panel, L"\u65e5\u5fd7", kPageMargin + kNameWidth + kToggleWidth, y, kLogWidth, kColumnHeaderHeight);
+    CreateStaticControl(panel, L"Hook", kPageMargin + kNameWidth, y, kHookNameWidth, kColumnHeaderHeight);
+    CreateStaticControl(panel, L"\u542f\u7528", kPageMargin + kNameWidth + kHookNameWidth, y, kToggleWidth, kColumnHeaderHeight);
+    CreateStaticControl(panel, L"\u65e5\u5fd7", kPageMargin + kNameWidth + kHookNameWidth + kToggleWidth, y, kLogWidth, kColumnHeaderHeight);
     CreateStaticControl(
         panel,
         L"\u6a21\u5f0f",
-        kPageMargin + kNameWidth + kToggleWidth + kLogWidth,
+        kPageMargin + kNameWidth + kHookNameWidth + kToggleWidth + kLogWidth,
         y,
         kComboWidth,
         kColumnHeaderHeight);
     CreateStaticControl(
         panel,
         L"\u8fd0\u884c\u72b6\u6001",
-        kPageMargin + kNameWidth + kToggleWidth + kLogWidth + kComboWidth + 10,
+        kPageMargin + kNameWidth + kHookNameWidth + kToggleWidth + kLogWidth + kComboWidth + 10,
         y,
         kStatusWidth,
         kColumnHeaderHeight);
@@ -826,11 +954,18 @@ void BuildHookRowsForPage(
         }
 
         const HWND label = CreateStaticControl(panel, row.label, kPageMargin, y + 5, kNameWidth, 20);
+        const HWND hook_name = CreateStaticControl(
+            panel,
+            WideFromNarrow(row.hook_name).c_str(),
+            kPageMargin + kNameWidth,
+            y + 5,
+            kHookNameWidth,
+            20);
         const int row_index = static_cast<int>(PanelRows().size());
         const HWND toggle = CreateButtonControl(
             panel,
             L"\u542f\u7528",
-            kPageMargin + kNameWidth + 8,
+            kPageMargin + kNameWidth + kHookNameWidth + 8,
             y + 2,
             kToggleWidth,
             20,
@@ -838,14 +973,14 @@ void BuildHookRowsForPage(
         const HWND log_toggle = CreateButtonControl(
             panel,
             L"\u65e5\u5fd7",
-            kPageMargin + kNameWidth + kToggleWidth + 8,
+            kPageMargin + kNameWidth + kHookNameWidth + kToggleWidth + 8,
             y + 2,
             kLogWidth,
             20,
             kHookLogToggleBaseId + row_index);
         const HWND combo = CreateComboControl(
             panel,
-            kPageMargin + kNameWidth + kToggleWidth + kLogWidth,
+            kPageMargin + kNameWidth + kHookNameWidth + kToggleWidth + kLogWidth,
             y,
             kComboWidth,
             240,
@@ -854,11 +989,11 @@ void BuildHookRowsForPage(
         const HWND status = CreateStaticControl(
             panel,
             L"",
-            kPageMargin + kNameWidth + kToggleWidth + kLogWidth + kComboWidth + 10,
+            kPageMargin + kNameWidth + kHookNameWidth + kToggleWidth + kLogWidth + kComboWidth + 10,
             y + 5,
             kStatusWidth,
             20);
-        PanelRows().push_back({row, label, toggle, log_toggle, combo, status});
+        PanelRows().push_back({row, label, hook_name, toggle, log_toggle, combo, status});
         y += kRowHeight;
     }
 }
@@ -890,6 +1025,8 @@ void BuildPanelControls(const HWND hwnd) {
     g_tab_hwnd = nullptr;
     g_page_panels.fill(nullptr);
     g_overview_status = nullptr;
+    g_gamepad_status = nullptr;
+    g_input_status = nullptr;
     g_script_mode_status = nullptr;
     g_msaa_combo = nullptr;
     g_msaa_status = nullptr;
@@ -947,8 +1084,9 @@ void BuildPanelControls(const HWND hwnd) {
     }
 
     BuildOverviewPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::overview))]);
-    BuildHookPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::input_ui))], InjectControlPanelPage::input_ui);
-    BuildHookPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::script_text))], InjectControlPanelPage::script_text);
+    BuildHookPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::ui_resolution))], InjectControlPanelPage::ui_resolution);
+    BuildInputInteractionPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::input_interaction))]);
+    BuildHookPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::script_runtime))], InjectControlPanelPage::script_runtime);
     BuildHookPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::render_visual))], InjectControlPanelPage::render_visual);
     BuildHookPage(g_page_panels[static_cast<std::size_t>(PageIndex(InjectControlPanelPage::camera))], InjectControlPanelPage::camera);
 
@@ -1092,6 +1230,8 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
         g_tab_hwnd = nullptr;
         g_page_panels.fill(nullptr);
         g_overview_status = nullptr;
+        g_gamepad_status = nullptr;
+        g_input_status = nullptr;
         g_script_mode_status = nullptr;
         g_msaa_combo = nullptr;
         g_msaa_status = nullptr;
@@ -1184,6 +1324,8 @@ void StopInjectControlWindow() {
     g_tab_hwnd = nullptr;
     g_page_panels.fill(nullptr);
     g_overview_status = nullptr;
+    g_gamepad_status = nullptr;
+    g_input_status = nullptr;
     g_script_mode_status = nullptr;
     g_msaa_combo = nullptr;
     g_msaa_status = nullptr;

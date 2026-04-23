@@ -34,6 +34,8 @@ bool SavePersistedRuntimePreferences(std::string* error) {
     InjectPersistedSettings settings{};
     settings.msaa_level = GetRuntimeState().GetMsaaLevel();
     settings.ui_texture_filter = GetRuntimeState().GetUiTextureFilter();
+    settings.gamepad_enabled = GetRuntimeState().GamepadEnabled();
+    settings.gamepad_log_enabled = GetRuntimeState().GamepadLogEnabled();
     for (const auto& status : GetRuntimeState().CopyHookStatuses()) {
         settings.hooks.push_back({
             status.id,
@@ -43,6 +45,40 @@ bool SavePersistedRuntimePreferences(std::string* error) {
         });
     }
     return SaveInjectPersistedSettings(RuntimePreferencesPath(), settings, error);
+}
+
+void ApplyGamepadEnabledPreference(
+    const bool enabled,
+    const bool persist,
+    const bool update_last_ui_event) {
+    auto& state = GetRuntimeState();
+    state.SetGamepadEnabled(enabled);
+    if (update_last_ui_event) {
+        state.SetLastUiEvent(std::string("inject_control:gamepad=") + (enabled ? "on" : "off"));
+    }
+    if (persist) {
+        std::string error;
+        if (!SavePersistedRuntimePreferences(&error)) {
+            RecordPersistenceError(error);
+        }
+    }
+}
+
+void ApplyGamepadLogPreference(
+    const bool enabled,
+    const bool persist,
+    const bool update_last_ui_event) {
+    auto& state = GetRuntimeState();
+    state.SetGamepadLogEnabled(enabled);
+    if (update_last_ui_event) {
+        state.SetLastUiEvent(std::string("inject_control:gamepad_log=") + (enabled ? "on" : "off"));
+    }
+    if (persist) {
+        std::string error;
+        if (!SavePersistedRuntimePreferences(&error)) {
+            RecordPersistenceError(error);
+        }
+    }
 }
 
 void ApplyHookModePreference(
@@ -149,6 +185,8 @@ bool LoadPersistedRuntimePreferences(std::string* error) {
         return false;
     }
 
+    ApplyGamepadEnabledPreference(settings.gamepad_enabled, false, false);
+    ApplyGamepadLogPreference(settings.gamepad_log_enabled, false, false);
     ApplyUiTextureFilterPreference(settings.ui_texture_filter, false, false);
     for (const auto& hook : settings.hooks) {
         GetRuntimeState().SetPreferredActiveHookMode(hook.id, hook.active_mode);
