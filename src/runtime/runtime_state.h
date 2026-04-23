@@ -20,6 +20,11 @@ public:
     void SetPipeReady(bool ready);
     void SetUiDispatchReady(bool ready);
     void SetCrashHandlerReady(bool ready);
+    bool BootstrapReady() const;
+    bool HooksReady() const;
+    bool PipeReady() const;
+    bool UiDispatchReady() const;
+    bool CrashHandlerReady() const;
     void SetGamepadEnabled(bool enabled);
     bool GamepadEnabled() const;
     void SetGamepadLogEnabled(bool enabled);
@@ -28,11 +33,6 @@ public:
     bool GamepadConnected() const;
     void SetGamepadContext(GamepadInputContext context);
     GamepadInputContext GetGamepadContext() const;
-    bool BootstrapReady() const;
-    bool HooksReady() const;
-    bool PipeReady() const;
-    bool UiDispatchReady() const;
-    bool CrashHandlerReady() const;
 
     void SetMainModuleBase(std::uintptr_t base);
     std::uintptr_t MainModuleBase() const;

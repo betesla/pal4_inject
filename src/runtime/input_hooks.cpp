@@ -10,10 +10,10 @@
 #include <windows.h>
 
 #include "battle_ui_layout_hooks.h"
-#include "cegui_renderer_hooks.h"
 #include "camera_hooks.h"
 #include "cegui_bindings.h"
 #include "cegui_font_hooks.h"
+#include "cegui_renderer_hooks.h"
 #include "d3d9_quality_hooks.h"
 #include "dialog_pagination_hooks.h"
 #include "gamepad_runtime.h"
