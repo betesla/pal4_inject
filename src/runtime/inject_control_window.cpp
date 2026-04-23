@@ -51,6 +51,8 @@ constexpr int kMsaaComboId = 3000;
 constexpr int kMsaaStatusId = 3001;
 constexpr int kOverviewStatusId = 3002;
 constexpr int kScriptModeStatusId = 3003;
+constexpr int kUiTextureFilterCheckboxId = 3005;
+constexpr int kUiTextureFilterStatusId = 3006;
 constexpr int kFooterLabelId = 4000;
 constexpr int kShutdownButtonId = 4001;
 constexpr int kTabControlId = 4100;
@@ -87,6 +89,8 @@ HWND g_overview_status = nullptr;
 HWND g_script_mode_status = nullptr;
 HWND g_msaa_combo = nullptr;
 HWND g_msaa_status = nullptr;
+HWND g_ui_texture_filter_checkbox = nullptr;
+HWND g_ui_texture_filter_status = nullptr;
 bool g_follow_game_window = true;
 
 int PageIndex(const InjectControlPanelPage page) noexcept {
@@ -283,6 +287,30 @@ std::wstring BuildLocalizedMsaaStatusText(
         if (!msaa_hook->last_error.empty()) {
             text += L" | \u9519\u8bef=";
             text += WideFromNarrow(msaa_hook->last_error);
+        }
+    }
+    return text;
+}
+
+std::wstring BuildLocalizedUiTextureFilterStatusText(
+    const RuntimeState& state,
+    const HookStatus* renderer_hook) {
+    std::wstring text = L"当前 ";
+    const auto filter = state.GetUiTextureFilter();
+    text += filter == UiTextureFilter::nearest ? L"Nearest" : L"Linear";
+    text += L" | RenderWare state 9=";
+    text += filter == UiTextureFilter::nearest ? L"1" : L"2";
+    if (renderer_hook) {
+        if (renderer_hook->mode == HookMode::observe_only ||
+            renderer_hook->mode == HookMode::mirror_compare) {
+            text += L" | 宽屏 Hook 未启用";
+        } else {
+            text += L" | 调用=";
+            text += WideFromUnsigned(renderer_hook->call_count);
+        }
+        if (!renderer_hook->last_error.empty()) {
+            text += L" | 错误=";
+            text += WideFromNarrow(renderer_hook->last_error);
         }
     }
     return text;
@@ -626,6 +654,19 @@ void RefreshPanelContent(const HWND hwnd) {
         const auto* msaa_hook = FindStatus(statuses, HookId::d3d9_set_present_parameters);
         SetWindowTextW(g_msaa_status, BuildLocalizedMsaaStatusText(state, msaa_hook).c_str());
     }
+    if (g_ui_texture_filter_checkbox) {
+        SendMessageW(
+            g_ui_texture_filter_checkbox,
+            BM_SETCHECK,
+            state.GetUiTextureFilter() == UiTextureFilter::nearest ? BST_CHECKED : BST_UNCHECKED,
+            0);
+    }
+    if (g_ui_texture_filter_status) {
+        const auto* renderer_hook = FindStatus(statuses, HookId::cegui_renderer_constructor_2);
+        SetWindowTextW(
+            g_ui_texture_filter_status,
+            BuildLocalizedUiTextureFilterStatusText(state, renderer_hook).c_str());
+    }
 
     for (const auto& runtime : PanelRows()) {
         UpdateHookRowDisplay(runtime, FindStatus(statuses, runtime.row.id));
@@ -717,6 +758,25 @@ int BuildHookPageHeader(
             kStatusWidth,
             20,
             kMsaaStatusId);
+        y += kRowHeight + 6;
+
+        CreateStaticControl(panel, L"UI 采样", kPageMargin, y + 4, kNameWidth, 20);
+        g_ui_texture_filter_checkbox = CreateButtonControl(
+            panel,
+            L"Nearest / 像素采样",
+            kPageMargin + kNameWidth + 8,
+            y + 2,
+            kComboWidth + 20,
+            20,
+            kUiTextureFilterCheckboxId);
+        g_ui_texture_filter_status = CreateStaticControl(
+            panel,
+            L"",
+            kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
+            y + 4,
+            kStatusWidth + 180,
+            20,
+            kUiTextureFilterStatusId);
         y += kRowHeight + 6;
 
         CreateWindowExW(
@@ -833,6 +893,8 @@ void BuildPanelControls(const HWND hwnd) {
     g_script_mode_status = nullptr;
     g_msaa_combo = nullptr;
     g_msaa_status = nullptr;
+    g_ui_texture_filter_checkbox = nullptr;
+    g_ui_texture_filter_status = nullptr;
 
     RECT client_rect{};
     GetClientRect(hwnd, &client_rect);
@@ -956,6 +1018,16 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
             RefreshPanelContent(hwnd);
             return 0;
         }
+        if (control_id == kUiTextureFilterCheckboxId && notify_code == BN_CLICKED) {
+            const bool nearest =
+                SendMessageW(g_ui_texture_filter_checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            ApplyUiTextureFilterPreference(
+                nearest ? UiTextureFilter::nearest : UiTextureFilter::linear,
+                true,
+                true);
+            RefreshPanelContent(hwnd);
+            return 0;
+        }
         if (control_id >= kHookToggleBaseId &&
             control_id < kHookToggleBaseId + static_cast<int>(PanelRows().size()) &&
             notify_code == BN_CLICKED) {
@@ -1023,6 +1095,8 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
         g_script_mode_status = nullptr;
         g_msaa_combo = nullptr;
         g_msaa_status = nullptr;
+        g_ui_texture_filter_checkbox = nullptr;
+        g_ui_texture_filter_status = nullptr;
         PostQuitMessage(0);
         return 0;
     default:
@@ -1113,6 +1187,8 @@ void StopInjectControlWindow() {
     g_script_mode_status = nullptr;
     g_msaa_combo = nullptr;
     g_msaa_status = nullptr;
+    g_ui_texture_filter_checkbox = nullptr;
+    g_ui_texture_filter_status = nullptr;
     g_follow_game_window = true;
 }
 

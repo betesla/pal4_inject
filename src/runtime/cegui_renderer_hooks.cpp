@@ -209,7 +209,10 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
     const int vertex_buffer = *reinterpret_cast<int*>(bytes + kRendererVertexBufferOffset);
     int current_texture = 0;
     unsigned int current_filter = kRwTextureFilterLinear;
-    const unsigned int desired_filter = kRwTextureFilterNearest;
+    const unsigned int desired_filter =
+        GetRuntimeState().GetUiTextureFilter() == UiTextureFilter::nearest
+        ? kRwTextureFilterNearest
+        : kRwTextureFilterLinear;
     const int camera_system = g_pal_game_iv_init_camera_subsystem();
     const int active_camera_internal =
         g_camera_get_active_camera_internal_id(reinterpret_cast<void*>(camera_system));
@@ -227,7 +230,8 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
             const bool is_font_texture =
                 IsKnownDynamicFontTexture(
                     reinterpret_cast<const void*>(static_cast<std::uintptr_t>(texture_handle)));
-            // IDA-confirmed RenderWare state 9 is the texture filter. Force point filtering while validating text clarity.
+            // IDA-confirmed RenderWare state 9 is the texture filter. Keep it
+            // runtime-selectable so the panel can compare linear vs nearest UI scaling.
             if (current_texture != texture_handle) {
                 g_render_geometry_and_reset_counter(self);
                 const unsigned int texture_stage =

@@ -18,6 +18,7 @@ struct PersistedHookSetting {
 
 struct InjectPersistedSettings {
     MsaaLevel msaa_level = MsaaLevel::off;
+    UiTextureFilter ui_texture_filter = UiTextureFilter::nearest;
     std::vector<PersistedHookSetting> hooks;
 };
 

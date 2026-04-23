@@ -12,7 +12,7 @@
 namespace pal4::inject {
 namespace {
 
-constexpr int kSettingsVersion = 1;
+constexpr int kSettingsVersion = 2;
 
 std::string TrimAscii(const std::string_view text) {
     std::size_t begin = 0;
@@ -40,6 +40,7 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
     std::ostringstream out;
     out << "version=" << kSettingsVersion << '\n';
     out << "msaa_level=" << ToString(settings.msaa_level) << '\n';
+    out << "ui_texture_filter=" << ToString(settings.ui_texture_filter) << '\n';
 
     std::map<int, PersistedHookSetting> sorted_hooks;
     for (const auto& hook : settings.hooks) {
@@ -103,6 +104,15 @@ bool ParseInjectPersistedSettings(
             }
             continue;
         }
+        if (key == "ui_texture_filter") {
+            if (!TryParseUiTextureFilter(value, &out->ui_texture_filter)) {
+                if (error) {
+                    *error = "invalid ui_texture_filter value: " + value;
+                }
+                return false;
+            }
+            continue;
+        }
         if (key.rfind("hook.", 0) != 0) {
             continue;
         }
@@ -156,7 +166,7 @@ bool ParseInjectPersistedSettings(
         }
     }
 
-    if (version != 0 && version != kSettingsVersion) {
+    if (version != 0 && (version < 1 || version > kSettingsVersion)) {
         if (error) {
             *error = "unsupported settings version: " + std::to_string(version);
         }

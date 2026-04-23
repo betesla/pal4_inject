@@ -32,6 +32,11 @@ constexpr std::array<EnumName<MsaaLevel>, 4> kMsaaLevels{{
     {MsaaLevel::x8, "8x"},
 }};
 
+constexpr std::array<EnumName<UiTextureFilter>, 2> kUiTextureFilters{{
+    {UiTextureFilter::linear, "linear"},
+    {UiTextureFilter::nearest, "nearest"},
+}};
+
 constexpr std::array<EnumName<ScriptMode>, 3> kScriptModes{{
     {ScriptMode::inherit, "inherit"},
     {ScriptMode::cs, "cs"},
@@ -103,6 +108,10 @@ const char* ToString(const MsaaLevel level) noexcept {
     return FindEnumName(level, kMsaaLevels);
 }
 
+const char* ToString(const UiTextureFilter filter) noexcept {
+    return FindEnumName(filter, kUiTextureFilters);
+}
+
 const char* ToString(const ScriptMode mode) noexcept {
     return FindEnumName(mode, kScriptModes);
 }
@@ -117,6 +126,10 @@ bool TryParseHookMode(const std::string_view text, HookMode* out) noexcept {
 
 bool TryParseMsaaLevel(const std::string_view text, MsaaLevel* out) noexcept {
     return TryParseEnum(text, kMsaaLevels, out);
+}
+
+bool TryParseUiTextureFilter(const std::string_view text, UiTextureFilter* out) noexcept {
+    return TryParseEnum(text, kUiTextureFilters, out);
 }
 
 bool TryParseScriptMode(const std::string_view text, ScriptMode* out) noexcept {

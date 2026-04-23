@@ -211,6 +211,16 @@ void TestMsaaLevelStrings() {
     assert(!pal4::inject::TryParseMsaaLevel("16x", &parsed));
 }
 
+void TestUiTextureFilterStrings() {
+    assert(std::string(pal4::inject::ToString(pal4::inject::UiTextureFilter::linear)) == "linear");
+    assert(std::string(pal4::inject::ToString(pal4::inject::UiTextureFilter::nearest)) == "nearest");
+
+    pal4::inject::UiTextureFilter parsed = pal4::inject::UiTextureFilter::linear;
+    assert(pal4::inject::TryParseUiTextureFilter("nearest", &parsed));
+    assert(parsed == pal4::inject::UiTextureFilter::nearest);
+    assert(!pal4::inject::TryParseUiTextureFilter("point", &parsed));
+}
+
 void TestScriptModeStrings() {
     assert(std::string(pal4::inject::ToString(pal4::inject::ScriptMode::inherit)) == "inherit");
     assert(std::string(pal4::inject::ToString(pal4::inject::ScriptMode::cs)) == "cs");
@@ -620,6 +630,7 @@ void TestInjectControlPanelModel() {
 void TestInjectSettingsRoundTrip() {
     pal4::inject::InjectPersistedSettings settings{};
     settings.msaa_level = pal4::inject::MsaaLevel::x4;
+    settings.ui_texture_filter = pal4::inject::UiTextureFilter::linear;
     settings.hooks.push_back({
         HookId::process_ui_event,
         pal4::inject::HookMode::replace_with_fallback,
@@ -644,6 +655,7 @@ void TestInjectSettingsRoundTrip() {
     pal4::inject::InjectPersistedSettings parsed{};
     assert(pal4::inject::ParseInjectPersistedSettings(text, &parsed, &error));
     assert(parsed.msaa_level == pal4::inject::MsaaLevel::x4);
+    assert(parsed.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
     assert(parsed.hooks.size() == 3);
     const auto find_hook =
         [&parsed](const HookId id) -> const pal4::inject::PersistedHookSetting* {
@@ -672,6 +684,7 @@ void TestInjectSettingsRoundTrip() {
     pal4::inject::InjectPersistedSettings loaded{};
     assert(pal4::inject::LoadInjectPersistedSettings(temp_path, &loaded, &error));
     assert(loaded.msaa_level == pal4::inject::MsaaLevel::x4);
+    assert(loaded.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
     std::filesystem::remove(temp_path);
 }
 
@@ -735,6 +748,7 @@ void TestRuntimeEventLog() {
     assert(!state.GetHookLogEnabled(HookId::process_ui_event));
     assert(!state.GetHookLogEnabled(HookId::load_font_file));
     state.SetMsaaLevel(pal4::inject::MsaaLevel::x2);
+    state.SetUiTextureFilter(pal4::inject::UiTextureFilter::linear);
     state.AppendEventLog("event-1");
     state.AppendEventLog("event-2");
     state.SetCrashHandlerReady(true);
@@ -750,6 +764,7 @@ void TestRuntimeEventLog() {
     const auto snapshot = state.BuildSnapshot(0);
     assert(snapshot.crash_handler_ready);
     assert(snapshot.msaa_level == pal4::inject::MsaaLevel::x2);
+    assert(snapshot.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
     assert(snapshot.last_crash_summary == "summary");
     assert(snapshot.last_crash_report_path == "report.txt");
     assert(snapshot.last_crash_dump_path == "dump.dmp");
@@ -1593,6 +1608,7 @@ int main() {
     TestHookInventory();
     TestDpiAwarenessStrings();
     TestMsaaLevelStrings();
+    TestUiTextureFilterStrings();
     TestScriptModeStrings();
     TestInheritedScriptModeOverride();
     TestInjectControlPanelModel();

@@ -33,6 +33,7 @@ HookMode ResolveEnabledHookMode(const HookId id) {
 bool SavePersistedRuntimePreferences(std::string* error) {
     InjectPersistedSettings settings{};
     settings.msaa_level = GetRuntimeState().GetMsaaLevel();
+    settings.ui_texture_filter = GetRuntimeState().GetUiTextureFilter();
     for (const auto& status : GetRuntimeState().CopyHookStatuses()) {
         settings.hooks.push_back({
             status.id,
@@ -105,6 +106,24 @@ void ApplyMsaaPreference(
     }
 }
 
+void ApplyUiTextureFilterPreference(
+    const UiTextureFilter filter,
+    const bool persist,
+    const bool update_last_ui_event) {
+    auto& state = GetRuntimeState();
+    state.SetUiTextureFilter(filter);
+    if (update_last_ui_event) {
+        state.SetLastUiEvent(
+            std::string("inject_control:ui_texture_filter=") + ToString(filter));
+    }
+    if (persist) {
+        std::string error;
+        if (!SavePersistedRuntimePreferences(&error)) {
+            RecordPersistenceError(error);
+        }
+    }
+}
+
 void ApplyHookLogPreference(
     const HookId id,
     const bool enabled,
@@ -130,6 +149,7 @@ bool LoadPersistedRuntimePreferences(std::string* error) {
         return false;
     }
 
+    ApplyUiTextureFilterPreference(settings.ui_texture_filter, false, false);
     for (const auto& hook : settings.hooks) {
         GetRuntimeState().SetPreferredActiveHookMode(hook.id, hook.active_mode);
         GetRuntimeState().SetHookLogEnabled(hook.id, hook.log_enabled);
