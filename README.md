@@ -18,7 +18,7 @@
 - `tests`
   - 单元测试与可选的原始 EXE 集成测试
 - `docs`
-  - 架构、Hook inventory 与控制面板说明文档
+  - 架构、Hook inventory、控制面板和手柄说明文档
 
 ## 构建
 必须使用 Win32/x86 生成器。
@@ -26,6 +26,24 @@
 ```powershell
 cmake -S I:\PAL4\projects\pal4_re\inject -B I:\PAL4\projects\pal4_re\inject\build -A Win32
 cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
+```
+
+默认情况下，`cmake --build` 完成后还会自动执行一层部署同步：
+- 把 `PAL4_inject.exe`、`cli.exe`、`runtime.dll` 同步到 `dist`
+- 再同步到本地测试目录 `I:\Games\original`
+
+这个行为由 CMake 选项控制：
+
+```powershell
+cmake -S . -B build -A Win32 `
+  -DPAL4_INJECT_SYNC_TEST_DEPLOY=ON `
+  -DPAL4_INJECT_TEST_GAME_ROOT=I:\Games\original
+```
+
+如果只想构建、不自动复制：
+
+```powershell
+cmake -S . -B build -A Win32 -DPAL4_INJECT_SYNC_TEST_DEPLOY=OFF
 ```
 
 ## 启动
@@ -103,7 +121,20 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
   - 每个 hook 一行，带快速开关、`HookMode` 下拉框和状态栏
   - 面板配置会记忆到游戏目录下的 `pal4_inject\inject_panel_settings.ini`，下次启动自动恢复
   - `Ctrl+J` 显示 / 隐藏面板
+  - 概览页会额外显示 `XInput` 手柄启用状态、连接状态和当前输入上下文
   - 作为游戏窗口的 owned popup 存在，避免点回游戏时像独立外部工具窗一样被压下去
+- 当前内建一版不依赖 `Steam Input` 的 `XInput` 手柄支持：
+  - 默认启用
+  - 左摇杆映射基础场景移动
+  - `A/B` 作为确认 / 取消
+  - `X` 映射鼠标左键按住
+  - `Y` 映射 `R`
+  - `L3` 映射 `F`
+  - `Back` 映射 `M`
+  - `Start` 打开 / 关闭系统界面
+  - `LB/RB` 切换系统主分页
+  - `LT/RT` 切换纵向 `1/2/3` 子分页
+  - 仅支持 `XInput` 设备，暂不支持右摇杆镜头、震动和自定义键位
 - Hook 框架内置 x86 inline detour，不依赖第三方 Hook 库。
 - `cli.exe` 会复用同一条 named pipe，提供：
   - `snapshot / click / fill / type / press`
@@ -185,6 +216,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
 ## Inject Control Panel
 - 详细中文说明见：
   - [docs/control_panel_guide.md](I:/PAL4/projects/pal4_inject/docs/control_panel_guide.md)
+  - [docs/gamepad_guide.md](I:/PAL4/projects/pal4_inject/docs/gamepad_guide.md)
 - 注入后会创建 `PAL4 Inject Control` 小面板，但默认隐藏；按 `Ctrl+J` 显示 / 隐藏。
 - 面板会先显示一个独立的 `Render MSAA` 选项：
   - 当前支持 `off / 2x / 4x / 8x`

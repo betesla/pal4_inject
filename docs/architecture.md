@@ -71,9 +71,31 @@
   - `cegui_bindings.cpp`
     - CEGUIBase 导出解析
     - Window tree / name / text / focus / editbox / geometry 绑定
+    - 当前也承载字体链关键导出的绑定候选：
+      - `Font::load / unload`
+      - `Font::defineFontGlyphs`
+      - `Font::createFontFromFT_Face`
   - `cegui_font_hooks.cpp`
     - `LoadFontFile` seam
     - 已知 dynamic UI 字体的运行时重同步
+    - 记录已知 dynamic font atlas texture，供 renderer 侧专项处理
+    - 当前设计目标已经从“只做 notify 级重同步”扩展为：
+      - 未来可在这里挂接更直接的 font rebuild 实验
+      - 例如 `createFontFromFT_Face / defineFontGlyphs`
+      - 当前已挂接一版 `dialog_simsun` 实验：
+        - 直接调用 `createFontFromFT_Face(pointSize * 2, ...)`
+        - 把真实 glyph 生成尺寸提高到 2x
+  - `cegui_font_experiment.cpp`
+    - 维护对白字体 oversample 实验
+    - 负责安装 `CEGUIBase.dll!Font::drawText(...)` 的窄 hook
+    - 对被标记为 oversampled 的字体对象，把绘制阶段 `x_scale / y_scale` 压回 `0.5`
+  - `dialog_pagination_hooks.cpp`
+    - `dialog_HandleTextDisplay @ 0x4B8450` 诊断 hook
+    - 记录对白 editbox 的当前文本、窗口尺寸、font height、wrapped extent
+    - 用于确认“画面仍有空白却已触发翻页”到底是 launch 侧分页消费，还是字体内部 metric 未同步
+  - `cegui_font_texture_registry.cpp`
+    - 维护已知 dynamic font atlas texture 集合
+    - 给 renderer widescreen patch 提供“当前 quad 是否字体 atlas”判定
   - `ui_snapshot_runtime.cpp`
     - CEGUI gui sheet 枚举
     - 最近一次 `snapshot_ui` 的 ref cache
@@ -81,6 +103,11 @@
   - `cegui_renderer_hooks.cpp`
     - shared `CEGUI_Renderer_Constructor_2` widescreen pillarbox patch
     - object-local synthetic vtable for centered wide-aspect rendering
+    - 已知动态字体 atlas quad 的保像素边界对齐，尽量减少汉字细笔画在非整数缩放下继续缩水
+    - 基于 IDA 确认 `RenderWare state 9 = texture filter` 后，CEGUI queued rect 渲染链的采样策略已改为面板可选：
+      - `ui_texture_filter=nearest` 写入 `state 9 = 1`
+      - `ui_texture_filter=linear` 写入 `state 9 = 2`
+      - “渲染与画面”页的 `Nearest / 像素采样` 勾选框可即时切换并持久化
   - `battle_ui_layout_hooks.cpp`
     - `SetProperties_4C2550` 的战斗调用点筛选与 `x` 偏移补偿
     - `ui_showCombatHint / ui_showCombatHint2` 浮动提示窗居中修正
@@ -139,22 +166,23 @@
   - `PAL4_Main_WndProc`
 - 只做 inventory、不默认安装：
   - `HandlePlayerInputEvents`
-- `ProcessUIEvent` 当前是 `replace_with_fallback`
-  - 已直接接管：
+- `ProcessUIEvent` / `HandleUIMessageAndProcess` 默认是 `observe_only`
+  - 原因：Phase 2 输入替换可以驱动 CLI 自动点击，但在真实游戏点击路径上风险较高；默认只观察可避免影响玩家鼠标点击。
+  - 曾验证过的替换路径包括：
     - 键盘按下/抬起
     - 字符输入
     - 鼠标移动
     - 左/右/中键按下/抬起
     - 滚轮
     - `WM_MOUSELEAVE`
-  - 其余消息仍回落到原始 trampoline
+  - 如需恢复 CLI 菜单自动化，应显式启用替换模式并单独验收 `WM_LBUTTONDOWN/UP` 日志。
 - `snapshot_ui`
   - 从当前 CEGUI gui sheet 递归导出确定性窗口树
   - ref 使用 `e1/e2/...`
   - 旧 ref 在下一次 `snapshot_ui` 后失效
 - `click_ui_ref / fill_ui_ref`
-  - 优先走 `HandleUIMessageAndProcess / ProcessUIEvent` seam
-  - 不依赖前台 OS 窗口消息队列
+  - 依赖 `HandleUIMessageAndProcess / ProcessUIEvent` seam
+  - 默认 observe-only 输入模式下，优先使用 `click-pt --os-queue` 或临时启用替换模式做自动化验证
 - memory debug
   - `query_memory` 暴露 region state / type / protect / readable / writable / executable
   - `read_memory` 单次上限 1024 bytes
@@ -180,6 +208,7 @@
   - 不依赖 PAL4 自己的 CEGUI widget 体系
   - 采用单独的原生 Win32 tool window，避免在 PAL4 UI 资源未完全稳定前把新的调试面板绑死在游戏 CEGUI 上
   - 当前通过 `RuntimeState::SetHookMode` 直接控制 hook mode
+  - “输入与交互”页显示 `ProcessUIEvent / HandleUIMessageAndProcess` 等输入 hook 行；即使默认模式改为 `observe_only`，这些行也应保留在面板里用于临时启用替换模式和查看日志。
 - crash capture
   - 不尝试拦截并吞掉异常
   - 只负责在进程终止前写出 crash report / minidump
@@ -210,5 +239,96 @@
   - PAL4 主 UI 的 `system / systemBold / dialog_simsun` 都是 `Dynamic` 字体
   - 原字体定义本身已经开启 `AutoScaled="true"` 和 `AntiAlias="true"`
   - 当前 Phase 1 修复会在 `LoadFontFile` 成功创建已知 dynamic 字体后，保持 `NativeHorzRes=800 / NativeVertRes=600`，再按中央有效 UI 区域尺寸重发 `notifyScreenResolution`
+  - 当前 Phase 1.5 修复会把已知 dynamic 字体 atlas texture 注册给 renderer patch，并对这些 quad 单独使用“保像素”边界对齐，而不是继续套用普通 UI quad 的统一 half-pixel 对齐
   - 不再在 `CEGUI_System_Initialize` 返回后立刻枚举字体对象，避免早期探针触发 `abort(0)` / 非正常终止
   - 上游 CEGUI 源码还显示：dynamic font glyph atlas 由 `fontName + "_auto_glyph_images"` 这类 imageset 承载，renderer 侧可以进一步按字体 atlas texture 做专项处理
+  - 当前 `dialog_simsun` 清晰度实验已经拆成独立模块：
+    - `src/common/cegui_font_experiment.cpp`
+    - `src/runtime/cegui_font_experiment.cpp`
+  - 它不是简单改 `.font` XML，而是：
+    - 运行时直接把 `createFontFromFT_Face(...)` 的 `pointSize` 提高到 `2x`
+    - 当前稳定版仍主要依赖外围 `drawText / extent / vertical metrics` 补偿
+    - `appendCharacter(...)` 仍是候选根因修复点，但上一次直接 detour 已因 trampoline 不够稳而失败
+  - 2026-04-22 新确认的架构约束是：
+    - “字号变实但字间距异常”并不只是 draw scale 问题
+    - `launch.exe` 的 `dialog_HandleTextDisplay(...)` 已明确是对白分页异常的关键观测点
+    - 但它更像是消费侧，不应把“提前翻页”直接等同于 `launch.exe` 本体阈值写错
+    - `OIRAMLOOK.dll` 里 `OLSDialogEditbox::needChangePage()` 也不是独立计算函数，它只是直接返回状态位
+    - 真正的分页判定发生在 `RichText::DialogTextFrame::changeLine/changePage`
+    - 它们比较的是：
+      - `getTypedTextHeight(this, 1.0)`
+      - `visible_height = [this+0x114] - [this+0x110]`
+    - 因此后续如果还要继续收敛版式，优先顺序应该是：
+      1. 先确认字体内部 `glyph advance / glyph image size / line metrics` 是否仍未同步缩回
+      2. 再结合 `DialogTextFrame::getTypedTextHeight(...)` 依赖的逐行高度来源，确认是哪一个 line-height/font metric 仍偏大
+  - 2026-04-22 继续下探后又确认：
+    - `line[i].height` 不是抽象的分页阈值，而是 `DocLine::addGlyph(...)` 在排版阶段记下来的“本行 glyph 最大高度”
+    - `TextGlyph::getHeight()` 直接返回 `*(float *)(font + 208)`
+    - 现在已经在 `CEGUIBase.dll` 里坐实：
+      - `font + 204 = Font::getFontHeight()`
+      - `font + 208 = Font::getLineSpacing()`
+    - 也就是说 `OIRAMLOOK` 分页链真正消费的是 `lineSpacing`
+    - 因而当前剩余分页异常已经进一步收敛到：
+      - `CEGUI::Font` 对象内部 `lineSpacing` 一类的缓存高度字段仍未和 oversample draw-scale 完整同步
+    - 这也解释了为什么：
+      - 外围 `drawText / extent` 补偿可以让字看起来更实
+      - 但对白分页仍会继续认为“每行更高、单页可容纳更少内容”
+  - 2026-04-22 再继续追 `OIRAMLOOK.dll` 的换行链后，需要把上面这个判断进一步修正：
+    - `RichTextFrame::formatText_autoBreak(...)` 在放不下时会走 `TextGlyph::splitByWidth(...)`
+    - `TextGlyph::splitByWidth(...)` 实际调用的是 `CEGUIBase.dll!Font::getCharAtPixel(...)`
+    - 普通 `TextGlyph` 的宽度来自 `CEGUIBase.dll!Font::getTextExtent(...)`
+    - `StableWidthText` 的宽度来自 `CEGUIBase.dll!Font::getFormattedTextExtent(...) + getTextExtent(...)`
+  - 2026-04-23 针对对白列间距过大，当前 runtime 补偿链又补了一条架构约束：
+    - `drawText` hook 进入原函数前已经把 oversampled `dialog_simsun` 的 `x_scale` 压到逻辑尺寸
+    - 因此原 `drawText` 内部再调用 `getTextExtent / getFormattedTextExtent / getWrappedTextExtent / getCharAtPixel` 时，度量 hook 不能再次乘 `extent_scale`
+    - 当前 `cegui_font_experiment.cpp` 用线程局部标记区分“外部度量调用”和“已补偿 drawText 内部度量调用”
+    - 这样避免 AverageWidth/Justified 分支误以为文字过窄后继续摊大 glyph 间隙
+  - 2026-04-23 针对“没有姓名行时行间也过宽”的反馈，又确认了控件层原因：
+    - `ScenarioDialog.xml` 的 `ScenarioDialog/EditDialog` 是 `OiramLook/SDialogEditbox`
+    - 该控件自身配置了 `LineSpaceExtent=3.000000`
+    - 当前 `dialog_pagination_hooks.cpp` 会在 `dialog_HandleTextDisplay` 入口对这个对白 editbox 首次执行：
+      - `Window::setProperty("LineSpaceExtent", "0.000000")`
+    - 这条修复只覆盖剧情对白 hook 路径，不全局改其它窗口的 `LineSpaceExtent`
+    - 后续截图表明：`LineSpaceExtent` 只解释少量额外行距，不能解释正文两行之间接近整行空白的量级
+    - 当前已进一步确认 OIRAMLOOK 富文本行高消费点：
+      - `OIRAMLOOK.dll!CEGUI::RichText::TextGlyph::getHeight`
+      - 导出 RVA `0x00004B70`
+      - 实现直接读取 `TextGlyph + 0xB4` 的 `Font*`，再取 `Font + 0xD0`
+    - 因此对白正文内部的大行距主因更接近：
+      - `drawText` 渲染已按 oversample scale 缩回
+      - 但富文本 `DocLine` 高度缓存仍可能消费未缩放的 glyph height
+    - runtime 现在会 hook `TextGlyph::getHeight`：
+      - 如果高度已经是合理逻辑值则原样返回
+      - 如果仍像 oversampled 未缩放高度，则按 `draw_scale * line_spacing_scale` 收回
+      - 最新截图验证后，`line_spacing_scale / baseline_scale` 都回到 `1.0`，避免首行顶边被裁
+      - 日志关键字：`hook=text_glyph_get_height`
+    - 当前首行人名缺失的根因已经收敛到 `TextGlyph::cacheGlyph(...)`：
+      - live log 证明隐藏滚动条假设不成立：`before_scroll=0,0` 且 `after_scroll=0,0`
+      - `cacheGlyph` 仍用原始 `Font + 0xD0` 行高计算 glyph 顶边：`rect.top - lineSpacing - 1`
+      - `TextGlyph::getHeight` 返回补偿后的逻辑行高后，原始行高会把首行 glyph 顶到可视区域上方
+      - 当前 runtime 会 hook `TextGlyph::cacheGlyph`，仅在调用原函数期间把 `Font + 0xD0` 临时替换为补偿后的逻辑高度
+      - 日志关键字：`hook=text_glyph_cache_glyph`
+  - 2026-04-22 继续下探 `CEGUIBase.dll` 后，又把这个方向进一步收紧到 glyph cache：
+    - `Font::getCharAtPixel(...)` 不依赖 `getTextExtent(...)`，它直接逐字符累加 glyph record 里的 `advance`
+    - `Font::getTextExtent(...)` 内部也会消费同一个 glyph `advance`
+    - `Font::appendCharacter(...)` 是这些 glyph 宽度字段的写入点
+    - 因此当前“同字号但每行字数偏少”的最直接根因候选，不再是高层 format 函数，而是：
+      - oversample 后 glyph cache 的 `advance` 语义仍偏大
+  - 2026-04-22 当前已落地的工程化修复是：
+    - 不再冒险重做 `appendCharacter(...)` 函数头 detour
+    - 先对 `Font::getCharAtPixel(...)` 加一层窄 hook
+    - 让 oversampled font 在切分宽度时与实际 draw-scale 使用一致的 `x_scale`
+    - 同时把 oversampled font 的 `lineSpacing` 保守收敛到不大于 `fontHeight`
+    - 并把 `baseline` 从单纯的 `draw_scale` 联动中拆成独立的 `baseline_scale`
+    - 目的不是继续到处补参数，而是把“每行字数”和“字的垂直落点”彻底分开控制
+  - 这意味着当前 runtime 的策略已经从“只补外围 extent”升级为：
+    - 宽度切分补偿：
+      - `getCharAtPixel`
+    - 绘制补偿：
+      - `drawText`
+      - `getTextExtent`
+      - `getFormattedTextExtent`
+      - `getWrappedTextExtent`
+    - 垂直 metric 收敛：
+      - `fontHeight / lineSpacing / baseline`
+      - 其中 `baseline` 现在是独立配置项，方便继续验证“姓名行到正文行的空隙”是否来自 glyph 垂直落点而不是分页高度

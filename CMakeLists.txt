@@ -6,6 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(PAL4_INJECT_BUILD_TESTS "Build PAL4 inject tests" ON)
+option(PAL4_INJECT_SYNC_TEST_DEPLOY "Auto-copy build artifacts to dist and local test game root after build" ON)
+
+set(PAL4_INJECT_DIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/dist" CACHE PATH "PAL4 inject dist output directory")
+set(PAL4_INJECT_TEST_GAME_ROOT "I:/Games/original" CACHE PATH "Local PAL4 install used for quick manual testing")
 
 if(NOT WIN32)
     message(FATAL_ERROR "pal4_inject requires Windows.")
@@ -23,6 +27,65 @@ endif()
 
 set(PAL4_INJECT_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 set(PAL4_INJECT_BUILD_INFO_HEADER ${PAL4_INJECT_GENERATED_DIR}/pal4inject_build_info.h)
+
+function(pal4_inject_append_copy_command out_commands source destination)
+    list(APPEND ${out_commands}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${destination}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${source}" "${destination}"
+    )
+    set(${out_commands} "${${out_commands}}" PARENT_SCOPE)
+endfunction()
+
+function(pal4_inject_add_runtime_deploy_target)
+    if(NOT PAL4_INJECT_SYNC_TEST_DEPLOY)
+        return()
+    endif()
+
+    set(copy_commands)
+    pal4_inject_append_copy_command(
+        copy_commands
+        "$<TARGET_FILE:pal4_injector_launcher>"
+        "${PAL4_INJECT_DIST_DIR}"
+    )
+    pal4_inject_append_copy_command(
+        copy_commands
+        "$<TARGET_FILE:pal4_runtime_x86>"
+        "${PAL4_INJECT_DIST_DIR}/pal4_inject"
+    )
+    pal4_inject_append_copy_command(
+        copy_commands
+        "$<TARGET_FILE:pal4_inject_cli>"
+        "${PAL4_INJECT_DIST_DIR}/pal4_inject"
+    )
+
+    if(PAL4_INJECT_TEST_GAME_ROOT)
+        pal4_inject_append_copy_command(
+            copy_commands
+            "$<TARGET_FILE:pal4_injector_launcher>"
+            "${PAL4_INJECT_TEST_GAME_ROOT}"
+        )
+        pal4_inject_append_copy_command(
+            copy_commands
+            "$<TARGET_FILE:pal4_runtime_x86>"
+            "${PAL4_INJECT_TEST_GAME_ROOT}/pal4_inject"
+        )
+        pal4_inject_append_copy_command(
+            copy_commands
+            "$<TARGET_FILE:pal4_inject_cli>"
+            "${PAL4_INJECT_TEST_GAME_ROOT}/pal4_inject"
+        )
+    endif()
+
+    add_custom_target(pal4_inject_sync_deploy ALL
+        DEPENDS
+            pal4_runtime_x86
+            pal4_injector_launcher
+            pal4_inject_cli
+        ${copy_commands}
+        VERBATIM
+        COMMENT "Syncing PAL4 inject artifacts to dist and test game root"
+    )
+endfunction()
 
 add_custom_target(pal4_inject_build_info ALL
     COMMAND ${CMAKE_COMMAND}
@@ -130,6 +193,8 @@ target_link_libraries(pal4_inject_cli PRIVATE pal4_inject_common)
 set_target_properties(pal4_inject_cli PROPERTIES
     OUTPUT_NAME "cli"
 )
+
+pal4_inject_add_runtime_deploy_target()
 
 if(PAL4_INJECT_BUILD_TESTS)
     enable_testing()
