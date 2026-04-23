@@ -237,9 +237,16 @@ bool ApplyKnownDynamicFontResync(
     bindings.font_notify_screen_resolution(font, notify_resolution);
     const float font_height_after = ReadFontHeightForDiagnostics(bindings, font);
     const float line_spacing_after = ReadLineSpacingForDiagnostics(bindings, font);
+    const bool enable_oversample =
+        canonical_name == "dialog_simsun" ||
+        ((canonical_name == "system" || canonical_name == "systemBold") &&
+            GetRuntimeState().SystemFontOversampleEnabled());
     std::string oversample_detail;
-    if (canonical_name == "dialog_simsun") {
-        ApplyDynamicFontOversampleExperiment(font, &oversample_detail);
+    if (enable_oversample) {
+        ApplyDynamicFontOversampleExperiment(
+            font,
+            canonical_name == "dialog_simsun",
+            &oversample_detail);
     }
     const float font_height_final = ReadFontHeightForDiagnostics(bindings, font);
     const float line_spacing_final = ReadLineSpacingForDiagnostics(bindings, font);
@@ -329,6 +336,61 @@ bool TryRememberKnownDynamicFontTexture(
     RememberKnownDynamicFontTexture(short_name, texture);
     if (error) {
         error->clear();
+    }
+    return true;
+}
+
+bool ApplySystemFontOversamplePreferenceToLoadedFonts(
+    const bool enabled,
+    std::string* error) {
+    CeguiBindings bindings{};
+    if (!TryGetCeguiBindings(&bindings, error)) {
+        return false;
+    }
+    if (!bindings.get_font_manager_singleton_ptr || !bindings.font_manager_get_font) {
+        if (error) {
+            *error = "FontManager bindings are unavailable";
+        }
+        return false;
+    }
+
+    void* font_manager = bindings.get_font_manager_singleton_ptr();
+    if (!font_manager) {
+        if (error) {
+            *error = "CEGUI FontManager singleton is null";
+        }
+        return false;
+    }
+
+    std::string summary;
+    for (const std::string_view font_name : {"system", "systemBold"}) {
+        ScopedCeguiString font_name_string{};
+        if (!BuildCeguiAnsiString(bindings, font_name, &font_name_string, error)) {
+            return false;
+        }
+        void* font = bindings.font_manager_get_font(font_manager, &font_name_string.storage);
+        if (!font) {
+            continue;
+        }
+
+        std::string detail;
+        const bool ok = enabled
+            ? ApplyDynamicFontOversampleExperiment(font, false, &detail)
+            : RestoreDynamicFontOversampleExperiment(font, &detail);
+        if (!ok) {
+            if (error) {
+                *error = std::string(font_name) + ": " + detail;
+            }
+            return false;
+        }
+        if (!summary.empty()) {
+            summary += ' ';
+        }
+        summary += std::string(font_name) + "{" + detail + "}";
+    }
+
+    if (error) {
+        *error = summary;
     }
     return true;
 }

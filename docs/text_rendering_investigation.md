@@ -643,7 +643,15 @@
     - 以及必要时进一步针对：
       - `drawTextLineAverageWidth(...)`
       - `drawTextLineJustified(...)`
-  - 另外当前只对白话字体 `dialog_simsun` 开启，`system / systemBold` 尚未纳入
+- 2026-04-24 起新增一条中风险实验分支：
+  - 初版曾尝试把 `system / systemBold` 一起纳入同一套 `2x oversample + draw/metric` 补偿链
+  - 从系统说明文本截图可以确认：`system` 长文本里括号/引号等符号宽度异常放大，且控件高度判断也随之漂移，导致行距和换行一起变坏
+  - 当前收敛做法不是彻底移除 `system`，而是把它改成更保守的 oversample 比例，并在字体重建后以原始 `fontHeight / lineSpacing / baseline` 为基准做小幅微调
+  - 最新截图继续表明：单调 `baseline` 与 `drawText rect.y` 偏移，对 `system` 页签文字位置都几乎没有可见作用
+  - 这说明问题层级更可能在 glyph image 的 `offsetY`，而不是字体全局 metrics 或 `drawText` 外围矩形
+  - 但直接改 `Imageset::defineImage(...)` 入参里的 `Vector2 offset.y` 会把 `system` 观感拉回高清化之前的显示，因此这条写路径实验已关闭
+  - 下一步应改成只观测 `system_auto_glyph_images` 的真实 `offsetY`，不直接改值；`systemBold` 仍保持不额外补偿
+  - 这两条系统字体实验都继续刻意不接 `OIRAMLOOK RichText::TextGlyph::getHeight/cacheGlyph`
 - 当前运行时日志里会把这一段附加在 `load_font_file` detail 后面：
   - `oversampled_point_size=...`
   - `draw_scale=0.500000`
@@ -652,6 +660,12 @@
   1. 对白框正文是否比之前更接近“同字号但更实”
   2. 是否出现行距、换行、裁剪等新副作用
   3. 是否需要继续把缩放补偿扩展到其它 `Font::*draw*` 路径
+
+### TODO
+- [ ] 为 `system_auto_glyph_images` 增加只观测、不改值的运行时日志，记录 `defineImage(...)` 传入的 `offsetY`
+- [ ] 对比 `Image::setVertScaling()` 后的最终 `Image::getOffsetY()`，确认问题是否出在 glyph image 的缩放后偏移
+- [ ] 如果 `offsetY` 本身正常，则继续追 `system` 文本所在控件的消费方布局，而不是再调 font metrics
+- [ ] 只有在观测证据充分后，才重新引入更窄的 `offsetY` 修正实验；默认产物保持当前稳定链路
 
 ## 2026-04-22 Failed attempt: inline hook at `appendCharacter`
 - 这一轮曾尝试把修复点继续下沉到：

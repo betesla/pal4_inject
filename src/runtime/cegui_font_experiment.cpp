@@ -25,6 +25,12 @@ constexpr std::size_t kFontHeightIndex = 51;
 constexpr std::size_t kLineSpacingIndex = 52;
 constexpr std::size_t kBaselineIndex = 53;
 
+struct FontVerticalMetrics {
+    float font_height = 0.0F;
+    float line_spacing = 0.0F;
+    float baseline = 0.0F;
+};
+
 using FontDrawTextFn = int (__thiscall*)(
     void*,
     void*,
@@ -39,6 +45,7 @@ using FontGetTextExtentFn = double (__thiscall*)(void*, const void*, float);
 using FontGetCharAtPixelFn = unsigned int (__thiscall*)(void*, const void*, unsigned int, float, float);
 using FontGetFormattedTextExtentFn = double (__thiscall*)(void*, void*, void*, int, float);
 using FontGetWrappedTextExtentFn = float (__thiscall*)(void*, const void*, float, float);
+using ImagesetDefineImageFn = void (__thiscall*)(void*, const void*, const void*, const void*);
 using TextGlyphCacheGlyphFn = void (__thiscall*)(void*, const void*, float, void*, const void*, const void*);
 
 constexpr char kDrawTextSymbol[] =
@@ -61,6 +68,16 @@ constexpr char kGetWrappedTextExtentSymbol[] =
     "?getWrappedTextExtent@Font@CEGUI@@ABEMABVString@2@MM@Z";
 constexpr std::array<std::uint8_t, 3> kGetWrappedTextExtentExpectedPrefix{0x6A, 0xFF, 0x68};
 constexpr std::size_t kGetWrappedTextExtentPatchSpan = 7;
+constexpr char kDefineImageSymbol[] =
+    "?defineImage@Imageset@CEGUI@@QAEXABVString@2@ABVRect@2@ABVVector2@2@@Z";
+constexpr std::array<std::uint8_t, 27> kDefineImageExpectedPrefix{
+    0x64, 0xA1, 0x00, 0x00, 0x00, 0x00,
+    0x6A, 0xFF,
+    0x68, 0x33, 0xC1, 0x14, 0x10,
+    0x50,
+    0x64, 0x89, 0x25, 0x00, 0x00, 0x00, 0x00,
+    0x81, 0xEC, 0xEC, 0x05, 0x00, 0x00};
+constexpr std::size_t kDefineImagePatchSpan = kDefineImageExpectedPrefix.size();
 constexpr char kOiramlookModuleName[] = "OIRAMLOOK.dll";
 constexpr char kTextGlyphGetHeightSymbol[] =
     "?getHeight@TextGlyph@RichText@CEGUI@@UBEMXZ";
@@ -83,22 +100,49 @@ std::mutex g_text_glyph_height_hook_mutex;
 std::atomic<unsigned int> g_logged_get_char_at_pixel_calls{0};
 std::atomic<unsigned int> g_logged_text_glyph_height_calls{0};
 std::atomic<unsigned int> g_logged_text_glyph_cache_calls{0};
+std::atomic<unsigned int> g_logged_define_image_adjustments{0};
 FontDrawTextFn g_original_font_draw_text = nullptr;
 FontGetTextExtentFn g_original_font_get_text_extent = nullptr;
 FontGetCharAtPixelFn g_original_font_get_char_at_pixel = nullptr;
 FontGetFormattedTextExtentFn g_original_font_get_formatted_text_extent = nullptr;
 FontGetWrappedTextExtentFn g_original_font_get_wrapped_text_extent = nullptr;
+ImagesetDefineImageFn g_original_imageset_define_image = nullptr;
 TextGlyphCacheGlyphFn g_original_text_glyph_cache_glyph = nullptr;
 bool g_draw_text_hook_installed = false;
 bool g_get_text_extent_hook_installed = false;
 bool g_get_char_at_pixel_hook_installed = false;
 bool g_get_formatted_text_extent_hook_installed = false;
 bool g_get_wrapped_text_extent_hook_installed = false;
+bool g_define_image_hook_installed = false;
 bool g_text_glyph_get_height_hook_installed = false;
 bool g_text_glyph_cache_glyph_hook_installed = false;
 std::unordered_map<void*, DynamicFontOversamplePlan> g_oversampled_fonts;
 thread_local void* g_compensated_draw_text_font = nullptr;
 thread_local unsigned int g_compensated_draw_text_depth = 0;
+thread_local std::string g_active_define_image_font_name;
+thread_local float g_active_define_image_offset_y = 0.0F;
+
+struct GlyphImageOffsetScope {
+    explicit GlyphImageOffsetScope(std::string font_name, const float offset_y)
+        : previous_font_name_(std::move(g_active_define_image_font_name)),
+          previous_offset_y_(g_active_define_image_offset_y) {
+        g_active_define_image_font_name = std::move(font_name);
+        g_active_define_image_offset_y = offset_y;
+    }
+
+    ~GlyphImageOffsetScope() {
+        g_active_define_image_font_name = std::move(previous_font_name_);
+        g_active_define_image_offset_y = previous_offset_y_;
+    }
+
+    std::string previous_font_name_;
+    float previous_offset_y_ = 0.0F;
+};
+
+struct CeguiVector2Value {
+    float x = 0.0F;
+    float y = 0.0F;
+};
 
 int __fastcall HookedFontDrawText(
     void* font,
@@ -140,6 +184,13 @@ float __fastcall HookedFontGetWrappedTextExtent(
     const void* text,
     float wrap_width,
     float x_scale);
+
+void __fastcall HookedImagesetDefineImage(
+    void* imageset,
+    void*,
+    const void* name,
+    const void* source_rect,
+    const void* offset);
 
 float __fastcall HookedTextGlyphGetHeight(
     void* glyph,
@@ -537,6 +588,75 @@ bool InstallKnownSafeGetWrappedTextExtentHook(std::string* error) {
     return true;
 }
 
+bool InstallKnownSafeDefineImageHook(std::string* error) {
+    if (g_define_image_hook_installed) {
+        return true;
+    }
+
+    const HMODULE module = GetModuleHandleA("CEGUIBase.dll");
+    if (!module) {
+        if (error) {
+            *error = "CEGUIBase.dll is not loaded";
+        }
+        return false;
+    }
+
+    auto* target = reinterpret_cast<std::uint8_t*>(GetProcAddress(module, kDefineImageSymbol));
+    if (!target) {
+        if (error) {
+            *error = "GetProcAddress failed for Imageset::defineImage";
+        }
+        return false;
+    }
+
+    if (std::memcmp(
+            target,
+            kDefineImageExpectedPrefix.data(),
+            kDefineImageExpectedPrefix.size()) != 0) {
+        if (error) {
+            *error = "unexpected Imageset::defineImage prologue";
+        }
+        return false;
+    }
+
+    void* trampoline = VirtualAlloc(
+        nullptr,
+        kDefineImagePatchSpan + 5,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE);
+    if (!trampoline) {
+        if (error) {
+            *error = "VirtualAlloc failed for Imageset::defineImage trampoline";
+        }
+        return false;
+    }
+
+    std::memcpy(trampoline, target, kDefineImagePatchSpan);
+    void* continue_at = target + kDefineImagePatchSpan;
+    if (!WriteRelativeJump(
+            static_cast<std::uint8_t*>(trampoline) + kDefineImagePatchSpan,
+            continue_at,
+            5,
+            error)) {
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+
+    if (!WriteRelativeJump(
+            target,
+            reinterpret_cast<void*>(&HookedImagesetDefineImage),
+            kDefineImagePatchSpan,
+            error)) {
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+
+    g_original_imageset_define_image =
+        reinterpret_cast<ImagesetDefineImageFn>(trampoline);
+    g_define_image_hook_installed = true;
+    return true;
+}
+
 bool InstallKnownSafeTextGlyphGetHeightHook(std::string* error) {
     std::scoped_lock lock(g_text_glyph_height_hook_mutex);
     if (g_text_glyph_get_height_hook_installed) {
@@ -711,6 +831,11 @@ void RememberOversampledFont(void* font, const DynamicFontOversamplePlan& plan) 
     g_oversampled_fonts[font] = plan;
 }
 
+void ForgetOversampledFont(void* font) {
+    std::scoped_lock lock(g_mutex);
+    g_oversampled_fonts.erase(font);
+}
+
 class ScopedCompensatedDrawText {
 public:
     explicit ScopedCompensatedDrawText(void* font) noexcept
@@ -763,6 +888,53 @@ void ScaleFontVerticalMetrics(void* font, const DynamicFontOversamplePlan& plan)
     }
 }
 
+FontVerticalMetrics CaptureFontVerticalMetrics(void* font) noexcept {
+    FontVerticalMetrics metrics{};
+    if (!font) {
+        return metrics;
+    }
+
+    const auto* values = static_cast<const float*>(font);
+    metrics.font_height = values[kFontHeightIndex];
+    metrics.line_spacing = values[kLineSpacingIndex];
+    metrics.baseline = values[kBaselineIndex];
+    return metrics;
+}
+
+void RestoreFontVerticalMetrics(void* font, const FontVerticalMetrics& metrics) noexcept {
+    if (!font) {
+        return;
+    }
+
+    auto* values = static_cast<float*>(font);
+    values[kFontHeightIndex] = metrics.font_height;
+    values[kLineSpacingIndex] = metrics.line_spacing;
+    values[kBaselineIndex] = metrics.baseline;
+}
+
+void ApplyPlannedVerticalMetricAdjustments(
+    void* font,
+    const FontVerticalMetrics& original_metrics,
+    const DynamicFontOversamplePlan& plan) noexcept {
+    if (!font) {
+        return;
+    }
+
+    auto adjusted_metrics = original_metrics;
+    adjusted_metrics.line_spacing *= plan.line_spacing_scale;
+    adjusted_metrics.baseline *= plan.baseline_scale;
+    if (adjusted_metrics.line_spacing <= 0.0F) {
+        adjusted_metrics.line_spacing = original_metrics.line_spacing;
+    }
+    if (adjusted_metrics.baseline <= 0.0F) {
+        adjusted_metrics.baseline = original_metrics.baseline;
+    }
+    if (adjusted_metrics.line_spacing > adjusted_metrics.font_height) {
+        adjusted_metrics.line_spacing = adjusted_metrics.font_height;
+    }
+    RestoreFontVerticalMetrics(font, adjusted_metrics);
+}
+
 void* TryReadTextGlyphFont(void* glyph) noexcept {
     if (!glyph) {
         return nullptr;
@@ -778,6 +950,21 @@ std::uint32_t TryReadFontPointSize(void* font) {
         return 0;
     }
     return bindings.font_get_point_size(font);
+}
+
+std::uint32_t ResolveNominalPointSize(
+    const std::string_view font_name,
+    const std::uint32_t reported_point_size) noexcept {
+    if (font_name == "system") {
+        return 13;
+    }
+    if (font_name == "systemBold") {
+        return 13;
+    }
+    if (font_name == "dialog_simsun") {
+        return 20;
+    }
+    return reported_point_size;
 }
 
 DynamicFontOversamplePlan GetFallbackDialogSimsunPlan(
@@ -1082,9 +1269,61 @@ float __fastcall HookedFontGetWrappedTextExtent(
     return g_original_font_get_wrapped_text_extent(font, text, wrap_width, x_scale);
 }
 
+void __fastcall HookedImagesetDefineImage(
+    void* imageset,
+    void*,
+    const void* name,
+    const void* source_rect,
+    const void* offset) {
+    if (!g_original_imageset_define_image) {
+        return;
+    }
+
+    const float offset_y = g_active_define_image_offset_y;
+    if (offset && offset_y != 0.0F) {
+        CeguiVector2Value adjusted_offset =
+            *static_cast<const CeguiVector2Value*>(offset);
+        adjusted_offset.y += offset_y;
+
+        const unsigned int index = g_logged_define_image_adjustments.fetch_add(1);
+        if (index < 16) {
+            CeguiBindings bindings{};
+            std::string binding_error;
+            std::string glyph_name;
+            if (TryGetCeguiBindings(&bindings, &binding_error) &&
+                bindings.cegui_string_c_str) {
+                if (const char* raw_name = bindings.cegui_string_c_str(name)) {
+                    glyph_name = raw_name;
+                }
+            }
+
+            std::ostringstream detail;
+            detail
+                << "hook=imageset_define_image"
+                << " font=" << g_active_define_image_font_name
+                << " glyph=" << glyph_name
+                << " offset_y_before=" << static_cast<const CeguiVector2Value*>(offset)->y
+                << " offset_y_after=" << adjusted_offset.y;
+            AppendHookEventLog(HookId::load_font_file, detail.str());
+        }
+
+        g_original_imageset_define_image(
+            imageset,
+            name,
+            source_rect,
+            &adjusted_offset);
+        return;
+    }
+
+    g_original_imageset_define_image(imageset, name, source_rect, offset);
+}
+
 }  // namespace
 
-bool ApplyDynamicFontOversampleExperiment(void* font, std::string* error) {
+bool ApplyDynamicFontOversampleExperiment(
+    void* font,
+    const bool enable_rich_text_compensation,
+    std::string* error) {
     if (!font) {
         if (error) {
             *error = "font pointer is null";
@@ -1104,7 +1343,8 @@ bool ApplyDynamicFontOversampleExperiment(void* font, std::string* error) {
     }
 
     const std::string font_name = TryReadFontName(font);
-    const std::uint32_t point_size = bindings.font_get_point_size(font);
+    const std::uint32_t point_size =
+        ResolveNominalPointSize(font_name, bindings.font_get_point_size(font));
     const auto plan = BuildDynamicFontOversamplePlan(font_name, point_size);
     if (!plan.apply) {
         if (error) {
@@ -1120,22 +1360,49 @@ bool ApplyDynamicFontOversampleExperiment(void* font, std::string* error) {
         !InstallKnownSafeGetWrappedTextExtentHook(error)) {
         return false;
     }
+    bool define_image_hook_installed = false;
+    if (plan.glyph_offset_y != 0.0F) {
+        define_image_hook_installed = InstallKnownSafeDefineImageHook(error);
+        if (!define_image_hook_installed) {
+            return false;
+        }
+    }
+    bool rich_text_height_hook_installed = false;
     std::string rich_text_height_detail;
-    const bool rich_text_height_hook_installed =
-        EnsureDialogRichTextGlyphHeightCompensationHook(&rich_text_height_detail);
+    if (enable_rich_text_compensation) {
+        rich_text_height_hook_installed =
+            EnsureDialogRichTextGlyphHeightCompensationHook(&rich_text_height_detail);
+    }
 
+    const FontVerticalMetrics original_vertical_metrics =
+        CaptureFontVerticalMetrics(font);
+    const GlyphImageOffsetScope glyph_offset_scope(font_name, plan.glyph_offset_y);
     bindings.font_create_font_from_ft_face(font, plan.oversampled_point_size, 0, 0);
-    ScaleFontVerticalMetrics(font, plan);
+    if (plan.preserve_original_vertical_metrics) {
+        ApplyPlannedVerticalMetricAdjustments(font, original_vertical_metrics, plan);
+    } else {
+        ScaleFontVerticalMetrics(font, plan);
+    }
     RememberOversampledFont(font, plan);
 
     if (error) {
         *error = "oversampled_point_size=" + std::to_string(plan.oversampled_point_size) +
             " draw_scale=" + std::to_string(plan.draw_scale) +
             " extent_scale=" + std::to_string(plan.extent_scale) +
+            " glyph_offset_y=" + std::to_string(plan.glyph_offset_y) +
             " line_spacing_scale=" + std::to_string(plan.line_spacing_scale) +
             " baseline_scale=" + std::to_string(plan.baseline_scale) +
-            " vertical_metrics_scaled=1" +
+            " preserve_original_vertical_metrics=" +
+            (plan.preserve_original_vertical_metrics
+                ? std::string("1")
+                : std::string("0")) +
+            " vertical_metrics_scaled=" +
+            (plan.preserve_original_vertical_metrics
+                ? std::string("0")
+                : std::string("1")) +
             " char_at_pixel_scaled=1" +
+            " define_image_hook=" +
+            (define_image_hook_installed ? std::string("1") : std::string("0")) +
             " metric_double_scale_guard=1" +
             " rich_text_height_hook=" +
             (rich_text_height_hook_installed ? std::string("1") : std::string("0")) +
@@ -1144,6 +1411,45 @@ bool ApplyDynamicFontOversampleExperiment(void* font, std::string* error) {
             (rich_text_height_detail.empty()
                 ? std::string()
                 : std::string(" rich_text_height_detail=\"") + rich_text_height_detail + "\"");
+    }
+    return true;
+}
+
+bool RestoreDynamicFontOversampleExperiment(void* font, std::string* error) {
+    if (!font) {
+        if (error) {
+            *error = "font pointer is null";
+        }
+        return false;
+    }
+
+    CeguiBindings bindings{};
+    if (!TryGetCeguiBindings(&bindings, error)) {
+        return false;
+    }
+    if (!bindings.font_create_font_from_ft_face) {
+        if (error) {
+            *error = "dynamic font restore binding is unavailable";
+        }
+        return false;
+    }
+
+    const std::string font_name = TryReadFontName(font);
+    const std::uint32_t point_size =
+        ResolveNominalPointSize(font_name, bindings.font_get_point_size(font));
+    if (point_size == 0) {
+        if (error) {
+            *error = "font point size is unavailable";
+        }
+        return false;
+    }
+
+    bindings.font_create_font_from_ft_face(font, point_size, 0, 0);
+    ForgetOversampledFont(font);
+    if (error) {
+        *error =
+            "restored_point_size=" + std::to_string(point_size) +
+            " oversample=0";
     }
     return true;
 }

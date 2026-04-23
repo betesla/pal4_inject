@@ -86,9 +86,11 @@
         - 直接调用 `createFontFromFT_Face(pointSize * 2, ...)`
         - 把真实 glyph 生成尺寸提高到 2x
   - `cegui_font_experiment.cpp`
-    - 维护对白字体 oversample 实验
+    - 维护 CEGUI dynamic font oversample 实验
     - 负责安装 `CEGUIBase.dll!Font::drawText(...)` 的窄 hook
     - 对被标记为 oversampled 的字体对象，把绘制阶段 `x_scale / y_scale` 压回 `0.5`
+    - 当前稳定路径仍以 `dialog_simsun` 为主；`system / systemBold` 通过独立运行时开关复用同一套 draw/metric 补偿，但不接 OIRAMLOOK RichText 高度链
+    - 其中 `system` 使用更保守的 oversample，并在字体重建后以原始 `fontHeight / lineSpacing / baseline` 为基准做轻微纵向微调，尽量保持长文本布局稳定
   - `dialog_pagination_hooks.cpp`
     - `dialog_HandleTextDisplay @ 0x4B8450` 诊断 hook
     - 记录对白 editbox 的当前文本、窗口尺寸、font height、wrapped extent

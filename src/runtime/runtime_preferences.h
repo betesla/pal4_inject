@@ -27,6 +27,11 @@ void ApplyUiTextureFilterPreference(
     UiTextureFilter filter,
     bool persist,
     bool update_last_ui_event);
+void ApplySystemFontOversamplePreference(
+    bool enabled,
+    bool persist,
+    bool update_last_ui_event,
+    bool apply_live_fonts);
 bool LoadPersistedRuntimePreferences(std::string* error);
 bool SavePersistedRuntimePreferences(std::string* error);
 void ApplyGamepadEnabledPreference(

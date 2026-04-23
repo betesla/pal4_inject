@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "pal4inject/inject_settings.h"
 #include "pal4inject/launcher.h"
 #include "pal4inject_build_info.h"
 
@@ -168,6 +169,36 @@ void ShowGuiError(const std::wstring& error) {
         error.empty() ? L"启动失败。" : error.c_str(),
         L"PAL4 注入启动器",
         MB_ICONERROR | MB_OK);
+}
+
+pal4::inject::ScriptMode NormalizeLauncherScriptMode(
+    const pal4::inject::ScriptMode mode) {
+    return mode == pal4::inject::ScriptMode::cs
+        ? pal4::inject::ScriptMode::cs
+        : pal4::inject::ScriptMode::csb;
+}
+
+pal4::inject::ScriptMode LoadPersistedLauncherScriptMode() {
+    pal4::inject::InjectPersistedSettings settings{};
+    std::string error;
+    if (!pal4::inject::LoadInjectPersistedSettings(
+            pal4::inject::DefaultInjectSettingsPath(),
+            &settings,
+            &error)) {
+        return pal4::inject::ScriptMode::csb;
+    }
+    return NormalizeLauncherScriptMode(settings.launcher_script_mode);
+}
+
+void SavePersistedLauncherScriptMode(const pal4::inject::ScriptMode mode) {
+    const auto settings_path = pal4::inject::DefaultInjectSettingsPath();
+    pal4::inject::InjectPersistedSettings settings{};
+    std::string error;
+    if (!pal4::inject::LoadInjectPersistedSettings(settings_path, &settings, &error)) {
+        settings = {};
+    }
+    settings.launcher_script_mode = NormalizeLauncherScriptMode(mode);
+    pal4::inject::SaveInjectPersistedSettings(settings_path, settings, &error);
 }
 
 std::wstring WideFromUtf8(const std::string& text) {
@@ -909,7 +940,11 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
             nullptr);
         SendMessageW(cs_radio, WM_SETFONT, reinterpret_cast<WPARAM>(default_font), TRUE);
         SendMessageW(csb_radio, WM_SETFONT, reinterpret_cast<WPARAM>(default_font), TRUE);
-        SendMessageW(csb_radio, BM_SETCHECK, BST_CHECKED, 0);
+        SendMessageW(
+            state->script_mode == pal4::inject::ScriptMode::cs ? cs_radio : csb_radio,
+            BM_SETCHECK,
+            BST_CHECKED,
+            0);
 
         CreateWindowExW(
             0,
@@ -1197,6 +1232,7 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
                 ShowGuiError(save_error);
                 return 0;
             }
+            SavePersistedLauncherScriptMode(state->script_mode);
             state->accepted = true;
             DestroyWindow(hwnd);
             return 0;
@@ -1255,6 +1291,7 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* options) {
     state.game_exe = install_dir / "PAL4.exe";
     state.runtime_dll = install_dir / "pal4_inject" / "runtime.dll";
     state.config_path = install_dir / "config.cfg";
+    state.script_mode = LoadPersistedLauncherScriptMode();
     state.config = LoadGameConfig(state.config_path);
     state.common_resolutions = BuildCommonResolutions();
     state.display_resolutions = EnumeratePrimaryDisplayResolutions();

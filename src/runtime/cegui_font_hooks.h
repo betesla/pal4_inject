@@ -12,6 +12,9 @@ bool ApplyKnownDynamicFontResync(
     std::string_view short_name,
     const CeguiWidescreenPlan& plan,
     std::string* error);
+bool ApplySystemFontOversamplePreferenceToLoadedFonts(
+    bool enabled,
+    std::string* error);
 void* GetCeguiFontReplacementForHook(HookId id);
 void SetCeguiFontOriginalTrampoline(HookId id, void* trampoline);
 

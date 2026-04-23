@@ -41,6 +41,9 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
     out << "version=" << kSettingsVersion << '\n';
     out << "msaa_level=" << ToString(settings.msaa_level) << '\n';
     out << "ui_texture_filter=" << ToString(settings.ui_texture_filter) << '\n';
+    out << "launcher_script_mode=" << ToString(settings.launcher_script_mode) << '\n';
+    out << "system_font_oversample_enabled="
+        << (settings.system_font_oversample_enabled ? "1" : "0") << '\n';
     out << "gamepad_enabled=" << (settings.gamepad_enabled ? "1" : "0") << '\n';
     out << "gamepad_log_enabled=" << (settings.gamepad_log_enabled ? "1" : "0") << '\n';
 
@@ -115,10 +118,24 @@ bool ParseInjectPersistedSettings(
             }
             continue;
         }
-        if (key == "gamepad_enabled" || key == "gamepad_log_enabled") {
-            bool* flag = key == "gamepad_enabled"
-                ? &out->gamepad_enabled
-                : &out->gamepad_log_enabled;
+        if (key == "launcher_script_mode") {
+            if (!TryParseScriptMode(value, &out->launcher_script_mode) ||
+                out->launcher_script_mode == ScriptMode::inherit) {
+                if (error) {
+                    *error = "invalid launcher_script_mode value: " + value;
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "system_font_oversample_enabled" ||
+            key == "gamepad_enabled" ||
+            key == "gamepad_log_enabled") {
+            bool* flag = key == "system_font_oversample_enabled"
+                ? &out->system_font_oversample_enabled
+                : (key == "gamepad_enabled"
+                    ? &out->gamepad_enabled
+                    : &out->gamepad_log_enabled);
             if (value == "1" || value == "true" || value == "on") {
                 *flag = true;
             } else if (value == "0" || value == "false" || value == "off") {

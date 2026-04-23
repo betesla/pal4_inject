@@ -83,6 +83,17 @@ bool RuntimeState::CrashHandlerReady() const {
     return crash_handler_ready_;
 }
 
+void RuntimeState::SetSystemFontOversampleEnabled(const bool enabled) {
+    std::scoped_lock lock(mutex_);
+    system_font_oversample_enabled_ = enabled;
+    state_cv_.notify_all();
+}
+
+bool RuntimeState::SystemFontOversampleEnabled() const {
+    std::scoped_lock lock(mutex_);
+    return system_font_oversample_enabled_;
+}
+
 void RuntimeState::SetGamepadEnabled(const bool enabled) {
     std::scoped_lock lock(mutex_);
     gamepad_enabled_ = enabled;
@@ -350,6 +361,7 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.pipe_ready = pipe_ready_;
     snapshot.ui_dispatch_ready = ui_dispatch_ready_;
     snapshot.crash_handler_ready = crash_handler_ready_;
+    snapshot.system_font_oversample_enabled = system_font_oversample_enabled_;
     snapshot.gamepad_enabled = gamepad_enabled_;
     snapshot.gamepad_log_enabled = gamepad_log_enabled_;
     snapshot.gamepad_connected = gamepad_connected_;

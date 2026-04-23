@@ -1,5 +1,6 @@
 #include "runtime_preferences.h"
 
+#include "cegui_font_hooks.h"
 #include "cegui_renderer_hooks.h"
 #include "d3d9_quality_hooks.h"
 #include "pal4inject/inject_settings.h"
@@ -32,10 +33,17 @@ HookMode ResolveEnabledHookMode(const HookId id) {
 
 bool SavePersistedRuntimePreferences(std::string* error) {
     InjectPersistedSettings settings{};
+    std::string load_error;
+    if (!LoadInjectPersistedSettings(RuntimePreferencesPath(), &settings, &load_error)) {
+        settings = {};
+    }
     settings.msaa_level = GetRuntimeState().GetMsaaLevel();
     settings.ui_texture_filter = GetRuntimeState().GetUiTextureFilter();
+    settings.system_font_oversample_enabled =
+        GetRuntimeState().SystemFontOversampleEnabled();
     settings.gamepad_enabled = GetRuntimeState().GamepadEnabled();
     settings.gamepad_log_enabled = GetRuntimeState().GamepadLogEnabled();
+    settings.hooks.clear();
     for (const auto& status : GetRuntimeState().CopyHookStatuses()) {
         settings.hooks.push_back({
             status.id,
@@ -160,6 +168,33 @@ void ApplyUiTextureFilterPreference(
     }
 }
 
+void ApplySystemFontOversamplePreference(
+    const bool enabled,
+    const bool persist,
+    const bool update_last_ui_event,
+    const bool apply_live_fonts) {
+    auto& state = GetRuntimeState();
+    state.SetSystemFontOversampleEnabled(enabled);
+    if (update_last_ui_event) {
+        state.SetLastUiEvent(
+            std::string("inject_control:system_font_oversample=") +
+            (enabled ? "on" : "off"));
+    }
+    if (apply_live_fonts) {
+        std::string error;
+        if (!ApplySystemFontOversamplePreferenceToLoadedFonts(enabled, &error) &&
+            !error.empty()) {
+            RecordPersistenceError(error);
+        }
+    }
+    if (persist) {
+        std::string error;
+        if (!SavePersistedRuntimePreferences(&error)) {
+            RecordPersistenceError(error);
+        }
+    }
+}
+
 void ApplyHookLogPreference(
     const HookId id,
     const bool enabled,
@@ -185,6 +220,11 @@ bool LoadPersistedRuntimePreferences(std::string* error) {
         return false;
     }
 
+    ApplySystemFontOversamplePreference(
+        settings.system_font_oversample_enabled,
+        false,
+        false,
+        false);
     ApplyGamepadEnabledPreference(settings.gamepad_enabled, false, false);
     ApplyGamepadLogPreference(settings.gamepad_log_enabled, false, false);
     ApplyUiTextureFilterPreference(settings.ui_texture_filter, false, false);

@@ -55,6 +55,8 @@ constexpr int kScriptModeStatusId = 3003;
 constexpr int kInputStatusId = 3004;
 constexpr int kUiTextureFilterCheckboxId = 3005;
 constexpr int kUiTextureFilterStatusId = 3006;
+constexpr int kSystemFontOversampleCheckboxId = 3007;
+constexpr int kSystemFontOversampleStatusId = 3008;
 constexpr int kFooterLabelId = 4000;
 constexpr int kShutdownButtonId = 4001;
 constexpr int kTabControlId = 4100;
@@ -97,6 +99,8 @@ HWND g_msaa_combo = nullptr;
 HWND g_msaa_status = nullptr;
 HWND g_ui_texture_filter_checkbox = nullptr;
 HWND g_ui_texture_filter_status = nullptr;
+HWND g_system_font_oversample_checkbox = nullptr;
+HWND g_system_font_oversample_status = nullptr;
 bool g_follow_game_window = true;
 
 int PageIndex(const InjectControlPanelPage page) noexcept {
@@ -382,6 +386,30 @@ std::wstring BuildLocalizedUiTextureFilterStatusText(
             text += WideFromNarrow(renderer_hook->last_error);
         }
     }
+    return text;
+}
+
+std::wstring BuildLocalizedSystemFontOversampleStatusText(
+    const RuntimeState& state,
+    const HookStatus* font_hook) {
+    std::wstring text = state.SystemFontOversampleEnabled()
+        ? L"\u5df2\u5f00\u542f"
+        : L"\u672a\u5f00\u542f";
+    text += L" | system/systemBold glyph \u91cd\u5efa + draw/metric \u8865\u507f";
+    text += L" | system \u4f7f\u7528\u66f4\u4fdd\u5b88\u7684 oversample\uff0c\u5e76\u4fdd\u7559\u539f\u59cb\u884c\u9ad8";
+    if (font_hook) {
+        text += L" | load_font_file \u8c03\u7528=";
+        text += WideFromUnsigned(font_hook->call_count);
+        if (font_hook->mode == HookMode::observe_only ||
+            font_hook->mode == HookMode::mirror_compare) {
+            text += L" | Hook \u672a\u542f\u7528";
+        }
+        if (!font_hook->last_error.empty()) {
+            text += L" | \u9519\u8bef=";
+            text += WideFromNarrow(font_hook->last_error);
+        }
+    }
+    text += L" | \u4ec5\u4fdd\u5b58\u8bbe\u7f6e\uff0c\u4e0b\u6b21\u5b57\u4f53\u52a0\u8f7d/\u91cd\u542f\u6e38\u620f\u540e\u751f\u6548";
     return text;
 }
 
@@ -763,6 +791,19 @@ void RefreshPanelContent(const HWND hwnd) {
             g_ui_texture_filter_status,
             BuildLocalizedUiTextureFilterStatusText(state, renderer_hook).c_str());
     }
+    if (g_system_font_oversample_checkbox) {
+        SendMessageW(
+            g_system_font_oversample_checkbox,
+            BM_SETCHECK,
+            state.SystemFontOversampleEnabled() ? BST_CHECKED : BST_UNCHECKED,
+            0);
+    }
+    if (g_system_font_oversample_status) {
+        const auto* font_hook = FindStatus(statuses, HookId::load_font_file);
+        SetWindowTextW(
+            g_system_font_oversample_status,
+            BuildLocalizedSystemFontOversampleStatusText(state, font_hook).c_str());
+    }
 
     for (const auto& runtime : PanelRows()) {
         UpdateHookRowDisplay(runtime, FindStatus(statuses, runtime.row.id));
@@ -906,6 +947,25 @@ int BuildHookPageHeader(
             kUiTextureFilterStatusId);
         y += kRowHeight + 6;
 
+        CreateStaticControl(panel, L"\u7cfb\u7edf\u5b57\u4f53", kPageMargin, y + 4, kNameWidth, 20);
+        g_system_font_oversample_checkbox = CreateButtonControl(
+            panel,
+            L"\u9ad8\u6e05\u5b9e\u9a8c\uff08system/systemBold\uff09",
+            kPageMargin + kNameWidth + 8,
+            y + 2,
+            kComboWidth + 120,
+            20,
+            kSystemFontOversampleCheckboxId);
+        g_system_font_oversample_status = CreateStaticControl(
+            panel,
+            L"",
+            kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
+            y + 4,
+            kStatusWidth + 280,
+            20,
+            kSystemFontOversampleStatusId);
+        y += kRowHeight + 6;
+
         CreateWindowExW(
             0,
             L"STATIC",
@@ -1032,6 +1092,8 @@ void BuildPanelControls(const HWND hwnd) {
     g_msaa_status = nullptr;
     g_ui_texture_filter_checkbox = nullptr;
     g_ui_texture_filter_status = nullptr;
+    g_system_font_oversample_checkbox = nullptr;
+    g_system_font_oversample_status = nullptr;
 
     RECT client_rect{};
     GetClientRect(hwnd, &client_rect);
@@ -1166,6 +1228,13 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
             RefreshPanelContent(hwnd);
             return 0;
         }
+        if (control_id == kSystemFontOversampleCheckboxId && notify_code == BN_CLICKED) {
+            const bool enabled =
+                SendMessageW(g_system_font_oversample_checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            ApplySystemFontOversamplePreference(enabled, true, true, false);
+            RefreshPanelContent(hwnd);
+            return 0;
+        }
         if (control_id >= kHookToggleBaseId &&
             control_id < kHookToggleBaseId + static_cast<int>(PanelRows().size()) &&
             notify_code == BN_CLICKED) {
@@ -1237,6 +1306,8 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
         g_msaa_status = nullptr;
         g_ui_texture_filter_checkbox = nullptr;
         g_ui_texture_filter_status = nullptr;
+        g_system_font_oversample_checkbox = nullptr;
+        g_system_font_oversample_status = nullptr;
         PostQuitMessage(0);
         return 0;
     default:
@@ -1331,6 +1402,8 @@ void StopInjectControlWindow() {
     g_msaa_status = nullptr;
     g_ui_texture_filter_checkbox = nullptr;
     g_ui_texture_filter_status = nullptr;
+    g_system_font_oversample_checkbox = nullptr;
+    g_system_font_oversample_status = nullptr;
     g_follow_game_window = true;
 }
 

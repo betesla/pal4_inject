@@ -387,12 +387,25 @@ void TestDynamicFontOversamplePlan() {
 
     const auto system_plan =
         pal4::inject::BuildDynamicFontOversamplePlan("system", 13);
-    assert(!system_plan.apply);
-    assert(system_plan.oversampled_point_size == 0);
-    assert(system_plan.draw_scale == 1.0F);
-    assert(system_plan.extent_scale == 1.0F);
-    assert(system_plan.line_spacing_scale == 1.0F);
+    assert(system_plan.apply);
+    assert(system_plan.oversampled_point_size == 20);
+    assert(system_plan.draw_scale == 0.65F);
+    assert(system_plan.extent_scale == 0.65F);
+    assert(system_plan.glyph_offset_y == 0.0F);
+    assert(system_plan.line_spacing_scale == 0.92F);
     assert(system_plan.baseline_scale == 1.0F);
+    assert(system_plan.preserve_original_vertical_metrics);
+
+    const auto system_bold_plan =
+        pal4::inject::BuildDynamicFontOversamplePlan("systemBold", 13);
+    assert(system_bold_plan.apply);
+    assert(system_bold_plan.oversampled_point_size == 26);
+    assert(system_bold_plan.draw_scale == 0.5F);
+    assert(system_bold_plan.extent_scale == 0.5F);
+    assert(system_bold_plan.glyph_offset_y == 0.0F);
+    assert(system_bold_plan.line_spacing_scale == 1.0F);
+    assert(system_bold_plan.baseline_scale == 1.0F);
+    assert(system_bold_plan.preserve_original_vertical_metrics);
 
     const auto zero_plan =
         pal4::inject::BuildDynamicFontOversamplePlan("dialog_simsun", 0);
@@ -647,6 +660,8 @@ void TestInjectSettingsRoundTrip() {
     pal4::inject::InjectPersistedSettings settings{};
     settings.msaa_level = pal4::inject::MsaaLevel::x4;
     settings.ui_texture_filter = pal4::inject::UiTextureFilter::linear;
+    settings.launcher_script_mode = pal4::inject::ScriptMode::cs;
+    settings.system_font_oversample_enabled = true;
     settings.gamepad_enabled = true;
     settings.gamepad_log_enabled = false;
     settings.hooks.push_back({
@@ -674,6 +689,8 @@ void TestInjectSettingsRoundTrip() {
     assert(pal4::inject::ParseInjectPersistedSettings(text, &parsed, &error));
     assert(parsed.msaa_level == pal4::inject::MsaaLevel::x4);
     assert(parsed.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
+    assert(parsed.launcher_script_mode == pal4::inject::ScriptMode::cs);
+    assert(parsed.system_font_oversample_enabled);
     assert(parsed.gamepad_enabled);
     assert(!parsed.gamepad_log_enabled);
     assert(parsed.hooks.size() == 3);
@@ -705,6 +722,8 @@ void TestInjectSettingsRoundTrip() {
     assert(pal4::inject::LoadInjectPersistedSettings(temp_path, &loaded, &error));
     assert(loaded.msaa_level == pal4::inject::MsaaLevel::x4);
     assert(loaded.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
+    assert(loaded.launcher_script_mode == pal4::inject::ScriptMode::cs);
+    assert(loaded.system_font_oversample_enabled);
     assert(loaded.gamepad_enabled);
     assert(!loaded.gamepad_log_enabled);
     std::filesystem::remove(temp_path);
@@ -801,6 +820,7 @@ void TestRuntimeEventLog() {
     assert(!state.GetHookLogEnabled(HookId::load_font_file));
     state.SetMsaaLevel(pal4::inject::MsaaLevel::x2);
     state.SetUiTextureFilter(pal4::inject::UiTextureFilter::linear);
+    state.SetSystemFontOversampleEnabled(true);
     state.AppendEventLog("event-1");
     state.AppendEventLog("event-2");
     state.SetCrashHandlerReady(true);
@@ -821,6 +841,7 @@ void TestRuntimeEventLog() {
     assert(snapshot.crash_handler_ready);
     assert(snapshot.msaa_level == pal4::inject::MsaaLevel::x2);
     assert(snapshot.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
+    assert(snapshot.system_font_oversample_enabled);
     assert(snapshot.gamepad_enabled);
     assert(!snapshot.gamepad_log_enabled);
     assert(snapshot.gamepad_connected);

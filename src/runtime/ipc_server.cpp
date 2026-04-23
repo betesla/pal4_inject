@@ -136,6 +136,8 @@ ProtocolResponse BuildSnapshotResponse() {
     response.fields["pipe_ready"] = snapshot.pipe_ready ? "1" : "0";
     response.fields["ui_dispatch_ready"] = snapshot.ui_dispatch_ready ? "1" : "0";
     response.fields["crash_handler_ready"] = snapshot.crash_handler_ready ? "1" : "0";
+    response.fields["system_font_oversample_enabled"] =
+        snapshot.system_font_oversample_enabled ? "1" : "0";
     response.fields["gamepad_enabled"] = snapshot.gamepad_enabled ? "1" : "0";
     response.fields["gamepad_log_enabled"] = snapshot.gamepad_log_enabled ? "1" : "0";
     response.fields["gamepad_connected"] = snapshot.gamepad_connected ? "1" : "0";

@@ -10,8 +10,10 @@ struct DynamicFontOversamplePlan {
     std::uint32_t oversampled_point_size = 0;
     float draw_scale = 1.0F;
     float extent_scale = 1.0F;
+    float glyph_offset_y = 0.0F;
     float line_spacing_scale = 1.0F;
     float baseline_scale = 1.0F;
+    bool preserve_original_vertical_metrics = false;
 };
 
 DynamicFontOversamplePlan BuildDynamicFontOversamplePlan(

@@ -8,16 +8,46 @@ DynamicFontOversamplePlan BuildDynamicFontOversamplePlan(
     const std::string_view canonical_font_name,
     const std::uint32_t current_point_size) noexcept {
     DynamicFontOversamplePlan plan{};
-    if (canonical_font_name != "dialog_simsun" || current_point_size == 0) {
+    if (current_point_size == 0) {
         return plan;
     }
-
-    plan.apply = true;
-    plan.oversampled_point_size = current_point_size * 2U;
-    plan.draw_scale = 0.5F;
-    plan.extent_scale = 0.5F;
-    plan.line_spacing_scale = 1.0F;
-    plan.baseline_scale = 1.0F;
+    if (canonical_font_name == "dialog_simsun") {
+        plan.apply = true;
+        plan.oversampled_point_size = current_point_size * 2U;
+        plan.draw_scale = 0.5F;
+        plan.extent_scale = 0.5F;
+        plan.glyph_offset_y = 0.0F;
+        plan.line_spacing_scale = 1.0F;
+        plan.baseline_scale = 1.0F;
+        return plan;
+    }
+    if (canonical_font_name == "system") {
+        // `system` is used heavily by long-form help text.  A milder oversample
+        // keeps punctuation advances closer to the original 13pt layout while
+        // still improving glyph sampling quality.
+        plan.apply = true;
+        plan.oversampled_point_size = 20;
+        plan.draw_scale =
+            static_cast<float>(current_point_size) /
+            static_cast<float>(plan.oversampled_point_size);
+        plan.extent_scale = plan.draw_scale;
+        plan.glyph_offset_y = 0.0F;
+        plan.line_spacing_scale = 0.92F;
+        plan.baseline_scale = 1.0F;
+        plan.preserve_original_vertical_metrics = true;
+        return plan;
+    }
+    if (canonical_font_name == "systemBold") {
+        plan.apply = true;
+        plan.oversampled_point_size = current_point_size * 2U;
+        plan.draw_scale = 0.5F;
+        plan.extent_scale = 0.5F;
+        plan.glyph_offset_y = 0.0F;
+        plan.line_spacing_scale = 1.0F;
+        plan.baseline_scale = 1.0F;
+        plan.preserve_original_vertical_metrics = true;
+        return plan;
+    }
     return plan;
 }
 

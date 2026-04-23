@@ -101,6 +101,7 @@ struct RuntimeSnapshot {
     bool pipe_ready = false;
     bool ui_dispatch_ready = false;
     bool crash_handler_ready = false;
+    bool system_font_oversample_enabled = false;
     bool gamepad_enabled = true;
     bool gamepad_log_enabled = false;
     bool gamepad_connected = false;

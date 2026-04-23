@@ -54,14 +54,14 @@ cmake -S . -B build -A Win32 -DPAL4_INJECT_SYNC_TEST_DEPLOY=OFF
 - 新增脚本模式切换：
   - `--script-mode cs`
   - `--script-mode csb`
-  - 不传参数直接双击 `PAL4_inject.exe` 时，会弹出中文 GUI 选择 `CS` 或 `CSB`，默认使用 `CSB`
+  - 不传参数直接双击 `PAL4_inject.exe` 时，会弹出中文 GUI 选择 `CS` 或 `CSB`；首次默认 `CSB`，之后会记住上次选择
 - 发布启动入口：
   - 发布使用时，把 `dist` 目录里的文件复制到 PAL4 游戏安装目录
   - `PAL4_inject.exe` 放在游戏目录根部，和 `PAL4.exe` 同级
   - `PAL4_inject.exe` 是 GUI 程序，双击启动时不会弹出 CMD 黑窗口
   - 注入相关文件放在游戏目录下的 `pal4_inject` 子目录，便于后续覆盖更新
   - 注入配置、runtime log、crash report / dump 等运行产物也统一放在 `pal4_inject` 子目录
-  - 双击 `PAL4_inject.exe` 后由 GUI 选择 `CS` 或 `CSB`
+  - 双击 `PAL4_inject.exe` 后由 GUI 选择 `CS` 或 `CSB`，并记住上次脚本模式选择
   - GUI 会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、全屏/窗口化、宽屏和垂直同步
   - 分辨率列表分为“常用分辨率”和“主显示器支持”两个页签
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
@@ -118,8 +118,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
   - 默认隐藏，按 `Ctrl+J` 显示 / 隐藏
   - 默认会先跟随游戏窗口定位；用户手动拖动后就不再强制吸附
   - 顶部单独暴露 `MSAA` 画质项
+  - 可选开启 `system / systemBold` 的系统字体高清实验：`system` 走更保守的 oversample，并基于原始 metrics 轻微收紧行距/下压基线；`systemBold` 继续走更激进的字形重建并补一点基线
   - 每个 hook 一行，带快速开关、`HookMode` 下拉框和状态栏
-  - 面板配置会记忆到游戏目录下的 `pal4_inject\inject_panel_settings.ini`，下次启动自动恢复
+  - 面板配置和启动器脚本模式会记忆到游戏目录下的 `pal4_inject\inject_panel_settings.ini`，下次启动自动恢复
   - `Ctrl+J` 显示 / 隐藏面板
   - 概览页会额外显示 `XInput` 手柄启用状态、连接状态和当前输入上下文
   - 作为游戏窗口的 owned popup 存在，避免点回游戏时像独立外部工具窗一样被压下去
