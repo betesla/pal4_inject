@@ -19,6 +19,7 @@ inline constexpr std::uint32_t kGiTalkScriptCallback = 0x5DFB10;
 inline constexpr std::uint32_t kCeguiRendererConstructor2 = 0x413580;
 inline constexpr std::uint32_t kCeguiSystemInitialize = 0x410450;
 inline constexpr std::uint32_t kLoadFontFile = 0x4BD3B0;
+inline constexpr std::uint32_t kDialogHandleTextDisplay = 0x4B8450;
 inline constexpr std::uint32_t kSetupMinimapTexture = 0x40DE10;
 inline constexpr std::uint32_t kSetProperties4C2550 = 0x4C2550;
 inline constexpr std::uint32_t kCombatConsoleSetImageAndPosition = kSetProperties4C2550;

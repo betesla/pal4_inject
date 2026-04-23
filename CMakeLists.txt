@@ -36,6 +36,7 @@ add_custom_target(pal4_inject_build_info ALL
 add_library(pal4_inject_common STATIC
     src/common/camera_pitch_guard.cpp
     src/common/camera_unlock_patch.cpp
+    src/common/cegui_font_experiment.cpp
     src/common/cegui_font_resync.cpp
     src/common/cegui_widescreen.cpp
     src/common/crash_capture.cpp
@@ -66,11 +67,14 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/battle_ui_layout_hooks.cpp
     src/runtime/bootstrap.cpp
     src/runtime/cegui_font_hooks.cpp
+    src/runtime/cegui_font_experiment.cpp
+    src/runtime/cegui_font_texture_registry.cpp
     src/runtime/d3d9_quality_hooks.cpp
     src/runtime/cegui_renderer_hooks.cpp
     src/runtime/camera_hooks.cpp
     src/runtime/camera_unlock.cpp
     src/runtime/cegui_bindings.cpp
+    src/runtime/dialog_pagination_hooks.cpp
     src/runtime/crash_handler.cpp
     src/runtime/hud_layout_fixups.cpp
     src/runtime/hook_logging.cpp

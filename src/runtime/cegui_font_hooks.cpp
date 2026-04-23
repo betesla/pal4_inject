@@ -11,6 +11,8 @@
 #include <windows.h>
 
 #include "cegui_bindings.h"
+#include "cegui_font_experiment.h"
+#include "cegui_font_texture_registry.h"
 #include "hook_logging.h"
 #include "pal4inject/cegui_font_resync.h"
 #include "pal4inject/ida_addresses.h"
@@ -82,6 +84,24 @@ std::string FormatFloatCompact(const float value) {
     return out.str();
 }
 
+float ReadFontHeightForDiagnostics(
+    const CeguiBindings& bindings,
+    void* font) noexcept {
+    if (!font || !bindings.font_get_font_height) {
+        return 0.0F;
+    }
+    return bindings.font_get_font_height(font, 1.0F);
+}
+
+float ReadLineSpacingForDiagnostics(
+    const CeguiBindings& bindings,
+    void* font) noexcept {
+    if (!font || !bindings.font_get_line_spacing) {
+        return 0.0F;
+    }
+    return bindings.font_get_line_spacing(font, 1.0F);
+}
+
 void LogFontEvent(const std::string_view text) {
     AppendHookEventLog(HookId::load_font_file, text);
 }
@@ -105,7 +125,8 @@ std::string BuildFontSummary(
             << " native=" << FormatFloatCompact(target->native_width)
             << "x" << FormatFloatCompact(target->native_height)
             << " notify=" << FormatFloatCompact(target->notify_width)
-            << "x" << FormatFloatCompact(target->notify_height);
+            << "x" << FormatFloatCompact(target->notify_height)
+            << " oversample=" << FormatFloatCompact(target->oversample_scale);
     }
     if (!detail.empty()) {
         out << " detail=" << detail;
@@ -209,9 +230,103 @@ bool ApplyKnownDynamicFontResync(
         target.notify_width,
         target.notify_height,
     };
+    const float font_height_before = ReadFontHeightForDiagnostics(bindings, font);
+    const float line_spacing_before = ReadLineSpacingForDiagnostics(bindings, font);
     bindings.font_set_auto_scaling_enabled(font, true);
     bindings.font_set_native_resolution(font, native_resolution);
     bindings.font_notify_screen_resolution(font, notify_resolution);
+    const float font_height_after = ReadFontHeightForDiagnostics(bindings, font);
+    const float line_spacing_after = ReadLineSpacingForDiagnostics(bindings, font);
+    std::string oversample_detail;
+    if (canonical_name == "dialog_simsun") {
+        ApplyDynamicFontOversampleExperiment(font, &oversample_detail);
+    }
+    const float font_height_final = ReadFontHeightForDiagnostics(bindings, font);
+    const float line_spacing_final = ReadLineSpacingForDiagnostics(bindings, font);
+    if (error) {
+        std::ostringstream detail;
+        detail
+            << "font_height_before=" << FormatFloatCompact(font_height_before)
+            << " font_height_after_notify=" << FormatFloatCompact(font_height_after)
+            << " font_height_final=" << FormatFloatCompact(font_height_final)
+            << " line_spacing_before=" << FormatFloatCompact(line_spacing_before)
+            << " line_spacing_after_notify=" << FormatFloatCompact(line_spacing_after)
+            << " line_spacing_final=" << FormatFloatCompact(line_spacing_final);
+        if (!oversample_detail.empty()) {
+            detail << " " << oversample_detail;
+        }
+        *error = detail.str();
+    }
+    return true;
+}
+
+bool TryRememberKnownDynamicFontTexture(
+    const std::string_view short_name,
+    std::string* error) {
+    const std::string atlas_name = BuildKnownDynamicUiFontAtlasName(short_name);
+    if (atlas_name.empty()) {
+        if (error) {
+            *error = "font atlas name is unavailable";
+        }
+        return false;
+    }
+
+    CeguiBindings bindings{};
+    if (!TryGetCeguiBindings(&bindings, error)) {
+        return false;
+    }
+    if (!bindings.get_imageset_manager_singleton_ptr ||
+        !bindings.imageset_manager_is_imageset_present ||
+        !bindings.imageset_manager_get_imageset ||
+        !bindings.imageset_get_texture) {
+        if (error) {
+            *error = "imageset bindings are unavailable";
+        }
+        return false;
+    }
+
+    void* imageset_manager = bindings.get_imageset_manager_singleton_ptr();
+    if (!imageset_manager) {
+        if (error) {
+            *error = "CEGUI ImagesetManager singleton is null";
+        }
+        return false;
+    }
+
+    ScopedCeguiString atlas_name_string{};
+    if (!BuildCeguiAnsiString(bindings, atlas_name, &atlas_name_string, error)) {
+        return false;
+    }
+
+    if (!bindings.imageset_manager_is_imageset_present(
+            imageset_manager,
+            &atlas_name_string.storage)) {
+        if (error) {
+            *error = std::string("ImagesetManager::isImagesetPresent reported missing atlas ") +
+                atlas_name;
+        }
+        return false;
+    }
+
+    void* imageset = bindings.imageset_manager_get_imageset(
+        imageset_manager,
+        &atlas_name_string.storage);
+    if (!imageset) {
+        if (error) {
+            *error = std::string("ImagesetManager::getImageset returned null for ") + atlas_name;
+        }
+        return false;
+    }
+
+    void* texture = bindings.imageset_get_texture(imageset);
+    if (!texture) {
+        if (error) {
+            *error = std::string("Imageset::getTexture returned null for ") + atlas_name;
+        }
+        return false;
+    }
+
+    RememberKnownDynamicFontTexture(short_name, texture);
     if (error) {
         error->clear();
     }
@@ -315,6 +430,14 @@ int __cdecl Hook_LoadFontFile(char* file_name) {
         error);
     state.SetLastFontSync(summary, ok);
     LogFontEvent(summary);
+
+    if (ok) {
+        std::string atlas_error;
+        if (!TryRememberKnownDynamicFontTexture(known_font_name, &atlas_error) &&
+            !atlas_error.empty()) {
+            LogFontEvent(summary + " atlas=" + atlas_error);
+        }
+    }
     return result;
 }
 

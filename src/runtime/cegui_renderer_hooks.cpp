@@ -14,6 +14,7 @@
 #include <windows.h>
 
 #include "hook_logging.h"
+#include "cegui_font_texture_registry.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
 #include "hud_layout_fixups.h"
@@ -28,7 +29,7 @@ using SetRenderStatesFn = void (__cdecl*)();
 using PalGameIvInitCameraSubsystemFn = int (__cdecl*)();
 using CameraGetActiveCameraInternalIdFn = int (__thiscall*)(void*);
 using RenderGeometryAndResetCounterFn = void (__thiscall*)(void*);
-using RenderStateSetTextureFn = void (__cdecl*)(int, unsigned int);
+using RenderStateSetFn = void (__cdecl*)(int, unsigned int);
 
 struct CeguiRenderRectCopy {
     float top = 0.0F;
@@ -49,6 +50,10 @@ struct PatchedRendererState {
 
 constexpr std::size_t kDoRenderSlot = 7;
 constexpr std::size_t kGetRenderRectSlot = 20;
+constexpr unsigned int kRwRenderStateTextureRaster = 1;
+constexpr unsigned int kRwRenderStateTextureFilter = 9;
+constexpr unsigned int kRwTextureFilterNearest = 1;
+constexpr unsigned int kRwTextureFilterLinear = 2;
 constexpr std::ptrdiff_t kRendererQueuedRectsBeginOffset = 0xBC;
 constexpr std::ptrdiff_t kRendererQueuedRectsEndOffset = 0xC0;
 constexpr std::ptrdiff_t kRendererVertexBufferOffset = 0xCC;
@@ -62,7 +67,7 @@ SetRenderStatesFn g_set_render_states = nullptr;
 PalGameIvInitCameraSubsystemFn g_pal_game_iv_init_camera_subsystem = nullptr;
 CameraGetActiveCameraInternalIdFn g_camera_get_active_camera_internal_id = nullptr;
 RenderGeometryAndResetCounterFn g_render_geometry_and_reset_counter = nullptr;
-RenderStateSetTextureFn g_render_state_set_texture = nullptr;
+RenderStateSetFn g_render_state_set = nullptr;
 
 std::mutex g_patched_renderer_mutex;
 std::unordered_map<std::uintptr_t, std::unique_ptr<PatchedRendererState>> g_patched_renderers;
@@ -75,6 +80,14 @@ std::string FormatPointer(const void* value) {
 
 float AlignToHalfPixel(const float value) noexcept {
     return std::floor(value + 0.5F) - 0.5F;
+}
+
+float AlignFontLeadingEdge(const float value) noexcept {
+    return std::floor(value);
+}
+
+float AlignFontTrailingEdge(const float value) noexcept {
+    return std::ceil(value);
 }
 
 std::uintptr_t MainModuleBase() {
@@ -123,12 +136,12 @@ bool EnsureRendererDependencies(std::string* error) {
             ResolveRuntimeFunction<RenderGeometryAndResetCounterFn>(
                 ida::kRenderGeometryAndResetCounter);
     }
-    if (!g_render_state_set_texture) {
+    if (!g_render_state_set) {
         auto* render_state_table_ptr =
             static_cast<std::uintptr_t*>(ResolveRuntimeData(ida::kRenderStateInterfaceGlobal));
         if (render_state_table_ptr && *render_state_table_ptr) {
-            g_render_state_set_texture =
-                *reinterpret_cast<RenderStateSetTextureFn*>(*render_state_table_ptr + 0x20);
+            g_render_state_set =
+                *reinterpret_cast<RenderStateSetFn*>(*render_state_table_ptr + 0x20);
         }
     }
 
@@ -136,7 +149,7 @@ bool EnsureRendererDependencies(std::string* error) {
         !g_pal_game_iv_init_camera_subsystem ||
         !g_camera_get_active_camera_internal_id ||
         !g_render_geometry_and_reset_counter ||
-        !g_render_state_set_texture) {
+        !g_render_state_set) {
         if (error) {
             *error = "renderer widescreen dependencies are unavailable";
         }
@@ -184,15 +197,19 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
         !g_pal_game_iv_init_camera_subsystem ||
         !g_camera_get_active_camera_internal_id ||
         !g_render_geometry_and_reset_counter ||
-        !g_render_state_set_texture) {
+        !g_render_state_set) {
         return 0;
     }
 
     auto* bytes = static_cast<unsigned char*>(self);
     g_set_render_states();
+    std::string ignored_error;
+    RefreshKnownDynamicFontTextures(&ignored_error);
 
     const int vertex_buffer = *reinterpret_cast<int*>(bytes + kRendererVertexBufferOffset);
     int current_texture = 0;
+    unsigned int current_filter = kRwTextureFilterLinear;
+    const unsigned int desired_filter = kRwTextureFilterNearest;
     const int camera_system = g_pal_game_iv_init_camera_subsystem();
     const int active_camera_internal =
         g_camera_get_active_camera_internal_id(reinterpret_cast<void*>(camera_system));
@@ -207,12 +224,21 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
         auto* quad_fields = quad + 41;
         do {
             const int texture_handle = *reinterpret_cast<const int*>(quad);
+            const bool is_font_texture =
+                IsKnownDynamicFontTexture(
+                    reinterpret_cast<const void*>(static_cast<std::uintptr_t>(texture_handle)));
+            // IDA-confirmed RenderWare state 9 is the texture filter. Force point filtering while validating text clarity.
             if (current_texture != texture_handle) {
                 g_render_geometry_and_reset_counter(self);
                 const unsigned int texture_stage =
                     **reinterpret_cast<const unsigned int* const*>(*reinterpret_cast<const int*>(quad) + 8);
-                g_render_state_set_texture(1, texture_stage);
+                g_render_state_set(kRwRenderStateTextureRaster, texture_stage);
                 current_texture = texture_handle;
+            }
+            if (current_filter != desired_filter) {
+                g_render_geometry_and_reset_counter(self);
+                g_render_state_set(kRwRenderStateTextureFilter, desired_filter);
+                current_filter = desired_filter;
             }
 
             const auto vertex_index =
@@ -223,11 +249,25 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
             const float scale_y =
                 *reinterpret_cast<const float*>(bytes + kRendererScaleYOffset);
             const float bias_x = patched->plan.horizontal_bias_pixels;
+            const float raw_left =
+                *reinterpret_cast<const float*>(quad_fields - 29) * scale_x + bias_x;
+            const float raw_right =
+                *reinterpret_cast<const float*>(quad_fields - 25) * scale_x + bias_x;
+            const float raw_top =
+                *reinterpret_cast<const float*>(quad_fields - 37) * scale_y;
+            const float raw_bottom =
+                *reinterpret_cast<const float*>(quad_fields - 33) * scale_y;
+            const float aligned_left =
+                is_font_texture ? AlignFontLeadingEdge(raw_left) : AlignToHalfPixel(raw_left);
+            const float aligned_right =
+                is_font_texture ? AlignFontTrailingEdge(raw_right) : AlignToHalfPixel(raw_right);
+            const float aligned_top =
+                is_font_texture ? AlignFontLeadingEdge(raw_top) : AlignToHalfPixel(raw_top);
+            const float aligned_bottom =
+                is_font_texture ? AlignFontTrailingEdge(raw_bottom) : AlignToHalfPixel(raw_bottom);
 
-            *reinterpret_cast<float*>(target) = AlignToHalfPixel(
-                *reinterpret_cast<const float*>(quad_fields - 29) * scale_x + bias_x);
-            *reinterpret_cast<float*>(target + 4) = AlignToHalfPixel(
-                *reinterpret_cast<const float*>(quad_fields - 37) * scale_y);
+            *reinterpret_cast<float*>(target) = aligned_left;
+            *reinterpret_cast<float*>(target + 4) = aligned_top;
             *reinterpret_cast<float*>(target + 8) =
                 *reinterpret_cast<const float*>(quad_fields - 21);
             const std::uint16_t color0 =
@@ -246,10 +286,8 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
             const int vertex_index_1 = vertex_index + 1;
             *reinterpret_cast<int*>(bytes + kRendererVertexCountOffset) = vertex_index_1;
             const int target_1 = vertex_buffer + 28 * vertex_index_1;
-            *reinterpret_cast<float*>(target_1) = AlignToHalfPixel(
-                *reinterpret_cast<const float*>(quad_fields - 29) * scale_x + bias_x);
-            *reinterpret_cast<float*>(target_1 + 4) = AlignToHalfPixel(
-                *reinterpret_cast<const float*>(quad_fields - 33) * scale_y);
+            *reinterpret_cast<float*>(target_1) = aligned_left;
+            *reinterpret_cast<float*>(target_1 + 4) = aligned_bottom;
             *reinterpret_cast<float*>(target_1 + 8) =
                 *reinterpret_cast<const float*>(quad_fields - 21);
             const std::uint16_t color1 =
@@ -268,10 +306,8 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
             const int vertex_index_2 = vertex_index_1 + 1;
             *reinterpret_cast<int*>(bytes + kRendererVertexCountOffset) = vertex_index_2;
             const int target_2 = vertex_buffer + 28 * vertex_index_2;
-            *reinterpret_cast<float*>(target_2) = AlignToHalfPixel(
-                *reinterpret_cast<const float*>(quad_fields - 25) * scale_x + bias_x);
-            *reinterpret_cast<float*>(target_2 + 4) = AlignToHalfPixel(
-                *reinterpret_cast<const float*>(quad_fields - 33) * scale_y);
+            *reinterpret_cast<float*>(target_2) = aligned_right;
+            *reinterpret_cast<float*>(target_2 + 4) = aligned_bottom;
             *reinterpret_cast<float*>(target_2 + 8) =
                 *reinterpret_cast<const float*>(quad_fields - 21);
             const std::uint16_t color2 =
@@ -290,10 +326,8 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
             const int vertex_index_3 = vertex_index_2 + 1;
             *reinterpret_cast<int*>(bytes + kRendererVertexCountOffset) = vertex_index_3;
             const int target_3 = vertex_buffer + 28 * vertex_index_3;
-            *reinterpret_cast<float*>(target_3) = AlignToHalfPixel(
-                *reinterpret_cast<const float*>(quad_fields - 25) * scale_x + bias_x);
-            *reinterpret_cast<float*>(target_3 + 4) = AlignToHalfPixel(
-                *reinterpret_cast<const float*>(quad_fields - 37) * scale_y);
+            *reinterpret_cast<float*>(target_3) = aligned_right;
+            *reinterpret_cast<float*>(target_3 + 4) = aligned_top;
             *reinterpret_cast<float*>(target_3 + 8) =
                 *reinterpret_cast<const float*>(quad_fields - 21);
             const std::uint16_t color3 =

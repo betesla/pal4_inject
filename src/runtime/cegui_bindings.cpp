@@ -49,6 +49,16 @@ bool ResolveBinding(
     return false;
 }
 
+void ResolveOptionalBinding(
+    const HMODULE module,
+    const char* symbol_name,
+    FARPROC* out_proc) {
+    if (!out_proc) {
+        return;
+    }
+    *out_proc = GetProcAddress(module, symbol_name);
+}
+
 }  // namespace
 
 bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
@@ -97,6 +107,12 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
         return false;
     }
     cached.get_font_manager_singleton_ptr = reinterpret_cast<CeguiBindings::GetSingletonPtrFn>(proc);
+
+    if (!ResolveBinding(module, "?getSingletonPtr@ImagesetManager@CEGUI@@SAPAV12@XZ", &proc, error)) {
+        return false;
+    }
+    cached.get_imageset_manager_singleton_ptr =
+        reinterpret_cast<CeguiBindings::GetSingletonPtrFn>(proc);
 
     if (!ResolveBinding(module, "?getSingletonPtr@WindowManager@CEGUI@@SAPAV12@XZ", &proc, error)) {
         return false;
@@ -246,6 +262,9 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     cached.multiline_editbox_is_read_only =
         reinterpret_cast<CeguiBindings::WindowIsReadOnlyFn>(proc);
 
+    ResolveOptionalBinding(module, "?getFont@Window@CEGUI@@QBEPAVFont@2@XZ", &proc);
+    cached.window_get_font = reinterpret_cast<CeguiBindings::WindowGetFontFn>(proc);
+
     if (!ResolveBinding(module, "?requestRedraw@Window@CEGUI@@QBEXXZ", &proc, error)) {
         return false;
     }
@@ -263,10 +282,30 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     cached.window_set_window_position =
         reinterpret_cast<CeguiBindings::WindowSetWindowPositionFn>(proc);
 
+    ResolveOptionalBinding(module, "?setProperty@Window@CEGUI@@QAEXABVString@2@0@Z", &proc);
+    cached.window_set_property = reinterpret_cast<CeguiBindings::WindowSetPropertyFn>(proc);
+
     if (!ResolveBinding(module, "?getFont@FontManager@CEGUI@@QBEPAVFont@2@ABVString@2@@Z", &proc, error)) {
         return false;
     }
     cached.font_manager_get_font = reinterpret_cast<CeguiBindings::FontManagerGetFontFn>(proc);
+
+    if (!ResolveBinding(module, "?isImagesetPresent@ImagesetManager@CEGUI@@QBE_NABVString@2@@Z", &proc, error)) {
+        return false;
+    }
+    cached.imageset_manager_is_imageset_present =
+        reinterpret_cast<CeguiBindings::ImagesetManagerIsImagesetPresentFn>(proc);
+
+    if (!ResolveBinding(module, "?getImageset@ImagesetManager@CEGUI@@QBEPAVImageset@2@ABVString@2@@Z", &proc, error)) {
+        return false;
+    }
+    cached.imageset_manager_get_imageset =
+        reinterpret_cast<CeguiBindings::ImagesetManagerGetImagesetFn>(proc);
+
+    if (!ResolveBinding(module, "?getTexture@Imageset@CEGUI@@QBEPAVTexture@2@XZ", &proc, error)) {
+        return false;
+    }
+    cached.imageset_get_texture = reinterpret_cast<CeguiBindings::ImagesetGetTextureFn>(proc);
 
     if (!ResolveBinding(module, "?notifyScreenResolution@Font@CEGUI@@QAEXABVSize@2@@Z", &proc, error)) {
         return false;
@@ -291,6 +330,28 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     }
     cached.font_get_font_height =
         reinterpret_cast<CeguiBindings::FontGetFontHeightFn>(proc);
+
+    if (!ResolveBinding(module, "?getLineSpacing@Font@CEGUI@@QBEMM@Z", &proc, error)) {
+        return false;
+    }
+    cached.font_get_line_spacing =
+        reinterpret_cast<CeguiBindings::FontGetLineSpacingFn>(proc);
+
+    if (!ResolveBinding(module, "?getPointSize@Font@CEGUI@@QBEIXZ", &proc, error)) {
+        return false;
+    }
+    cached.font_get_point_size =
+        reinterpret_cast<CeguiBindings::FontGetPointSizeFn>(proc);
+
+    ResolveOptionalBinding(module, "?getWrappedTextExtent@Font@CEGUI@@ABEMABVString@2@MM@Z", &proc);
+    cached.font_get_wrapped_text_extent =
+        reinterpret_cast<CeguiBindings::FontGetWrappedTextExtentFn>(proc);
+
+    if (!ResolveBinding(module, "?createFontFromFT_Face@Font@CEGUI@@AAEXIII@Z", &proc, error)) {
+        return false;
+    }
+    cached.font_create_font_from_ft_face =
+        reinterpret_cast<CeguiBindings::FontCreateFromFtFaceFn>(proc);
 
     if (!ResolveBinding(module, "??0String@CEGUI@@QAE@PBD@Z", &proc, error)) {
         return false;

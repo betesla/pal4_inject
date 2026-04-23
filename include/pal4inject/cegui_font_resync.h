@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <string_view>
 
 #include "pal4inject/cegui_widescreen.h"
@@ -12,10 +13,12 @@ struct CeguiDynamicFontResyncTarget {
     float native_height = 600.0F;
     float notify_width = 800.0F;
     float notify_height = 600.0F;
+    float oversample_scale = 1.0F;
 };
 
 std::string_view CanonicalKnownDynamicUiFontName(std::string_view short_name) noexcept;
 bool IsKnownDynamicUiFont(std::string_view short_name) noexcept;
+std::string BuildKnownDynamicUiFontAtlasName(std::string_view short_name);
 CeguiDynamicFontResyncTarget BuildKnownDynamicFontResyncTarget(
     std::string_view short_name,
     const CeguiWidescreenPlan& plan) noexcept;

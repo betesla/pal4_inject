@@ -38,7 +38,7 @@ constexpr std::array<EnumName<ScriptMode>, 3> kScriptModes{{
     {ScriptMode::csb, "csb"},
 }};
 
-constexpr std::array<EnumName<HookId>, 18> kHookIds{{
+constexpr std::array<EnumName<HookId>, 19> kHookIds{{
     {HookId::process_ui_event, "process_ui_event"},
     {HookId::handle_ui_message, "handle_ui_message"},
     {HookId::simulate_key_press_and_release, "simulate_key_press_and_release"},
@@ -49,6 +49,7 @@ constexpr std::array<EnumName<HookId>, 18> kHookIds{{
     {HookId::cegui_renderer_constructor_2, "cegui_renderer_constructor_2"},
     {HookId::cegui_system_initialize, "cegui_system_initialize"},
     {HookId::load_font_file, "load_font_file"},
+    {HookId::dialog_handle_text_display, "dialog_handle_text_display"},
     {HookId::setup_minimap_texture, "setup_minimap_texture"},
     {HookId::camera_update_matrix, "camera_update_matrix"},
     {HookId::d3d9_set_present_parameters, "d3d9_set_present_parameters"},

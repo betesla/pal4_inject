@@ -30,6 +30,7 @@
 #include "pal4inject/launcher.h"
 #include "pal4inject/camera_pitch_guard.h"
 #include "pal4inject/cegui_font_resync.h"
+#include "pal4inject/cegui_font_experiment.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/camera_unlock_patch.h"
 #include "pal4inject/crash_capture.h"
@@ -67,13 +68,14 @@ void TestResolveRuntimeAddress() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 18);
+    assert(inventory.size() == 19);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
     bool found_cegui_renderer_ctor = false;
     bool found_cegui_system_init = false;
     bool found_load_font_file = false;
+    bool found_dialog_handle_text_display = false;
     bool found_setup_minimap_texture = false;
     bool found_combat_console_set_image_position = false;
     bool found_combat_console_set_image_position_2 = false;
@@ -118,6 +120,14 @@ void TestHookInventory() {
             assert(hook.ida_ea == pal4::inject::ida::kLoadFontFile);
             assert(!hook.bootstrap_required);
             assert(hook.bootstrap_order == 900);
+        }
+        if (hook.id == HookId::dialog_handle_text_display) {
+            found_dialog_handle_text_display = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kDialogHandleTextDisplay);
+            assert(!hook.bootstrap_required);
+            assert(hook.bootstrap_order == 905);
         }
         if (hook.id == HookId::setup_minimap_texture) {
             found_setup_minimap_texture = true;
@@ -171,6 +181,7 @@ void TestHookInventory() {
     assert(found_cegui_renderer_ctor);
     assert(found_cegui_system_init);
     assert(found_load_font_file);
+    assert(found_dialog_handle_text_display);
     assert(found_setup_minimap_texture);
     assert(found_combat_console_set_image_position);
     assert(found_combat_console_set_image_position_2);
@@ -348,6 +359,33 @@ void TestProtocolRoundTrip() {
     assert(parsed_response.ok);
     assert(parsed_response.status == "snapshot");
     assert(parsed_response.fields["bootstrap_ready"] == "1");
+}
+
+void TestDynamicFontOversamplePlan() {
+    const auto dialog_plan =
+        pal4::inject::BuildDynamicFontOversamplePlan("dialog_simsun", 20);
+    assert(dialog_plan.apply);
+    assert(dialog_plan.oversampled_point_size == 40);
+    assert(dialog_plan.draw_scale == 0.5F);
+    assert(dialog_plan.extent_scale == 0.5F);
+    assert(dialog_plan.line_spacing_scale == 1.0F);
+    assert(dialog_plan.baseline_scale == 1.0F);
+    assert(pal4::inject::ComputeDialogRichTextGlyphHeight(dialog_plan, 40, 43.45F) > 21.7F);
+    assert(pal4::inject::ComputeDialogRichTextGlyphHeight(dialog_plan, 40, 43.45F) < 21.8F);
+    assert(pal4::inject::ComputeDialogRichTextGlyphHeight(dialog_plan, 40, 17.38F) == 17.38F);
+
+    const auto system_plan =
+        pal4::inject::BuildDynamicFontOversamplePlan("system", 13);
+    assert(!system_plan.apply);
+    assert(system_plan.oversampled_point_size == 0);
+    assert(system_plan.draw_scale == 1.0F);
+    assert(system_plan.extent_scale == 1.0F);
+    assert(system_plan.line_spacing_scale == 1.0F);
+    assert(system_plan.baseline_scale == 1.0F);
+
+    const auto zero_plan =
+        pal4::inject::BuildDynamicFontOversamplePlan("dialog_simsun", 0);
+    assert(!zero_plan.apply);
 }
 
 void TestUiSnapshotSerialization() {
@@ -915,6 +953,16 @@ void TestCeguiDynamicFontResyncMath() {
     assert(
         pal4::inject::CanonicalKnownDynamicUiFontName("dialog_simsun") ==
         std::string_view("dialog_simsun"));
+    assert(
+        pal4::inject::BuildKnownDynamicUiFontAtlasName("system") ==
+        std::string("system_auto_glyph_images"));
+    assert(
+        pal4::inject::BuildKnownDynamicUiFontAtlasName("SystemBold") ==
+        std::string("systemBold_auto_glyph_images"));
+    assert(
+        pal4::inject::BuildKnownDynamicUiFontAtlasName("dialog_simsun") ==
+        std::string("dialog_simsun_auto_glyph_images"));
+    assert(pal4::inject::BuildKnownDynamicUiFontAtlasName("unknown_font").empty());
 
     const auto target_1920_1080 =
         pal4::inject::BuildKnownDynamicFontResyncTarget(
@@ -923,8 +971,9 @@ void TestCeguiDynamicFontResyncMath() {
     assert(target_1920_1080.apply);
     assert(target_1920_1080.native_width == 800.0F);
     assert(target_1920_1080.native_height == 600.0F);
-    assert(target_1920_1080.notify_width == 1440.0F);
-    assert(target_1920_1080.notify_height == 1080.0F);
+    assert(target_1920_1080.oversample_scale == 2.0F);
+    assert(target_1920_1080.notify_width == 2880.0F);
+    assert(target_1920_1080.notify_height == 2160.0F);
 
     const auto target_1600_900 =
         pal4::inject::BuildKnownDynamicFontResyncTarget(
@@ -933,8 +982,9 @@ void TestCeguiDynamicFontResyncMath() {
     assert(target_1600_900.apply);
     assert(target_1600_900.native_width == 800.0F);
     assert(target_1600_900.native_height == 600.0F);
-    assert(target_1600_900.notify_width == 1200.0F);
-    assert(target_1600_900.notify_height == 900.0F);
+    assert(target_1600_900.oversample_scale == 2.0F);
+    assert(target_1600_900.notify_width == 2400.0F);
+    assert(target_1600_900.notify_height == 1800.0F);
 
     const auto target_1024_768 =
         pal4::inject::BuildKnownDynamicFontResyncTarget(
@@ -943,6 +993,7 @@ void TestCeguiDynamicFontResyncMath() {
     assert(!target_1024_768.apply);
     assert(target_1024_768.notify_width == 800.0F);
     assert(target_1024_768.notify_height == 600.0F);
+    assert(target_1024_768.oversample_scale == 1.0F);
 
     const auto dialog_target_1920_1080 =
         pal4::inject::BuildKnownDynamicFontResyncTarget(
@@ -951,8 +1002,9 @@ void TestCeguiDynamicFontResyncMath() {
     assert(dialog_target_1920_1080.apply);
     assert(dialog_target_1920_1080.native_width == 800.0F);
     assert(dialog_target_1920_1080.native_height == 600.0F);
-    assert(dialog_target_1920_1080.notify_width == 1440.0F);
-    assert(dialog_target_1920_1080.notify_height == 1080.0F);
+    assert(dialog_target_1920_1080.oversample_scale == 2.0F);
+    assert(dialog_target_1920_1080.notify_width == 2880.0F);
+    assert(dialog_target_1920_1080.notify_height == 2160.0F);
 }
 
 void TestCrashCaptureHelpers() {
@@ -1546,6 +1598,7 @@ int main() {
     TestInjectControlPanelModel();
     TestInjectSettingsRoundTrip();
     TestProtocolRoundTrip();
+    TestDynamicFontOversamplePlan();
     TestUiSnapshotSerialization();
     TestMemoryDebugHelpers();
     TestMemoryRuntimeHelpers();

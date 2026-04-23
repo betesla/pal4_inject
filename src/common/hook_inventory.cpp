@@ -137,6 +137,18 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             false,
         },
         {
+            HookId::dialog_handle_text_display,
+            ida::kDialogHandleTextDisplay,
+            CallingConvention::thiscall_call,
+            HookMode::observe_only,
+            {0x56, 0x8B, 0xF1, 0x57, 0x8B, 0x4E, 0x38},
+            7,
+            nullptr,
+            nullptr,
+            905,
+            false,
+        },
+        {
             HookId::setup_minimap_texture,
             ida::kSetupMinimapTexture,
             CallingConvention::thiscall_call,

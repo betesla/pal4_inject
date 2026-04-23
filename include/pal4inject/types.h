@@ -47,6 +47,7 @@ enum class HookId : std::uint8_t {
     cegui_renderer_constructor_2,
     cegui_system_initialize,
     load_font_file,
+    dialog_handle_text_display,
     setup_minimap_texture,
     camera_update_matrix,
     d3d9_set_present_parameters,

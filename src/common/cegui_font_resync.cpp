@@ -8,6 +8,7 @@ namespace {
 constexpr std::string_view kSystemFont = "system";
 constexpr std::string_view kSystemBoldFont = "systemBold";
 constexpr std::string_view kDialogSimsunFont = "dialog_simsun";
+constexpr float kKnownDynamicUiFontOversampleScale = 2.0F;
 
 bool EqualsIgnoreCaseAscii(
     const std::string_view lhs,
@@ -45,6 +46,16 @@ bool IsKnownDynamicUiFont(const std::string_view short_name) noexcept {
     return !CanonicalKnownDynamicUiFontName(short_name).empty();
 }
 
+std::string BuildKnownDynamicUiFontAtlasName(const std::string_view short_name) {
+    const auto canonical_name = CanonicalKnownDynamicUiFontName(short_name);
+    if (canonical_name.empty()) {
+        return {};
+    }
+    std::string atlas_name(canonical_name);
+    atlas_name += "_auto_glyph_images";
+    return atlas_name;
+}
+
 CeguiDynamicFontResyncTarget BuildKnownDynamicFontResyncTarget(
     const std::string_view short_name,
     const CeguiWidescreenPlan& plan) noexcept {
@@ -60,8 +71,11 @@ CeguiDynamicFontResyncTarget BuildKnownDynamicFontResyncTarget(
     }
 
     target.apply = true;
-    target.notify_width = plan.logical_width * plan.uniform_scale;
-    target.notify_height = plan.logical_height * plan.uniform_scale;
+    target.oversample_scale = kKnownDynamicUiFontOversampleScale;
+    target.notify_width =
+        plan.logical_width * plan.uniform_scale * target.oversample_scale;
+    target.notify_height =
+        plan.logical_height * plan.uniform_scale * target.oversample_scale;
     return target;
 }
 
