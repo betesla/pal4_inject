@@ -10,7 +10,6 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
-#include <mmsystem.h>
 #include <xinput.h>
 
 #include "input_hooks.h"
@@ -25,7 +24,6 @@ namespace {
 using XInputGetStateFn = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
 using GetInputManagerFn = void* (__cdecl*)();
 using UpdateKeyOrButtonStateFn = char (__thiscall*)(void*, int, int);
-using UpdateKeyTimingInfoFn = int (__thiscall*)(void*, int, int, int);
 
 constexpr std::array<const char*, 3> kXInputDlls{
     "xinput1_4.dll",
@@ -36,24 +34,10 @@ constexpr std::uint16_t kTriggerThreshold = 128;
 constexpr int kVerticalPageCount = 6;
 constexpr std::uint32_t kRepeatInitialDelayMs = 300;
 constexpr std::uint32_t kRepeatIntervalMs = 110;
-constexpr int kKeyCodeEscape = 27;
-constexpr int kKeyCodeSpace = 32;
 constexpr int kKeyCodeA = 97;
 constexpr int kKeyCodeD = 100;
-constexpr int kKeyCodeF = 102;
-constexpr int kKeyCodeM = 109;
-constexpr int kKeyCodeR = 114;
 constexpr int kKeyCodeS = 115;
 constexpr int kKeyCodeW = 119;
-constexpr int kKeyIndexEscape = 3;
-constexpr int kKeyIndexSpace = 4;
-constexpr int kKeyIndexA = 69;
-constexpr int kKeyIndexD = 72;
-constexpr int kKeyIndexF = 74;
-constexpr int kKeyIndexM = 81;
-constexpr int kKeyIndexR = 86;
-constexpr int kKeyIndexS = 87;
-constexpr int kKeyIndexW = 91;
 
 struct RuntimeButtonState {
     GamepadRepeatState up{};
@@ -167,17 +151,14 @@ bool SendInjectedKeyboardInput(
     return SendInput(1, &input, sizeof(input)) == 1;
 }
 
-bool UpdateGameplayKeyState(
+bool UpdateGameplayKeyRawState(
     const int key_code,
-    const int key_index,
     const bool pressed) {
     const auto get_input_manager =
         ResolveRuntimeFunction<GetInputManagerFn>(ida::kGetInputManager);
     const auto update_key_or_button_state =
         ResolveRuntimeFunction<UpdateKeyOrButtonStateFn>(ida::kUpdateKeyOrButtonState);
-    const auto update_key_timing_info =
-        ResolveRuntimeFunction<UpdateKeyTimingInfoFn>(ida::kUpdateKeyTimingInfo);
-    if (!get_input_manager || !update_key_or_button_state || !update_key_timing_info) {
+    if (!get_input_manager || !update_key_or_button_state) {
         GetRuntimeState().SetLastError("gamepad gameplay input helpers are unavailable");
         return false;
     }
@@ -188,9 +169,7 @@ bool UpdateGameplayKeyState(
         return false;
     }
 
-    const int now_ms = static_cast<int>(timeGetTime());
     update_key_or_button_state(input_manager, key_code, pressed ? 1 : 0);
-    update_key_timing_info(input_manager, now_ms, key_index, pressed ? 1 : 0);
     return true;
 }
 
@@ -236,18 +215,21 @@ void SetMouseLeftHeld(const bool pressed, GamepadRuntime* runtime) {
 void SetHeldKey(
     const bool pressed,
     const int key_code,
-    const int key_index,
     bool* held_flag) {
     if (!held_flag) {
         return;
     }
-    // ProcessInputs refreshes PAL4's device state every frame, so gameplay
-    // holds must be re-applied after that refresh instead of only on edges.
     if (!pressed) {
         *held_flag = false;
         return;
     }
-    if (UpdateGameplayKeyState(key_code, key_index, true)) {
+
+    // PAL4's UpdateInputDeviceState clears non-physical keys before our overlay
+    // runs, so one synthetic press would keep the key stuck in state=2
+    // ("just pressed"). Re-applying it immediately advances the key to
+    // state=3 ("held"), which is what sustained movement needs.
+    if (UpdateGameplayKeyRawState(key_code, true) &&
+        UpdateGameplayKeyRawState(key_code, true)) {
         *held_flag = true;
     }
 }
@@ -384,10 +366,10 @@ void UpdateGameplayStick(
         current.Gamepad.sThumbLX,
         current.Gamepad.sThumbLY,
         XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
-    SetHeldKey(axes.up, kKeyCodeW, kKeyIndexW, &runtime->hold_w);
-    SetHeldKey(axes.left, kKeyCodeA, kKeyIndexA, &runtime->hold_a);
-    SetHeldKey(axes.down, kKeyCodeS, kKeyIndexS, &runtime->hold_s);
-    SetHeldKey(axes.right, kKeyCodeD, kKeyIndexD, &runtime->hold_d);
+    SetHeldKey(axes.up, kKeyCodeW, &runtime->hold_w);
+    SetHeldKey(axes.left, kKeyCodeA, &runtime->hold_a);
+    SetHeldKey(axes.down, kKeyCodeS, &runtime->hold_s);
+    SetHeldKey(axes.right, kKeyCodeD, &runtime->hold_d);
     SetMouseLeftHeld(runtime->x_button_holding_mouse_left, runtime);
 }
 
