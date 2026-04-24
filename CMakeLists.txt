@@ -19,12 +19,6 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
     message(FATAL_ERROR "pal4_inject requires a 32-bit / Win32 generator.")
 endif()
 
-set(PAL4_INJECT_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
-set(PAL4_INJECT_PAL4_RE_ROOT ${PAL4_INJECT_REPO_ROOT})
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pal4_re/rebuild/include")
-    set(PAL4_INJECT_PAL4_RE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../pal4_re")
-endif()
-
 set(PAL4_INJECT_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 set(PAL4_INJECT_BUILD_INFO_HEADER ${PAL4_INJECT_GENERATED_DIR}/pal4inject_build_info.h)
 
@@ -122,7 +116,6 @@ target_include_directories(pal4_inject_common
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${PAL4_INJECT_GENERATED_DIR}
-        ${PAL4_INJECT_PAL4_RE_ROOT}/rebuild/include
 )
 target_link_libraries(pal4_inject_common PUBLIC advapi32 user32)
 add_dependencies(pal4_inject_common pal4_inject_build_info)
@@ -158,7 +151,6 @@ target_include_directories(pal4_inject_runtime_core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${PAL4_INJECT_GENERATED_DIR}
-        ${PAL4_INJECT_PAL4_RE_ROOT}/rebuild/include
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
 )

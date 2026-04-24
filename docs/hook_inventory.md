@@ -85,4 +85,4 @@
 ## Evidence Notes
 - 所有地址均已在 IDA 中重新确认。
 - 这里的 prologue 指纹用于 runtime 安装前校验；若校验失败，Hook 必须拒绝安装。
-- `inject/` 只消费这些常量，不把 `rebuild/src` 当实现依赖。
+- `inject/` 只消费这些常量，不把 `rebuild/src` 当实现依赖；当前仓库已内置最小必需的 PAL4 头文件快照。

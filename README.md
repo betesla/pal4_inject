@@ -9,6 +9,8 @@
   - `ProcessUIEvent @ 0x411900`
 
 ## 目录
+- `include/pal4`
+  - 随仓库内置的 PAL4 layout/evidence 头文件快照，保证子模块可单独编译
 - `include/pal4inject`
   - 公共类型、协议、地址表、Hook inventory、输入逻辑
 - `src/common`
@@ -24,9 +26,13 @@
 必须使用 Win32/x86 生成器。
 
 ```powershell
-cmake -S I:\PAL4\projects\pal4_re\inject -B I:\PAL4\projects\pal4_re\inject\build -A Win32
-cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
+cmake -S . -B build -A Win32
+cmake --build build --config Debug
 ```
+
+当前仓库已内置 `include/pal4/runtime_layouts.h` 与 `include/pal4/evidence_status.h`
+这两份 PAL4 layout/evidence 头文件快照，因此不再要求父目录存在
+旧外部 include 目录才能完成编译。
 
 默认情况下，`cmake --build` 完成后还会自动执行一层部署同步：
 - 把 `PAL4_inject.exe`、`cli.exe`、`runtime.dll` 同步到 `dist`
