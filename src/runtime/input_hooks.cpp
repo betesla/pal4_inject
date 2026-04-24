@@ -8,6 +8,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <mmsystem.h>
 
 #include "battle_ui_layout_hooks.h"
 #include "camera_hooks.h"
@@ -32,6 +33,10 @@ using ProcessUiEventFn = bool (__thiscall*)(void*, HWND, UINT, WPARAM, LPARAM);
 using HandleUiMessageAndProcessFn = char (__thiscall*)(void*, HWND, UINT, WPARAM, LPARAM);
 using SimulateKeyPressAndReleaseFn = bool (__thiscall*)(void*, WPARAM);
 using ProcessInputsFn = int (__cdecl*)();
+using GetInputManagerFn = void* (__cdecl*)();
+using UpdateInputDeviceStateFn = int (__thiscall*)(void*);
+using InputManagerGetKeyStateFn = SHORT (__thiscall*)(void*, int);
+using UpdateKeyTimingInfoFn = int (__thiscall*)(void*, int, int, int);
 using GiTalkFn = char (__cdecl*)(void*, void*);
 using MapVirtualKeyToUiKeyFn = int (__thiscall*)(void*, unsigned int);
 using EnableMouseCaptureFn = void (__thiscall*)(unsigned char*);
@@ -66,6 +71,8 @@ HandleUiMessageAndProcessFn g_original_handle_ui_message = nullptr;
 SimulateKeyPressAndReleaseFn g_original_simulate_key_press_and_release = nullptr;
 ProcessInputsFn g_original_process_inputs = nullptr;
 GiTalkFn g_original_gi_talk = nullptr;
+
+constexpr int kInputManagerKeyCount = 163;
 
 constexpr unsigned char kInjectedTalkTextGbk[] = {
     0xD2, 0xD1, 0xD7, 0xA2, 0xC8, 0xEB, 0x00,
@@ -705,11 +712,50 @@ bool __fastcall Hook_SimulateKeyPressAndRelease(
 int __cdecl Hook_ProcessInputs() {
     GetRuntimeState().IncrementHookCall(HookId::process_inputs);
     RefreshWidescreenHudLayoutFixups();
-    TickGamepadInput();
     LogLowLevelObserveOnlyHook(HookId::process_inputs, nullptr);
-    return g_original_process_inputs
-        ? g_original_process_inputs()
-        : 0;
+
+    const auto get_input_manager =
+        ResolveRuntimeFunction<GetInputManagerFn>(ida::kGetInputManager);
+    const auto update_input_device_state =
+        ResolveRuntimeFunction<UpdateInputDeviceStateFn>(ida::kUpdateInputDeviceState);
+    const auto get_key_state =
+        ResolveRuntimeFunction<InputManagerGetKeyStateFn>(ida::kInputManagerGetKeyState);
+    const auto update_key_timing_info =
+        ResolveRuntimeFunction<UpdateKeyTimingInfoFn>(ida::kUpdateKeyTimingInfo);
+    const auto* key_code_table =
+        static_cast<const std::uint16_t*>(ResolveRuntimeData(ida::kKeyCodeTable));
+    if (!get_input_manager ||
+        !update_input_device_state ||
+        !get_key_state ||
+        !update_key_timing_info ||
+        !key_code_table) {
+        return g_original_process_inputs
+            ? g_original_process_inputs()
+            : 0;
+    }
+
+    void* input_manager = get_input_manager();
+    if (!input_manager) {
+        return g_original_process_inputs
+            ? g_original_process_inputs()
+            : 0;
+    }
+
+    update_input_device_state(input_manager);
+    TickGamepadInput();
+
+    int result = 0;
+    for (int i = 0; i < kInputManagerKeyCount; ++i) {
+        const int key_code = static_cast<int>(key_code_table[i]);
+        const SHORT key_state = get_key_state(input_manager, key_code);
+        const int pressed = (key_state == 1 || key_state == 3) ? 1 : 0;
+        result = update_key_timing_info(
+            input_manager,
+            static_cast<int>(timeGetTime()),
+            i,
+            pressed);
+    }
+    return result;
 }
 
 char __cdecl Hook_GiTalk(void* text_arg, void* voice_key_arg) {

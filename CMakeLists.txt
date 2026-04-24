@@ -154,7 +154,7 @@ target_include_directories(pal4_inject_runtime_core
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
 )
-target_link_libraries(pal4_inject_runtime_core PUBLIC pal4_inject_common advapi32 user32)
+target_link_libraries(pal4_inject_runtime_core PUBLIC pal4_inject_common advapi32 user32 winmm)
 add_dependencies(pal4_inject_runtime_core pal4_inject_build_info)
 
 add_library(pal4_runtime_x86 SHARED

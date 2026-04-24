@@ -10,10 +10,12 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <mmsystem.h>
 #include <xinput.h>
 
 #include "input_hooks.h"
 #include "pal4inject/gamepad.h"
+#include "pal4inject/ida_addresses.h"
 #include "runtime_state.h"
 #include "ui_snapshot_runtime.h"
 
@@ -21,6 +23,9 @@ namespace pal4::inject {
 namespace {
 
 using XInputGetStateFn = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
+using GetInputManagerFn = void* (__cdecl*)();
+using UpdateKeyOrButtonStateFn = char (__thiscall*)(void*, int, int);
+using UpdateKeyTimingInfoFn = int (__thiscall*)(void*, int, int, int);
 
 constexpr std::array<const char*, 3> kXInputDlls{
     "xinput1_4.dll",
@@ -31,6 +36,24 @@ constexpr std::uint16_t kTriggerThreshold = 128;
 constexpr int kVerticalPageCount = 6;
 constexpr std::uint32_t kRepeatInitialDelayMs = 300;
 constexpr std::uint32_t kRepeatIntervalMs = 110;
+constexpr int kKeyCodeEscape = 27;
+constexpr int kKeyCodeSpace = 32;
+constexpr int kKeyCodeA = 97;
+constexpr int kKeyCodeD = 100;
+constexpr int kKeyCodeF = 102;
+constexpr int kKeyCodeM = 109;
+constexpr int kKeyCodeR = 114;
+constexpr int kKeyCodeS = 115;
+constexpr int kKeyCodeW = 119;
+constexpr int kKeyIndexEscape = 3;
+constexpr int kKeyIndexSpace = 4;
+constexpr int kKeyIndexA = 69;
+constexpr int kKeyIndexD = 72;
+constexpr int kKeyIndexF = 74;
+constexpr int kKeyIndexM = 81;
+constexpr int kKeyIndexR = 86;
+constexpr int kKeyIndexS = 87;
+constexpr int kKeyIndexW = 91;
 
 struct RuntimeButtonState {
     GamepadRepeatState up{};
@@ -65,6 +88,25 @@ struct GamepadRuntime {
 GamepadRuntime& GetGamepadRuntime() {
     static GamepadRuntime runtime;
     return runtime;
+}
+
+std::uintptr_t MainModuleBase() {
+    auto& state = GetRuntimeState();
+    std::uintptr_t base = state.MainModuleBase();
+    if (base == 0) {
+        base = reinterpret_cast<std::uintptr_t>(GetModuleHandleA(nullptr));
+        state.SetMainModuleBase(base);
+    }
+    return base;
+}
+
+template <typename Fn>
+Fn ResolveRuntimeFunction(const std::uint32_t ida_ea) {
+    const auto base = MainModuleBase();
+    if (base == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<Fn>(ida::ResolveRuntimeAddress(base, ida_ea));
 }
 
 void LogGamepadEvent(const std::string_view text) {
@@ -104,17 +146,6 @@ bool EnsureXInputLoaded(GamepadRuntime* runtime) {
     return false;
 }
 
-bool SendPostedKey(
-    const std::uint32_t virtual_key,
-    const bool key_up) {
-    std::string error;
-    const bool ok = DispatchSimulatedKey(virtual_key, key_up, false, &error);
-    if (!ok && !error.empty()) {
-        GetRuntimeState().SetLastError(error);
-    }
-    return ok;
-}
-
 bool SendUiSeamKey(
     const std::uint32_t virtual_key,
     const bool key_up) {
@@ -136,14 +167,36 @@ bool SendInjectedKeyboardInput(
     return SendInput(1, &input, sizeof(input)) == 1;
 }
 
+bool UpdateGameplayKeyState(
+    const int key_code,
+    const int key_index,
+    const bool pressed) {
+    const auto get_input_manager =
+        ResolveRuntimeFunction<GetInputManagerFn>(ida::kGetInputManager);
+    const auto update_key_or_button_state =
+        ResolveRuntimeFunction<UpdateKeyOrButtonStateFn>(ida::kUpdateKeyOrButtonState);
+    const auto update_key_timing_info =
+        ResolveRuntimeFunction<UpdateKeyTimingInfoFn>(ida::kUpdateKeyTimingInfo);
+    if (!get_input_manager || !update_key_or_button_state || !update_key_timing_info) {
+        GetRuntimeState().SetLastError("gamepad gameplay input helpers are unavailable");
+        return false;
+    }
+
+    void* input_manager = get_input_manager();
+    if (!input_manager) {
+        GetRuntimeState().SetLastError("GetInputManager returned null");
+        return false;
+    }
+
+    const int now_ms = static_cast<int>(timeGetTime());
+    update_key_or_button_state(input_manager, key_code, pressed ? 1 : 0);
+    update_key_timing_info(input_manager, now_ms, key_index, pressed ? 1 : 0);
+    return true;
+}
+
 bool TapInjectedKey(const std::uint32_t virtual_key) {
     return SendInjectedKeyboardInput(virtual_key, false) &&
         SendInjectedKeyboardInput(virtual_key, true);
-}
-
-bool TapPostedKey(const std::uint32_t virtual_key) {
-    return SendPostedKey(virtual_key, false) &&
-        SendPostedKey(virtual_key, true);
 }
 
 bool TapUiSeamKey(const std::uint32_t virtual_key) {
@@ -182,13 +235,20 @@ void SetMouseLeftHeld(const bool pressed, GamepadRuntime* runtime) {
 
 void SetHeldKey(
     const bool pressed,
-    const std::uint32_t virtual_key,
+    const int key_code,
+    const int key_index,
     bool* held_flag) {
-    if (!held_flag || *held_flag == pressed) {
+    if (!held_flag) {
         return;
     }
-    if (SendInjectedKeyboardInput(virtual_key, !pressed)) {
-        *held_flag = pressed;
+    // ProcessInputs refreshes PAL4's device state every frame, so gameplay
+    // holds must be re-applied after that refresh instead of only on edges.
+    if (!pressed) {
+        *held_flag = false;
+        return;
+    }
+    if (UpdateGameplayKeyState(key_code, key_index, true)) {
+        *held_flag = true;
     }
 }
 
@@ -196,10 +256,10 @@ void ReleaseGameplayHolds(GamepadRuntime* runtime) {
     if (!runtime) {
         return;
     }
-    SetHeldKey(false, 'W', &runtime->hold_w);
-    SetHeldKey(false, 'A', &runtime->hold_a);
-    SetHeldKey(false, 'S', &runtime->hold_s);
-    SetHeldKey(false, 'D', &runtime->hold_d);
+    runtime->hold_w = false;
+    runtime->hold_a = false;
+    runtime->hold_s = false;
+    runtime->hold_d = false;
     SetMouseLeftHeld(false, runtime);
 }
 
@@ -250,7 +310,7 @@ void UpdateMenuStateFromShoulders(
             &runtime->repeat.lb)) {
         runtime->current_main_page = static_cast<std::uint32_t>(
             WrapGamepadCycleIndex(static_cast<int>(runtime->current_main_page), -1, 7));
-        TapUiSeamKey(VK_F1 + runtime->current_main_page);
+        TapInjectedKey(VK_F1 + runtime->current_main_page);
     }
     if (ConsumeGamepadRepeat(
             ButtonPressed(current, XINPUT_GAMEPAD_RIGHT_SHOULDER),
@@ -260,7 +320,7 @@ void UpdateMenuStateFromShoulders(
             &runtime->repeat.rb)) {
         runtime->current_main_page = static_cast<std::uint32_t>(
             WrapGamepadCycleIndex(static_cast<int>(runtime->current_main_page), 1, 7));
-        TapUiSeamKey(VK_F1 + runtime->current_main_page);
+        TapInjectedKey(VK_F1 + runtime->current_main_page);
     }
     if (ConsumeGamepadRepeat(
             TriggerPressed(current.Gamepad.bLeftTrigger),
@@ -270,7 +330,7 @@ void UpdateMenuStateFromShoulders(
             &runtime->repeat.lt)) {
         runtime->current_vertical_page = static_cast<std::uint32_t>(
             WrapGamepadCycleIndex(static_cast<int>(runtime->current_vertical_page), -1, kVerticalPageCount));
-        TapUiSeamKey('1' + runtime->current_vertical_page);
+        TapInjectedKey('1' + runtime->current_vertical_page);
     }
     if (ConsumeGamepadRepeat(
             TriggerPressed(current.Gamepad.bRightTrigger),
@@ -280,7 +340,7 @@ void UpdateMenuStateFromShoulders(
             &runtime->repeat.rt)) {
         runtime->current_vertical_page = static_cast<std::uint32_t>(
             WrapGamepadCycleIndex(static_cast<int>(runtime->current_vertical_page), 1, kVerticalPageCount));
-        TapUiSeamKey('1' + runtime->current_vertical_page);
+        TapInjectedKey('1' + runtime->current_vertical_page);
     }
 }
 
@@ -324,11 +384,11 @@ void UpdateGameplayStick(
         current.Gamepad.sThumbLX,
         current.Gamepad.sThumbLY,
         XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
-    SetHeldKey(false, 'W', &runtime->hold_w);
-    SetHeldKey(axes.left, 'A', &runtime->hold_a);
-    SetHeldKey(axes.down, 'S', &runtime->hold_s);
-    SetHeldKey(axes.right, 'D', &runtime->hold_d);
-    SetMouseLeftHeld(axes.up || runtime->x_button_holding_mouse_left, runtime);
+    SetHeldKey(axes.up, kKeyCodeW, kKeyIndexW, &runtime->hold_w);
+    SetHeldKey(axes.left, kKeyCodeA, kKeyIndexA, &runtime->hold_a);
+    SetHeldKey(axes.down, kKeyCodeS, kKeyIndexS, &runtime->hold_s);
+    SetHeldKey(axes.right, kKeyCodeD, kKeyIndexD, &runtime->hold_d);
+    SetMouseLeftHeld(runtime->x_button_holding_mouse_left, runtime);
 }
 
 void UpdateFaceButtons(
@@ -354,7 +414,7 @@ void UpdateFaceButtons(
             runtime->current_main_page = 0;
             runtime->current_vertical_page = 0;
             ReleaseGameplayHolds(runtime);
-            TapUiSeamKey(VK_F1);
+            TapInjectedKey(VK_F1);
         }
     }
 
@@ -393,11 +453,7 @@ void UpdateFaceButtons(
     if (runtime->system_menu_active) {
         SetMouseLeftHeld(false, runtime);
     } else {
-        const auto axes = BuildGamepadDigitalAxes(
-            current.Gamepad.sThumbLX,
-            current.Gamepad.sThumbLY,
-            XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
-        SetMouseLeftHeld(axes.up || x_pressed, runtime);
+        SetMouseLeftHeld(x_pressed, runtime);
     }
 }
 
