@@ -139,6 +139,8 @@ ProtocolResponse BuildSnapshotResponse() {
     response.fields["shadow_resolution"] = ToString(snapshot.shadow_resolution);
     response.fields["hd_shadow_enabled"] =
         snapshot.shadow_resolution != ShadowResolution::x64 ? "1" : "0";
+    response.fields["dialog_font_hd_enabled"] =
+        snapshot.dialog_font_hd_enabled ? "1" : "0";
     response.fields["system_font_oversample_enabled"] =
         snapshot.system_font_oversample_enabled ? "1" : "0";
     response.fields["gamepad_enabled"] = snapshot.gamepad_enabled ? "1" : "0";

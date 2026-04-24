@@ -294,9 +294,11 @@
   - 2026-04-23 针对“没有姓名行时行间也过宽”的反馈，又确认了控件层原因：
     - `ScenarioDialog.xml` 的 `ScenarioDialog/EditDialog` 是 `OiramLook/SDialogEditbox`
     - 该控件自身配置了 `LineSpaceExtent=3.000000`
-    - 当前 `dialog_pagination_hooks.cpp` 会在 `dialog_HandleTextDisplay` 入口对这个对白 editbox 首次执行：
+    - 2026-04-23 曾短暂尝试在 `dialog_HandleTextDisplay` 入口对这个对白 editbox 执行：
       - `Window::setProperty("LineSpaceExtent", "0.000000")`
-    - 这条修复只覆盖剧情对白 hook 路径，不全局改其它窗口的 `LineSpaceExtent`
+    - 2026-04-24 已根据运行时 A/B 结果移除这条覆盖：
+      - 它会干扰对白点击与下一句推进
+      - 不再保留为当前默认 runtime 路径
     - 后续截图表明：`LineSpaceExtent` 只解释少量额外行距，不能解释正文两行之间接近整行空白的量级
     - 当前已进一步确认 OIRAMLOOK 富文本行高消费点：
       - `OIRAMLOOK.dll!CEGUI::RichText::TextGlyph::getHeight`
@@ -340,3 +342,8 @@
     - 垂直 metric 收敛：
       - `fontHeight / lineSpacing / baseline`
       - 其中 `baseline` 现在是独立配置项，方便继续验证“姓名行到正文行的空隙”是否来自 glyph 垂直落点而不是分页高度
+  - 2026-04-24 当前关于“对白无法点击 / 不能进入下一句”的高置信度结论：
+    - 启动前开启 `dialog_simsun` 的对白高清实验，本身不会破坏对白点击
+    - 真正导致“点击一下只会把当前句直接打完，但不能进入下一句”的，是 `dialog_pagination_hooks.cpp` 里那条对白 editbox `LineSpaceExtent -> 0.000000` 的 runtime 覆盖实验
+    - 这条实验已经从默认 runtime 路径移除
+    - 注入面板里的“对白高清实验”现在只保存状态，不再尝试对已加载对白字体做运行中热切换；之前的 live restore/reapply 还会带来卡死风险

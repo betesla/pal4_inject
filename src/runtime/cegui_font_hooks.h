@@ -12,6 +12,9 @@ bool ApplyKnownDynamicFontResync(
     std::string_view short_name,
     const CeguiWidescreenPlan& plan,
     std::string* error);
+bool ApplyDialogFontHdPreferenceToLoadedFonts(
+    bool enabled,
+    std::string* error);
 bool ApplySystemFontOversamplePreferenceToLoadedFonts(
     bool enabled,
     std::string* error);

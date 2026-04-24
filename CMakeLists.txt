@@ -131,7 +131,6 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/camera_hooks.cpp
     src/runtime/camera_unlock.cpp
     src/runtime/cegui_bindings.cpp
-    src/runtime/dialog_pagination_hooks.cpp
     src/runtime/crash_handler.cpp
     src/runtime/gamepad_runtime.cpp
     src/runtime/hud_layout_fixups.cpp

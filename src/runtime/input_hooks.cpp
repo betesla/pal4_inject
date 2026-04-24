@@ -15,7 +15,6 @@
 #include "cegui_font_hooks.h"
 #include "cegui_renderer_hooks.h"
 #include "d3d9_quality_hooks.h"
-#include "dialog_pagination_hooks.h"
 #include "gamepad_runtime.h"
 #include "hud_layout_fixups.h"
 #include "hook_logging.h"
@@ -33,8 +32,6 @@ using ProcessUiEventFn = bool (__thiscall*)(void*, HWND, UINT, WPARAM, LPARAM);
 using HandleUiMessageAndProcessFn = char (__thiscall*)(void*, HWND, UINT, WPARAM, LPARAM);
 using SimulateKeyPressAndReleaseFn = bool (__thiscall*)(void*, WPARAM);
 using ProcessInputsFn = int (__cdecl*)();
-using UpdateInputDeviceStateFn = int (__thiscall*)(void*);
-using InitializeDirectInputFn = int (__thiscall*)(void*, HINSTANCE, int, int);
 using GiTalkFn = char (__cdecl*)(void*, void*);
 using MapVirtualKeyToUiKeyFn = int (__thiscall*)(void*, unsigned int);
 using EnableMouseCaptureFn = void (__thiscall*)(unsigned char*);
@@ -68,8 +65,6 @@ ProcessUiEventFn g_original_process_ui_event = nullptr;
 HandleUiMessageAndProcessFn g_original_handle_ui_message = nullptr;
 SimulateKeyPressAndReleaseFn g_original_simulate_key_press_and_release = nullptr;
 ProcessInputsFn g_original_process_inputs = nullptr;
-UpdateInputDeviceStateFn g_original_update_input_device_state = nullptr;
-InitializeDirectInputFn g_original_initialize_direct_input = nullptr;
 GiTalkFn g_original_gi_talk = nullptr;
 
 constexpr unsigned char kInjectedTalkTextGbk[] = {
@@ -717,32 +712,6 @@ int __cdecl Hook_ProcessInputs() {
         : 0;
 }
 
-int __fastcall Hook_UpdateInputDeviceState(void* self, void*) {
-    GetRuntimeState().IncrementHookCall(HookId::update_input_device_state);
-    LogLowLevelObserveOnlyHook(HookId::update_input_device_state, self);
-    return g_original_update_input_device_state
-        ? g_original_update_input_device_state(self)
-        : 0;
-}
-
-int __fastcall Hook_InitializeDirectInput(
-    void* self,
-    void*,
-    const HINSTANCE hinst,
-    const int arg3,
-    const int arg4) {
-    GetRuntimeState().IncrementHookCall(HookId::initialize_direct_input);
-    std::ostringstream extra;
-    extra
-        << "hinst=" << FormatPointer(hinst)
-        << " arg3=" << arg3
-        << " arg4=" << arg4;
-    LogLowLevelObserveOnlyHook(HookId::initialize_direct_input, self, extra.str());
-    return g_original_initialize_direct_input
-        ? g_original_initialize_direct_input(self, hinst, arg3, arg4)
-        : 0;
-}
-
 char __cdecl Hook_GiTalk(void* text_arg, void* voice_key_arg) {
     auto& state = GetRuntimeState();
     state.IncrementHookCall(HookId::gi_talk);
@@ -788,10 +757,6 @@ void* GetReplacementForHook(const HookId id) {
         return reinterpret_cast<void*>(&Hook_SimulateKeyPressAndRelease);
     case HookId::process_inputs:
         return reinterpret_cast<void*>(&Hook_ProcessInputs);
-    case HookId::update_input_device_state:
-        return reinterpret_cast<void*>(&Hook_UpdateInputDeviceState);
-    case HookId::initialize_direct_input:
-        return reinterpret_cast<void*>(&Hook_InitializeDirectInput);
     case HookId::gi_talk:
         return reinterpret_cast<void*>(&Hook_GiTalk);
     default:
@@ -799,9 +764,6 @@ void* GetReplacementForHook(const HookId id) {
             return replacement;
         }
         if (void* replacement = GetCeguiFontReplacementForHook(id)) {
-            return replacement;
-        }
-        if (void* replacement = GetDialogPaginationReplacementForHook(id)) {
             return replacement;
         }
         if (void* replacement = GetMinimapReplacementForHook(id)) {
@@ -835,21 +797,12 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
     case HookId::process_inputs:
         g_original_process_inputs = reinterpret_cast<ProcessInputsFn>(trampoline);
         break;
-    case HookId::update_input_device_state:
-        g_original_update_input_device_state =
-            reinterpret_cast<UpdateInputDeviceStateFn>(trampoline);
-        break;
-    case HookId::initialize_direct_input:
-        g_original_initialize_direct_input =
-            reinterpret_cast<InitializeDirectInputFn>(trampoline);
-        break;
     case HookId::gi_talk:
         g_original_gi_talk = reinterpret_cast<GiTalkFn>(trampoline);
         break;
     default:
         SetCeguiRendererOriginalTrampoline(id, trampoline);
         SetCeguiFontOriginalTrampoline(id, trampoline);
-        SetDialogPaginationOriginalTrampoline(id, trampoline);
         SetMinimapOriginalTrampoline(id, trampoline);
         SetWindowFocusOriginalTrampoline(id, trampoline);
         SetD3d9QualityOriginalTrampoline(id, trampoline);

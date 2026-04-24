@@ -29,7 +29,8 @@ std::uint32_t NormalizeProcessUiEventKeyUp(const std::uint32_t mapped_key) noexc
 }
 
 bool ShouldSuppressMappedUiKey(const std::uint32_t mapped_key) noexcept {
-    return mapped_key == 1;
+    (void)mapped_key;
+    return false;
 }
 
 UiInjectedPlan BuildUiInjectedPlan(

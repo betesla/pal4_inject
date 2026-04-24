@@ -25,6 +25,8 @@ public:
     bool PipeReady() const;
     bool UiDispatchReady() const;
     bool CrashHandlerReady() const;
+    void SetDialogFontHdEnabled(bool enabled);
+    bool DialogFontHdEnabled() const;
     void SetSystemFontOversampleEnabled(bool enabled);
     bool SystemFontOversampleEnabled() const;
     void SetGamepadEnabled(bool enabled);
@@ -97,6 +99,7 @@ private:
     bool pipe_ready_ = false;
     bool ui_dispatch_ready_ = false;
     bool crash_handler_ready_ = false;
+    bool dialog_font_hd_enabled_ = true;
     bool system_font_oversample_enabled_ = false;
     bool gamepad_enabled_ = true;
     bool gamepad_log_enabled_ = false;

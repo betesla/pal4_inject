@@ -69,14 +69,12 @@ void TestResolveRuntimeAddress() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 19);
+    assert(inventory.size() == 14);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
     bool found_cegui_renderer_ctor = false;
-    bool found_cegui_system_init = false;
     bool found_load_font_file = false;
-    bool found_dialog_handle_text_display = false;
     bool found_setup_minimap_texture = false;
     bool found_combat_console_set_image_position = false;
     bool found_combat_console_set_image_position_2 = false;
@@ -107,13 +105,6 @@ void TestHookInventory() {
             assert(hook.patch_span == 8);
             assert(hook.ida_ea == pal4::inject::ida::kCeguiRendererConstructor2);
         }
-        if (hook.id == HookId::cegui_system_initialize) {
-            found_cegui_system_init = true;
-            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
-            assert(hook.patch_span == 13);
-            assert(hook.ida_ea == pal4::inject::ida::kCeguiSystemInitialize);
-            assert(hook.bootstrap_required);
-        }
         if (hook.id == HookId::load_font_file) {
             found_load_font_file = true;
             assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
@@ -121,14 +112,6 @@ void TestHookInventory() {
             assert(hook.ida_ea == pal4::inject::ida::kLoadFontFile);
             assert(!hook.bootstrap_required);
             assert(hook.bootstrap_order == 900);
-        }
-        if (hook.id == HookId::dialog_handle_text_display) {
-            found_dialog_handle_text_display = true;
-            assert(hook.mode == pal4::inject::HookMode::observe_only);
-            assert(hook.patch_span == 7);
-            assert(hook.ida_ea == pal4::inject::ida::kDialogHandleTextDisplay);
-            assert(!hook.bootstrap_required);
-            assert(hook.bootstrap_order == 905);
         }
         if (hook.id == HookId::setup_minimap_texture) {
             found_setup_minimap_texture = true;
@@ -180,9 +163,7 @@ void TestHookInventory() {
     assert(found_handle_ui_message);
     assert(found_gi_talk);
     assert(found_cegui_renderer_ctor);
-    assert(found_cegui_system_init);
     assert(found_load_font_file);
-    assert(found_dialog_handle_text_display);
     assert(found_setup_minimap_texture);
     assert(found_combat_console_set_image_position);
     assert(found_combat_console_set_image_position_2);
@@ -210,6 +191,18 @@ void TestMsaaLevelStrings() {
     assert(pal4::inject::TryParseMsaaLevel("4x", &parsed));
     assert(parsed == pal4::inject::MsaaLevel::x4);
     assert(!pal4::inject::TryParseMsaaLevel("16x", &parsed));
+}
+
+void TestShadowResolutionStrings() {
+    assert(std::string(pal4::inject::ToString(pal4::inject::ShadowResolution::x64)) == "64");
+    assert(std::string(pal4::inject::ToString(pal4::inject::ShadowResolution::x128)) == "128");
+    assert(std::string(pal4::inject::ToString(pal4::inject::ShadowResolution::x256)) == "256");
+    assert(std::string(pal4::inject::ToString(pal4::inject::ShadowResolution::x512)) == "512");
+
+    pal4::inject::ShadowResolution parsed = pal4::inject::ShadowResolution::x64;
+    assert(pal4::inject::TryParseShadowResolution("256", &parsed));
+    assert(parsed == pal4::inject::ShadowResolution::x256);
+    assert(!pal4::inject::TryParseShadowResolution("1024", &parsed));
 }
 
 void TestUiTextureFilterStrings() {
@@ -392,6 +385,7 @@ void TestDynamicFontOversamplePlan() {
     assert(system_plan.draw_scale == 0.65F);
     assert(system_plan.extent_scale == 0.65F);
     assert(system_plan.glyph_offset_y == 0.0F);
+    assert(system_plan.observe_glyph_image_offsets);
     assert(system_plan.line_spacing_scale == 0.92F);
     assert(system_plan.baseline_scale == 1.0F);
     assert(system_plan.preserve_original_vertical_metrics);
@@ -403,6 +397,7 @@ void TestDynamicFontOversamplePlan() {
     assert(system_bold_plan.draw_scale == 0.5F);
     assert(system_bold_plan.extent_scale == 0.5F);
     assert(system_bold_plan.glyph_offset_y == 0.0F);
+    assert(!system_bold_plan.observe_glyph_image_offsets);
     assert(system_bold_plan.line_spacing_scale == 1.0F);
     assert(system_bold_plan.baseline_scale == 1.0F);
     assert(system_bold_plan.preserve_original_vertical_metrics);
@@ -410,6 +405,28 @@ void TestDynamicFontOversamplePlan() {
     const auto zero_plan =
         pal4::inject::BuildDynamicFontOversamplePlan("dialog_simsun", 0);
     assert(!zero_plan.apply);
+
+    assert(pal4::inject::ShouldApplyOiramlookOlButtonTextRectYOffset(
+        "system", "OIRAMLOOK.dll", 0x17602, 2));
+    assert(pal4::inject::ShouldApplyOiramlookOlButtonTextRectYOffset(
+        "system", "OIRAMLOOK.dll", 0x17872, 2));
+    assert(pal4::inject::ShouldApplyOiramlookOlButtonTextRectYOffset(
+        "system", "OIRAMLOOK.dll", 0x17391, 2));
+    assert(pal4::inject::ShouldApplyOiramlookOlButtonTextRectYOffset(
+        "system", "OIRAMLOOK.dll", 0x17AE2, 2));
+    assert(pal4::inject::ShouldApplyOiramlookOlButtonTextRectYOffset(
+        "system", "OIRAMLOOK.dll", 0x17CA2, 2));
+    assert(pal4::inject::ShouldApplyOiramlookOlButtonTextRectYOffset(
+        "system", "OIRAMLOOK.dll+0x17ae2", 2));
+    assert(pal4::inject::ShouldApplyOiramlookOlButtonTextRectYOffset(
+        "system", "OIRAMLOOK.dll+0x17ca2", 2));
+    assert(!pal4::inject::ShouldApplyOiramlookOlButtonTextRectYOffset(
+        "systemBold", "OIRAMLOOK.dll", 0x17602, 2));
+    assert(!pal4::inject::ShouldApplyOiramlookOlButtonTextRectYOffset(
+        "system", "CEGUIBase.dll", 0x17602, 2));
+    assert(!pal4::inject::ShouldApplyOiramlookOlButtonTextRectYOffset(
+        "system", "OIRAMLOOK.dll", 0x17602, 0));
+    assert(pal4::inject::GetOiramlookOlButtonTextRectYOffset() == 2.0F);
 }
 
 void TestUiSnapshotSerialization() {
@@ -573,7 +590,7 @@ void TestMemoryRuntimeHelpers() {
 
 void TestInjectControlPanelModel() {
     const auto rows = pal4::inject::BuildInjectControlPanelRows();
-    assert(rows.size() == 19);
+    assert(rows.size() == 14);
 
     const auto find_row =
         [&rows](const HookId id) -> const pal4::inject::InjectControlPanelRow* {
@@ -589,7 +606,7 @@ void TestInjectControlPanelModel() {
     assert(process_ui_row);
     assert(process_ui_row->page == pal4::inject::InjectControlPanelPage::input_interaction);
     assert(process_ui_row->group_label == std::wstring_view(L"\u8f93\u5165\u4e0e\u4ea4\u4e92"));
-    assert(process_ui_row->label == std::wstring_view(L"\u754c\u9762\u4e8b\u4ef6\u66ff\u6362"));
+    assert(process_ui_row->label == std::wstring_view(L"\u83dc\u5355\u70b9\u51fb\u4e0e\u6309\u952e\u63a5\u7ba1"));
     assert(process_ui_row->hook_name == std::string_view("process_ui_event"));
     assert(process_ui_row->allow_mode_change);
 
@@ -597,9 +614,16 @@ void TestInjectControlPanelModel() {
     assert(wndproc_row);
     assert(wndproc_row->allow_mode_change);
 
-    const auto* handle_player_input_row = find_row(HookId::handle_player_input_events);
-    assert(handle_player_input_row);
-    assert(!handle_player_input_row->allow_mode_change);
+    const auto* process_inputs_row = find_row(HookId::process_inputs);
+    assert(process_inputs_row);
+    assert(process_inputs_row->label == std::wstring_view(L"\u624b\u67c4\u8f6e\u8be2\u4e0e HUD \u5237\u65b0"));
+    assert(process_inputs_row->allow_mode_change);
+
+    assert(!find_row(HookId::update_input_device_state));
+    assert(!find_row(HookId::initialize_direct_input));
+    assert(!find_row(HookId::handle_player_input_events));
+    assert(!find_row(HookId::cegui_system_initialize));
+    assert(!find_row(HookId::dialog_handle_text_display));
 
     const auto* gi_talk_row = find_row(HookId::gi_talk);
     assert(gi_talk_row);
@@ -634,9 +658,9 @@ void TestInjectControlPanelModel() {
     assert(camera_row->group_label == std::wstring_view(L"\u76f8\u673a"));
 
     const auto modes = pal4::inject::BuildInjectControlPanelModes();
-    assert(modes.size() == 4);
+    assert(modes.size() == 2);
     assert(modes[0] == pal4::inject::HookMode::observe_only);
-    assert(modes[3] == pal4::inject::HookMode::replace_strict);
+    assert(modes[1] == pal4::inject::HookMode::replace_with_fallback);
     assert(pal4::inject::BuildInjectControlPanelPageLabel(pal4::inject::InjectControlPanelPage::overview) ==
            std::wstring_view(L"\u6982\u89c8"));
     assert(pal4::inject::BuildInjectControlPanelPageLabel(pal4::inject::InjectControlPanelPage::ui_resolution) ==
@@ -649,18 +673,22 @@ void TestInjectControlPanelModel() {
            std::wstring_view(L"\u811a\u672c\u4e0e\u5267\u60c5"));
     assert(pal4::inject::BuildInjectControlPanelModeLabel(pal4::inject::HookMode::observe_only) ==
            std::wstring_view(L"\u4ec5\u89c2\u5bdf"));
+    assert(pal4::inject::BuildInjectControlPanelModeLabel(pal4::inject::HookMode::replace_with_fallback) ==
+           std::wstring_view(L"\u66ff\u6362\uff08\u53ef\u56de\u9000\uff09"));
     assert(pal4::inject::BuildInjectControlPanelModeLabel(pal4::inject::HookMode::replace_strict) ==
-           std::wstring_view(L"\u5f3a\u5236\u66ff\u6362"));
-    assert(pal4::inject::FindInjectControlPanelModeIndex(pal4::inject::HookMode::mirror_compare) == 1);
-    assert(pal4::inject::InjectControlPanelModeFromIndex(2) == pal4::inject::HookMode::replace_with_fallback);
+           std::wstring_view(L"\u66ff\u6362\uff08\u53ef\u56de\u9000\uff09"));
+    assert(pal4::inject::FindInjectControlPanelModeIndex(pal4::inject::HookMode::mirror_compare) == 0);
+    assert(pal4::inject::InjectControlPanelModeFromIndex(1) == pal4::inject::HookMode::replace_with_fallback);
     assert(pal4::inject::InjectControlPanelModeFromIndex(99) == pal4::inject::HookMode::observe_only);
 }
 
 void TestInjectSettingsRoundTrip() {
     pal4::inject::InjectPersistedSettings settings{};
     settings.msaa_level = pal4::inject::MsaaLevel::x4;
+    settings.shadow_resolution = pal4::inject::ShadowResolution::x256;
     settings.ui_texture_filter = pal4::inject::UiTextureFilter::linear;
     settings.launcher_script_mode = pal4::inject::ScriptMode::cs;
+    settings.dialog_font_hd_enabled = false;
     settings.system_font_oversample_enabled = true;
     settings.gamepad_enabled = true;
     settings.gamepad_log_enabled = false;
@@ -688,8 +716,10 @@ void TestInjectSettingsRoundTrip() {
     pal4::inject::InjectPersistedSettings parsed{};
     assert(pal4::inject::ParseInjectPersistedSettings(text, &parsed, &error));
     assert(parsed.msaa_level == pal4::inject::MsaaLevel::x4);
+    assert(parsed.shadow_resolution == pal4::inject::ShadowResolution::x256);
     assert(parsed.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
     assert(parsed.launcher_script_mode == pal4::inject::ScriptMode::cs);
+    assert(!parsed.dialog_font_hd_enabled);
     assert(parsed.system_font_oversample_enabled);
     assert(parsed.gamepad_enabled);
     assert(!parsed.gamepad_log_enabled);
@@ -721,12 +751,26 @@ void TestInjectSettingsRoundTrip() {
     pal4::inject::InjectPersistedSettings loaded{};
     assert(pal4::inject::LoadInjectPersistedSettings(temp_path, &loaded, &error));
     assert(loaded.msaa_level == pal4::inject::MsaaLevel::x4);
+    assert(loaded.shadow_resolution == pal4::inject::ShadowResolution::x256);
     assert(loaded.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
     assert(loaded.launcher_script_mode == pal4::inject::ScriptMode::cs);
+    assert(!loaded.dialog_font_hd_enabled);
     assert(loaded.system_font_oversample_enabled);
     assert(loaded.gamepad_enabled);
     assert(!loaded.gamepad_log_enabled);
     std::filesystem::remove(temp_path);
+
+    const std::string legacy_settings =
+        "version=3\n"
+        "msaa_level=2x\n"
+        "hd_shadow_enabled=1\n"
+        "ui_texture_filter=nearest\n";
+    pal4::inject::InjectPersistedSettings legacy{};
+    assert(pal4::inject::ParseInjectPersistedSettings(legacy_settings, &legacy, &error));
+    assert(legacy.msaa_level == pal4::inject::MsaaLevel::x2);
+    assert(legacy.shadow_resolution == pal4::inject::ShadowResolution::x256);
+    assert(legacy.ui_texture_filter == pal4::inject::UiTextureFilter::nearest);
+    assert(legacy.dialog_font_hd_enabled);
 }
 
 void TestGamepadHelpers() {
@@ -763,12 +807,16 @@ void TestInputLogic() {
     assert(pal4::inject::NormalizeProcessUiEventKeyDown(17) == 200);
     assert(pal4::inject::NormalizeProcessUiEventKeyDown(30) == 203);
     assert(pal4::inject::NormalizeProcessUiEventKeyDown(57) == 28);
-    assert(pal4::inject::ShouldSuppressMappedUiKey(1));
+    assert(!pal4::inject::ShouldSuppressMappedUiKey(1));
     assert(!pal4::inject::ShouldSuppressMappedUiKey(57));
 
     const auto key_down = pal4::inject::BuildUiInjectedPlan(WM_KEYDOWN, 17, 0);
     assert(key_down.action == UiInjectedAction::key_down);
     assert(key_down.code == 200);
+
+    const auto escape_down = pal4::inject::BuildUiInjectedPlan(WM_KEYDOWN, 1, 0);
+    assert(escape_down.action == UiInjectedAction::key_down);
+    assert(escape_down.code == 1);
 
     const auto key_up = pal4::inject::BuildUiInjectedPlan(WM_KEYUP, 32, 0);
     assert(key_up.action == UiInjectedAction::key_up);
@@ -819,7 +867,9 @@ void TestRuntimeEventLog() {
     assert(!state.GetHookLogEnabled(HookId::process_ui_event));
     assert(!state.GetHookLogEnabled(HookId::load_font_file));
     state.SetMsaaLevel(pal4::inject::MsaaLevel::x2);
+    state.SetShadowResolution(pal4::inject::ShadowResolution::x256);
     state.SetUiTextureFilter(pal4::inject::UiTextureFilter::linear);
+    state.SetDialogFontHdEnabled(false);
     state.SetSystemFontOversampleEnabled(true);
     state.AppendEventLog("event-1");
     state.AppendEventLog("event-2");
@@ -840,7 +890,9 @@ void TestRuntimeEventLog() {
     const auto snapshot = state.BuildSnapshot(0);
     assert(snapshot.crash_handler_ready);
     assert(snapshot.msaa_level == pal4::inject::MsaaLevel::x2);
+    assert(snapshot.shadow_resolution == pal4::inject::ShadowResolution::x256);
     assert(snapshot.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
+    assert(!snapshot.dialog_font_hd_enabled);
     assert(snapshot.system_font_oversample_enabled);
     assert(snapshot.gamepad_enabled);
     assert(!snapshot.gamepad_log_enabled);
@@ -896,6 +948,30 @@ void TestLauncherNaming() {
     assert(exe_path == direct_exe);
     assert(workdir == direct_exe.parent_path());
     std::filesystem::remove(direct_exe);
+}
+
+void TestInjectControlPanelLabels() {
+    const auto rows = pal4::inject::BuildInjectControlPanelRows();
+    auto find_label = [&rows](const pal4::inject::HookId id) -> std::wstring_view {
+        for (const auto& row : rows) {
+            if (row.id == id) {
+                return row.label;
+            }
+        }
+        return {};
+    };
+
+    assert(find_label(pal4::inject::HookId::process_ui_event) == L"\u83dc\u5355\u70b9\u51fb\u4e0e\u6309\u952e\u63a5\u7ba1");
+    assert(find_label(pal4::inject::HookId::handle_ui_message) == L"\u83dc\u5355\u6d88\u606f\u8865\u6295\u9012");
+    assert(find_label(pal4::inject::HookId::process_inputs) == L"\u624b\u67c4\u8f6e\u8be2\u4e0e HUD \u5237\u65b0");
+    assert(find_label(pal4::inject::HookId::load_font_file) == L"\u9ad8\u6e05\u5b57\u4f53\u4e0e\u7f29\u653e\u91cd\u540c\u6b65");
+    assert(find_label(pal4::inject::HookId::d3d9_set_present_parameters) ==
+        L"\u6297\u952f\u9f7f\u8bbe\u5907\u53c2\u6570\u8986\u5199");
+    assert(find_label(pal4::inject::HookId::update_input_device_state).empty());
+    assert(find_label(pal4::inject::HookId::initialize_direct_input).empty());
+    assert(find_label(pal4::inject::HookId::handle_player_input_events).empty());
+    assert(find_label(pal4::inject::HookId::cegui_system_initialize).empty());
+    assert(find_label(pal4::inject::HookId::dialog_handle_text_display).empty());
 }
 
 void TestCameraPitchUnlockPatchMetadata() {
@@ -1689,6 +1765,7 @@ int main() {
     TestHookInventory();
     TestDpiAwarenessStrings();
     TestMsaaLevelStrings();
+    TestShadowResolutionStrings();
     TestUiTextureFilterStrings();
     TestScriptModeStrings();
     TestInheritedScriptModeOverride();
@@ -1704,6 +1781,7 @@ int main() {
     TestInputQueue();
     TestRuntimeEventLog();
     TestLauncherNaming();
+    TestInjectControlPanelLabels();
     TestCameraPitchUnlockPatchMetadata();
     TestCameraPitchGuardMath();
     TestCeguiWidescreenPlanMath();

@@ -238,7 +238,8 @@ bool ApplyKnownDynamicFontResync(
     const float font_height_after = ReadFontHeightForDiagnostics(bindings, font);
     const float line_spacing_after = ReadLineSpacingForDiagnostics(bindings, font);
     const bool enable_oversample =
-        canonical_name == "dialog_simsun" ||
+        (canonical_name == "dialog_simsun" &&
+            GetRuntimeState().DialogFontHdEnabled()) ||
         ((canonical_name == "system" || canonical_name == "systemBold") &&
             GetRuntimeState().SystemFontOversampleEnabled());
     std::string oversample_detail;
@@ -391,6 +392,56 @@ bool ApplySystemFontOversamplePreferenceToLoadedFonts(
 
     if (error) {
         *error = summary;
+    }
+    return true;
+}
+
+bool ApplyDialogFontHdPreferenceToLoadedFonts(
+    const bool enabled,
+    std::string* error) {
+    CeguiBindings bindings{};
+    if (!TryGetCeguiBindings(&bindings, error)) {
+        return false;
+    }
+    if (!bindings.get_font_manager_singleton_ptr || !bindings.font_manager_get_font) {
+        if (error) {
+            *error = "FontManager bindings are unavailable";
+        }
+        return false;
+    }
+
+    void* font_manager = bindings.get_font_manager_singleton_ptr();
+    if (!font_manager) {
+        if (error) {
+            *error = "CEGUI FontManager singleton is null";
+        }
+        return false;
+    }
+
+    ScopedCeguiString font_name_string{};
+    if (!BuildCeguiAnsiString(bindings, "dialog_simsun", &font_name_string, error)) {
+        return false;
+    }
+    void* font = bindings.font_manager_get_font(font_manager, &font_name_string.storage);
+    if (!font) {
+        if (error) {
+            error->clear();
+        }
+        return true;
+    }
+
+    std::string detail;
+    const bool ok = enabled
+        ? ApplyDynamicFontOversampleExperiment(font, true, &detail)
+        : RestoreDynamicFontOversampleExperiment(font, &detail);
+    if (!ok) {
+        if (error) {
+            *error = std::string("dialog_simsun: ") + detail;
+        }
+        return false;
+    }
+    if (error) {
+        *error = std::string("dialog_simsun{") + detail + "}";
     }
     return true;
 }

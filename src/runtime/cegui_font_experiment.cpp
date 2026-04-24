@@ -13,6 +13,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <intrin.h>
 
 #include "cegui_bindings.h"
 #include "hook_logging.h"
@@ -46,6 +47,7 @@ using FontGetCharAtPixelFn = unsigned int (__thiscall*)(void*, const void*, unsi
 using FontGetFormattedTextExtentFn = double (__thiscall*)(void*, void*, void*, int, float);
 using FontGetWrappedTextExtentFn = float (__thiscall*)(void*, const void*, float, float);
 using ImagesetDefineImageFn = void (__thiscall*)(void*, const void*, const void*, const void*);
+using ImageSetVertScalingFn = void (__thiscall*)(void*, float);
 using TextGlyphCacheGlyphFn = void (__thiscall*)(void*, const void*, float, void*, const void*, const void*);
 
 constexpr char kDrawTextSymbol[] =
@@ -77,7 +79,19 @@ constexpr std::array<std::uint8_t, 27> kDefineImageExpectedPrefix{
     0x50,
     0x64, 0x89, 0x25, 0x00, 0x00, 0x00, 0x00,
     0x81, 0xEC, 0xEC, 0x05, 0x00, 0x00};
+constexpr std::array<std::uint8_t, 27> kDefineImageExpectedMask{
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF,
+    0xFF, 0x00, 0x00, 0x00, 0x00,
+    0xFF,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 constexpr std::size_t kDefineImagePatchSpan = kDefineImageExpectedPrefix.size();
+constexpr char kSetVertScalingSymbol[] =
+    "?setVertScaling@Image@CEGUI@@AAEXM@Z";
+constexpr std::array<std::uint8_t, 7> kSetVertScalingExpectedPrefix{
+    0x51, 0x56, 0x8B, 0xF1, 0xD9, 0x46, 0x08};
+constexpr std::size_t kSetVertScalingPatchSpan = kSetVertScalingExpectedPrefix.size();
 constexpr char kOiramlookModuleName[] = "OIRAMLOOK.dll";
 constexpr char kTextGlyphGetHeightSymbol[] =
     "?getHeight@TextGlyph@RichText@CEGUI@@UBEMXZ";
@@ -94,19 +108,34 @@ constexpr std::size_t kTextGlyphCacheGlyphPatchSpan = 7;
 constexpr std::ptrdiff_t kTextGlyphFontOffset = 0xB4;
 constexpr std::size_t kMaxLoggedTextGlyphHeightCalls = 16;
 constexpr std::size_t kMaxLoggedTextGlyphCacheCalls = 12;
+constexpr std::size_t kMaxLoggedDefineImageObservations = 16;
+constexpr std::size_t kMaxLoggedSetVertScalingObservations = 16;
+constexpr std::size_t kMaxLoggedSystemDrawTextCalls = 24;
+constexpr std::size_t kMaxLoggedOlButtonRectAdjustments = 16;
+constexpr std::size_t kMaxLoggedOlButtonRectProbes = 24;
+constexpr std::size_t kImageRectTopIndex = 1;
+constexpr std::size_t kImageRectBottomIndex = 2;
+constexpr std::size_t kImageRawOffsetYIndex = 6;
+constexpr std::size_t kImageScaledHeightIndex = 8;
+constexpr std::size_t kImageScaledOffsetYIndex = 10;
 
 std::mutex g_mutex;
 std::mutex g_text_glyph_height_hook_mutex;
 std::atomic<unsigned int> g_logged_get_char_at_pixel_calls{0};
 std::atomic<unsigned int> g_logged_text_glyph_height_calls{0};
 std::atomic<unsigned int> g_logged_text_glyph_cache_calls{0};
-std::atomic<unsigned int> g_logged_define_image_adjustments{0};
+std::atomic<unsigned int> g_logged_define_image_observations{0};
+std::atomic<unsigned int> g_logged_set_vert_scaling_observations{0};
+std::atomic<unsigned int> g_logged_system_draw_text_calls{0};
+std::atomic<unsigned int> g_logged_olbutton_rect_adjustments{0};
+std::atomic<unsigned int> g_logged_olbutton_rect_probes{0};
 FontDrawTextFn g_original_font_draw_text = nullptr;
 FontGetTextExtentFn g_original_font_get_text_extent = nullptr;
 FontGetCharAtPixelFn g_original_font_get_char_at_pixel = nullptr;
 FontGetFormattedTextExtentFn g_original_font_get_formatted_text_extent = nullptr;
 FontGetWrappedTextExtentFn g_original_font_get_wrapped_text_extent = nullptr;
 ImagesetDefineImageFn g_original_imageset_define_image = nullptr;
+ImageSetVertScalingFn g_original_image_set_vert_scaling = nullptr;
 TextGlyphCacheGlyphFn g_original_text_glyph_cache_glyph = nullptr;
 bool g_draw_text_hook_installed = false;
 bool g_get_text_extent_hook_installed = false;
@@ -114,6 +143,7 @@ bool g_get_char_at_pixel_hook_installed = false;
 bool g_get_formatted_text_extent_hook_installed = false;
 bool g_get_wrapped_text_extent_hook_installed = false;
 bool g_define_image_hook_installed = false;
+bool g_set_vert_scaling_hook_installed = false;
 bool g_text_glyph_get_height_hook_installed = false;
 bool g_text_glyph_cache_glyph_hook_installed = false;
 std::unordered_map<void*, DynamicFontOversamplePlan> g_oversampled_fonts;
@@ -121,22 +151,49 @@ thread_local void* g_compensated_draw_text_font = nullptr;
 thread_local unsigned int g_compensated_draw_text_depth = 0;
 thread_local std::string g_active_define_image_font_name;
 thread_local float g_active_define_image_offset_y = 0.0F;
+thread_local bool g_active_define_image_observe_only = false;
+thread_local std::string g_active_define_image_glyph_name;
+thread_local float g_active_define_image_input_offset_y = 0.0F;
 
-struct GlyphImageOffsetScope {
-    explicit GlyphImageOffsetScope(std::string font_name, const float offset_y)
+struct GlyphImageBuildScope {
+    explicit GlyphImageBuildScope(
+        std::string font_name,
+        const float offset_y,
+        const bool observe_only)
         : previous_font_name_(std::move(g_active_define_image_font_name)),
-          previous_offset_y_(g_active_define_image_offset_y) {
+          previous_offset_y_(g_active_define_image_offset_y),
+          previous_observe_only_(g_active_define_image_observe_only) {
         g_active_define_image_font_name = std::move(font_name);
         g_active_define_image_offset_y = offset_y;
+        g_active_define_image_observe_only = observe_only;
     }
 
-    ~GlyphImageOffsetScope() {
+    ~GlyphImageBuildScope() {
         g_active_define_image_font_name = std::move(previous_font_name_);
         g_active_define_image_offset_y = previous_offset_y_;
+        g_active_define_image_observe_only = previous_observe_only_;
     }
 
     std::string previous_font_name_;
     float previous_offset_y_ = 0.0F;
+    bool previous_observe_only_ = false;
+};
+
+struct GlyphImageCallScope {
+    GlyphImageCallScope(std::string glyph_name, const float input_offset_y)
+        : previous_glyph_name_(std::move(g_active_define_image_glyph_name)),
+          previous_input_offset_y_(g_active_define_image_input_offset_y) {
+        g_active_define_image_glyph_name = std::move(glyph_name);
+        g_active_define_image_input_offset_y = input_offset_y;
+    }
+
+    ~GlyphImageCallScope() {
+        g_active_define_image_glyph_name = std::move(previous_glyph_name_);
+        g_active_define_image_input_offset_y = previous_input_offset_y_;
+    }
+
+    std::string previous_glyph_name_;
+    float previous_input_offset_y_ = 0.0F;
 };
 
 struct CeguiVector2Value {
@@ -192,6 +249,11 @@ void __fastcall HookedImagesetDefineImage(
     const void* source_rect,
     const void* offset);
 
+void __fastcall HookedImageSetVertScaling(
+    void* image,
+    void*,
+    float scale);
+
 float __fastcall HookedTextGlyphGetHeight(
     void* glyph,
     void*);
@@ -204,6 +266,8 @@ void __fastcall HookedTextGlyphCacheGlyph(
     void* render_cache,
     const void* text,
     const void* clip_rect);
+
+std::string TryReadCeguiStringValue(const void* text);
 
 bool WriteRelativeJump(
     void* target,
@@ -244,6 +308,22 @@ bool WriteRelativeJump(
 
     DWORD discard = 0;
     VirtualProtect(target, patch_span, old_protect, &discard);
+    return true;
+}
+
+bool MatchBytesWithMask(
+    const std::uint8_t* actual,
+    const std::uint8_t* expected,
+    const std::uint8_t* mask,
+    const std::size_t length) {
+    if (!actual || !expected || !mask) {
+        return false;
+    }
+    for (std::size_t i = 0; i < length; ++i) {
+        if ((actual[i] & mask[i]) != (expected[i] & mask[i])) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -609,10 +689,11 @@ bool InstallKnownSafeDefineImageHook(std::string* error) {
         return false;
     }
 
-    if (std::memcmp(
+    if (!MatchBytesWithMask(
             target,
             kDefineImageExpectedPrefix.data(),
-            kDefineImageExpectedPrefix.size()) != 0) {
+            kDefineImageExpectedMask.data(),
+            kDefineImageExpectedPrefix.size())) {
         if (error) {
             *error = "unexpected Imageset::defineImage prologue";
         }
@@ -654,6 +735,75 @@ bool InstallKnownSafeDefineImageHook(std::string* error) {
     g_original_imageset_define_image =
         reinterpret_cast<ImagesetDefineImageFn>(trampoline);
     g_define_image_hook_installed = true;
+    return true;
+}
+
+bool InstallKnownSafeSetVertScalingHook(std::string* error) {
+    if (g_set_vert_scaling_hook_installed) {
+        return true;
+    }
+
+    const HMODULE module = GetModuleHandleA("CEGUIBase.dll");
+    if (!module) {
+        if (error) {
+            *error = "CEGUIBase.dll is not loaded";
+        }
+        return false;
+    }
+
+    auto* target = reinterpret_cast<std::uint8_t*>(GetProcAddress(module, kSetVertScalingSymbol));
+    if (!target) {
+        if (error) {
+            *error = "GetProcAddress failed for Image::setVertScaling";
+        }
+        return false;
+    }
+
+    if (std::memcmp(
+            target,
+            kSetVertScalingExpectedPrefix.data(),
+            kSetVertScalingExpectedPrefix.size()) != 0) {
+        if (error) {
+            *error = "unexpected Image::setVertScaling prologue";
+        }
+        return false;
+    }
+
+    void* trampoline = VirtualAlloc(
+        nullptr,
+        kSetVertScalingPatchSpan + 5,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE);
+    if (!trampoline) {
+        if (error) {
+            *error = "VirtualAlloc failed for Image::setVertScaling trampoline";
+        }
+        return false;
+    }
+
+    std::memcpy(trampoline, target, kSetVertScalingPatchSpan);
+    void* continue_at = target + kSetVertScalingPatchSpan;
+    if (!WriteRelativeJump(
+            static_cast<std::uint8_t*>(trampoline) + kSetVertScalingPatchSpan,
+            continue_at,
+            5,
+            error)) {
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+
+    if (!WriteRelativeJump(
+            target,
+            reinterpret_cast<void*>(&HookedImageSetVertScaling),
+            kSetVertScalingPatchSpan,
+            error)) {
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+
+    g_original_image_set_vert_scaling =
+        reinterpret_cast<ImageSetVertScalingFn>(trampoline);
+    g_set_vert_scaling_hook_installed = true;
     return true;
 }
 
@@ -815,6 +965,80 @@ void MaybeLogGetCharAtPixelCall(
         << " scale_effective=" << effective_scale
         << " result=" << result;
     AppendHookEventLog(HookId::load_font_file, detail.str());
+}
+
+float ReadImageFloat(const void* image, const std::size_t index) {
+    if (!image) {
+        return 0.0F;
+    }
+    return static_cast<const float*>(image)[index];
+}
+
+std::string DescribeModuleAddress(const void* address) {
+    if (!address) {
+        return {};
+    }
+
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            static_cast<LPCSTR>(address),
+            &module) ||
+        !module) {
+        std::ostringstream unresolved;
+        unresolved << "unknown+0x" << std::hex
+                   << reinterpret_cast<std::uintptr_t>(address);
+        return unresolved.str();
+    }
+
+    char path[MAX_PATH] = {};
+    const DWORD copied = GetModuleFileNameA(module, path, MAX_PATH);
+    const char* module_name = copied > 0 ? path : "module";
+    if (const char* slash = std::strrchr(module_name, '\\')) {
+        module_name = slash + 1;
+    }
+
+    const auto module_base = reinterpret_cast<std::uintptr_t>(module);
+    const auto current = reinterpret_cast<std::uintptr_t>(address);
+    std::ostringstream out;
+    out << module_name << "+0x" << std::hex << (current - module_base);
+    return out.str();
+}
+
+bool TryGetModuleNameAndRva(
+    const void* address,
+    std::string* module_name,
+    std::uintptr_t* rva) {
+    if (!address || !module_name || !rva) {
+        return false;
+    }
+
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            static_cast<LPCSTR>(address),
+            &module) ||
+        !module) {
+        return false;
+    }
+
+    char path[MAX_PATH] = {};
+    const DWORD copied = GetModuleFileNameA(module, path, MAX_PATH);
+    if (copied == 0) {
+        return false;
+    }
+
+    const char* base_name = path;
+    if (const char* slash = std::strrchr(path, '\\')) {
+        base_name = slash + 1;
+    }
+
+    *module_name = base_name;
+    *rva = reinterpret_cast<std::uintptr_t>(address) -
+        reinterpret_cast<std::uintptr_t>(module);
+    return true;
 }
 
 std::optional<DynamicFontOversamplePlan> GetOversamplePlanForFont(void* font) {
@@ -1061,6 +1285,108 @@ void MaybeLogTextGlyphCacheGlyphCall(
     AppendHookEventLog(HookId::load_font_file, detail.str());
 }
 
+void MaybeLogSystemDrawTextCall(
+    void* font,
+    const void* text,
+    const float* rect,
+    const int formatting,
+    const void* caller,
+    const float original_x_scale,
+    const float original_y_scale,
+    const float effective_x_scale,
+    const float effective_y_scale) {
+    if (TryReadFontName(font) != "system") {
+        return;
+    }
+
+    const unsigned int index = g_logged_system_draw_text_calls.fetch_add(1);
+    if (index >= kMaxLoggedSystemDrawTextCalls) {
+        return;
+    }
+    if (!rect) {
+        return;
+    }
+
+    std::string text_value = TryReadCeguiStringValue(text);
+    if (text_value.size() > 24) {
+        text_value.resize(24);
+        text_value += "...";
+    }
+
+    const auto* metrics = static_cast<const float*>(font);
+    std::ostringstream detail;
+    detail
+        << "hook=system_draw_text_observe"
+        << " text=\"" << text_value << "\""
+        << " formatting=" << formatting
+        << " rect=" << rect[0] << "," << rect[1] << "," << rect[2] << "," << rect[3]
+        << " font_height=" << metrics[kFontHeightIndex]
+        << " line_spacing=" << metrics[kLineSpacingIndex]
+        << " baseline=" << metrics[kBaselineIndex]
+        << " caller=" << DescribeModuleAddress(caller)
+        << " scale_in=" << original_x_scale << "," << original_y_scale
+        << " scale_effective=" << effective_x_scale << "," << effective_y_scale;
+    AppendHookEventLog(HookId::load_font_file, detail.str());
+}
+
+void MaybeLogOiramlookOlButtonRectAdjustment(
+    const std::string_view font_name,
+    const std::string_view caller_description,
+    const int formatting,
+    const float offset,
+    const float* rect_before,
+    const float* rect_after) {
+    if (!rect_before || !rect_after) {
+        return;
+    }
+    if (font_name != "system") {
+        return;
+    }
+
+    const unsigned int index = g_logged_olbutton_rect_adjustments.fetch_add(1);
+    if (index >= kMaxLoggedOlButtonRectAdjustments) {
+        return;
+    }
+
+    std::ostringstream detail;
+    detail
+        << "hook=oiramlook_olbutton_rect_adjust"
+        << " font=" << font_name
+        << " caller=" << caller_description
+        << " formatting=" << formatting
+        << " offset=" << offset
+        << " rect_before=" << rect_before[0] << "," << rect_before[1] << ","
+        << rect_before[2] << "," << rect_before[3]
+        << " rect_after=" << rect_after[0] << "," << rect_after[1] << ","
+        << rect_after[2] << "," << rect_after[3];
+    AppendHookEventLog(HookId::load_font_file, detail.str());
+}
+
+void MaybeLogOiramlookOlButtonRectProbe(
+    const std::string_view font_name,
+    const std::string_view caller_description,
+    const int formatting,
+    const bool matched,
+    const float* rect) {
+    if (!rect) {
+        return;
+    }
+    const unsigned int index = g_logged_olbutton_rect_probes.fetch_add(1);
+    if (index >= kMaxLoggedOlButtonRectProbes) {
+        return;
+    }
+    std::ostringstream detail;
+    detail
+        << "hook=oiramlook_olbutton_rect_probe"
+        << " font=\"" << font_name << "\""
+        << " caller=\"" << caller_description << "\""
+        << " formatting=" << formatting
+        << " matched=" << (matched ? 1 : 0)
+        << " rect=" << rect[0] << "," << rect[1] << "," << rect[2] << ","
+        << rect[3];
+    AppendHookEventLog(HookId::load_font_file, detail.str());
+}
+
 float __fastcall HookedTextGlyphGetHeight(void* glyph, void*) {
     void* font = TryReadTextGlyphFont(glyph);
     if (!font) {
@@ -1157,14 +1483,59 @@ int __fastcall HookedFontDrawText(
         return 0;
     }
 
+    void* caller = _ReturnAddress();
+    const std::string caller_description = DescribeModuleAddress(caller);
+    const std::string font_name = TryReadFontName(font);
+    float adjusted_rect[4] = {};
+    float* rect_to_use = rect;
+    const bool should_adjust_olbutton_rect = rect &&
+        ShouldApplyOiramlookOlButtonTextRectYOffset(
+            font_name,
+            caller_description,
+            formatting);
+    if (caller_description.rfind("OIRAMLOOK.dll+", 0) == 0 && formatting == 2) {
+        MaybeLogOiramlookOlButtonRectProbe(
+            font_name,
+            caller_description,
+            formatting,
+            should_adjust_olbutton_rect,
+            rect);
+    }
+    if (should_adjust_olbutton_rect) {
+        std::memcpy(adjusted_rect, rect, sizeof(adjusted_rect));
+        const float offset = GetOiramlookOlButtonTextRectYOffset();
+        adjusted_rect[0] += offset;
+        adjusted_rect[1] += offset;
+        rect_to_use = adjusted_rect;
+        MaybeLogOiramlookOlButtonRectAdjustment(
+            font_name,
+            caller_description,
+            formatting,
+            offset,
+            rect,
+            rect_to_use);
+    }
+
     if (const auto plan = GetOversamplePlanForFont(font); plan.has_value()) {
+        const float original_x_scale = x_scale;
+        const float original_y_scale = y_scale;
         x_scale *= plan->draw_scale;
         y_scale *= plan->draw_scale;
+        MaybeLogSystemDrawTextCall(
+            font,
+            text,
+            rect_to_use,
+            formatting,
+            caller,
+            original_x_scale,
+            original_y_scale,
+            x_scale,
+            y_scale);
         const ScopedCompensatedDrawText compensated_draw_text(font);
         return g_original_font_draw_text(
             font,
             text,
-            rect,
+            rect_to_use,
             z,
             clipper,
             formatting,
@@ -1175,7 +1546,7 @@ int __fastcall HookedFontDrawText(
     return g_original_font_draw_text(
         font,
         text,
-        rect,
+        rect_to_use,
         z,
         clipper,
         formatting,
@@ -1279,30 +1650,44 @@ void __fastcall HookedImagesetDefineImage(
         return;
     }
 
+    const bool observe_only =
+        g_active_define_image_observe_only &&
+        !g_active_define_image_font_name.empty();
+    const std::string glyph_name =
+        observe_only ? TryReadCeguiStringValue(name) : std::string();
+    const float input_offset_y = offset
+        ? static_cast<const CeguiVector2Value*>(offset)->y
+        : 0.0F;
+
+    if (observe_only) {
+        const unsigned int index =
+            g_logged_define_image_observations.fetch_add(1);
+        if (index < kMaxLoggedDefineImageObservations) {
+            std::ostringstream detail;
+            detail
+                << "hook=imageset_define_image_observe"
+                << " font=" << g_active_define_image_font_name
+                << " glyph=" << glyph_name
+                << " offset_y_input=" << input_offset_y
+                << " offset_y_adjust=" << g_active_define_image_offset_y;
+            AppendHookEventLog(HookId::load_font_file, detail.str());
+        }
+    }
+
+    const GlyphImageCallScope glyph_call_scope(glyph_name, input_offset_y);
     const float offset_y = g_active_define_image_offset_y;
     if (offset && offset_y != 0.0F) {
         CeguiVector2Value adjusted_offset =
             *static_cast<const CeguiVector2Value*>(offset);
         adjusted_offset.y += offset_y;
 
-        const unsigned int index = g_logged_define_image_adjustments.fetch_add(1);
-        if (index < 16) {
-            CeguiBindings bindings{};
-            std::string binding_error;
-            std::string glyph_name;
-            if (TryGetCeguiBindings(&bindings, &binding_error) &&
-                bindings.cegui_string_c_str) {
-                if (const char* raw_name = bindings.cegui_string_c_str(name)) {
-                    glyph_name = raw_name;
-                }
-            }
-
+        if (observe_only) {
             std::ostringstream detail;
             detail
-                << "hook=imageset_define_image"
+                << "hook=imageset_define_image_adjust"
                 << " font=" << g_active_define_image_font_name
                 << " glyph=" << glyph_name
-                << " offset_y_before=" << static_cast<const CeguiVector2Value*>(offset)->y
+                << " offset_y_before=" << input_offset_y
                 << " offset_y_after=" << adjusted_offset.y;
             AppendHookEventLog(HookId::load_font_file, detail.str());
         }
@@ -1316,6 +1701,47 @@ void __fastcall HookedImagesetDefineImage(
     }
 
     g_original_imageset_define_image(imageset, name, source_rect, offset);
+}
+
+void __fastcall HookedImageSetVertScaling(
+    void* image,
+    void*,
+    const float scale) {
+    if (!g_original_image_set_vert_scaling) {
+        return;
+    }
+
+    g_original_image_set_vert_scaling(image, scale);
+
+    if (!g_active_define_image_observe_only ||
+        g_active_define_image_font_name.empty()) {
+        return;
+    }
+
+    const unsigned int index =
+        g_logged_set_vert_scaling_observations.fetch_add(1);
+    if (index >= kMaxLoggedSetVertScalingObservations) {
+        return;
+    }
+
+    const float rect_top = ReadImageFloat(image, kImageRectTopIndex);
+    const float rect_bottom = ReadImageFloat(image, kImageRectBottomIndex);
+    const float raw_offset_y = ReadImageFloat(image, kImageRawOffsetYIndex);
+    const float scaled_height = ReadImageFloat(image, kImageScaledHeightIndex);
+    const float final_offset_y = ReadImageFloat(image, kImageScaledOffsetYIndex);
+
+    std::ostringstream detail;
+    detail
+        << "hook=image_set_vert_scaling_observe"
+        << " font=" << g_active_define_image_font_name
+        << " glyph=" << g_active_define_image_glyph_name
+        << " scale=" << scale
+        << " rect_height=" << (rect_bottom - rect_top)
+        << " offset_y_input=" << g_active_define_image_input_offset_y
+        << " raw_offset_y=" << raw_offset_y
+        << " scaled_height=" << scaled_height
+        << " final_offset_y=" << final_offset_y;
+    AppendHookEventLog(HookId::load_font_file, detail.str());
 }
 
 }  // namespace
@@ -1361,9 +1787,17 @@ bool ApplyDynamicFontOversampleExperiment(
         return false;
     }
     bool define_image_hook_installed = false;
-    if (plan.glyph_offset_y != 0.0F) {
+    bool set_vert_scaling_hook_installed = false;
+    if (plan.glyph_offset_y != 0.0F || plan.observe_glyph_image_offsets) {
         define_image_hook_installed = InstallKnownSafeDefineImageHook(error);
         if (!define_image_hook_installed) {
+            return false;
+        }
+    }
+    if (plan.observe_glyph_image_offsets) {
+        set_vert_scaling_hook_installed =
+            InstallKnownSafeSetVertScalingHook(error);
+        if (!set_vert_scaling_hook_installed) {
             return false;
         }
     }
@@ -1376,7 +1810,10 @@ bool ApplyDynamicFontOversampleExperiment(
 
     const FontVerticalMetrics original_vertical_metrics =
         CaptureFontVerticalMetrics(font);
-    const GlyphImageOffsetScope glyph_offset_scope(font_name, plan.glyph_offset_y);
+    const GlyphImageBuildScope glyph_offset_scope(
+        font_name,
+        plan.glyph_offset_y,
+        plan.observe_glyph_image_offsets);
     bindings.font_create_font_from_ft_face(font, plan.oversampled_point_size, 0, 0);
     if (plan.preserve_original_vertical_metrics) {
         ApplyPlannedVerticalMetricAdjustments(font, original_vertical_metrics, plan);
@@ -1390,6 +1827,10 @@ bool ApplyDynamicFontOversampleExperiment(
             " draw_scale=" + std::to_string(plan.draw_scale) +
             " extent_scale=" + std::to_string(plan.extent_scale) +
             " glyph_offset_y=" + std::to_string(plan.glyph_offset_y) +
+            " observe_glyph_image_offsets=" +
+            (plan.observe_glyph_image_offsets
+                ? std::string("1")
+                : std::string("0")) +
             " line_spacing_scale=" + std::to_string(plan.line_spacing_scale) +
             " baseline_scale=" + std::to_string(plan.baseline_scale) +
             " preserve_original_vertical_metrics=" +
@@ -1403,6 +1844,10 @@ bool ApplyDynamicFontOversampleExperiment(
             " char_at_pixel_scaled=1" +
             " define_image_hook=" +
             (define_image_hook_installed ? std::string("1") : std::string("0")) +
+            " set_vert_scaling_hook=" +
+            (set_vert_scaling_hook_installed
+                ? std::string("1")
+                : std::string("0")) +
             " metric_double_scale_guard=1" +
             " rich_text_height_hook=" +
             (rich_text_height_hook_installed ? std::string("1") : std::string("0")) +

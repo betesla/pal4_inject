@@ -1,8 +1,28 @@
 #include "pal4inject/cegui_font_experiment.h"
 
 #include <algorithm>
+#include <array>
 
 namespace pal4::inject {
+
+namespace {
+
+constexpr std::array<std::uintptr_t, 5> kOiramlookOlButtonDrawTextCallerRvas{
+    0x17391,
+    0x17602,
+    0x17872,
+    0x17AE2,
+    0x17CA2,
+};
+constexpr std::array<std::string_view, 5> kOiramlookOlButtonCallerDescriptions{
+    "OIRAMLOOK.dll+0x17391",
+    "OIRAMLOOK.dll+0x17602",
+    "OIRAMLOOK.dll+0x17872",
+    "OIRAMLOOK.dll+0x17ae2",
+    "OIRAMLOOK.dll+0x17ca2",
+};
+
+}  // namespace
 
 DynamicFontOversamplePlan BuildDynamicFontOversamplePlan(
     const std::string_view canonical_font_name,
@@ -17,6 +37,7 @@ DynamicFontOversamplePlan BuildDynamicFontOversamplePlan(
         plan.draw_scale = 0.5F;
         plan.extent_scale = 0.5F;
         plan.glyph_offset_y = 0.0F;
+        plan.observe_glyph_image_offsets = false;
         plan.line_spacing_scale = 1.0F;
         plan.baseline_scale = 1.0F;
         return plan;
@@ -32,6 +53,7 @@ DynamicFontOversamplePlan BuildDynamicFontOversamplePlan(
             static_cast<float>(plan.oversampled_point_size);
         plan.extent_scale = plan.draw_scale;
         plan.glyph_offset_y = 0.0F;
+        plan.observe_glyph_image_offsets = true;
         plan.line_spacing_scale = 0.92F;
         plan.baseline_scale = 1.0F;
         plan.preserve_original_vertical_metrics = true;
@@ -43,6 +65,7 @@ DynamicFontOversamplePlan BuildDynamicFontOversamplePlan(
         plan.draw_scale = 0.5F;
         plan.extent_scale = 0.5F;
         plan.glyph_offset_y = 0.0F;
+        plan.observe_glyph_image_offsets = false;
         plan.line_spacing_scale = 1.0F;
         plan.baseline_scale = 1.0F;
         plan.preserve_original_vertical_metrics = true;
@@ -72,6 +95,46 @@ float ComputeDialogRichTextGlyphHeight(
     }
 
     return raw_height * plan.draw_scale * plan.line_spacing_scale;
+}
+
+bool ShouldApplyOiramlookOlButtonTextRectYOffset(
+    const std::string_view canonical_font_name,
+    const std::string_view caller_module_name,
+    const std::uintptr_t caller_rva,
+    const int formatting) noexcept {
+    if (canonical_font_name != "system") {
+        return false;
+    }
+    if (caller_module_name != "OIRAMLOOK.dll") {
+        return false;
+    }
+    if (formatting != 2) {
+        return false;
+    }
+    return std::find(
+               kOiramlookOlButtonDrawTextCallerRvas.begin(),
+               kOiramlookOlButtonDrawTextCallerRvas.end(),
+               caller_rva) != kOiramlookOlButtonDrawTextCallerRvas.end();
+}
+
+bool ShouldApplyOiramlookOlButtonTextRectYOffset(
+    const std::string_view canonical_font_name,
+    const std::string_view caller_description,
+    const int formatting) noexcept {
+    if (canonical_font_name != "system") {
+        return false;
+    }
+    if (formatting != 2) {
+        return false;
+    }
+    return std::find(
+               kOiramlookOlButtonCallerDescriptions.begin(),
+               kOiramlookOlButtonCallerDescriptions.end(),
+               caller_description) != kOiramlookOlButtonCallerDescriptions.end();
+}
+
+float GetOiramlookOlButtonTextRectYOffset() noexcept {
+    return 2.0F;
 }
 
 }  // namespace pal4::inject

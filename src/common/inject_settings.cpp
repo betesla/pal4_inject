@@ -12,7 +12,7 @@
 namespace pal4::inject {
 namespace {
 
-constexpr int kSettingsVersion = 4;
+constexpr int kSettingsVersion = 5;
 
 std::string TrimAscii(const std::string_view text) {
     std::size_t begin = 0;
@@ -43,6 +43,8 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
     out << "shadow_resolution=" << ToString(settings.shadow_resolution) << '\n';
     out << "ui_texture_filter=" << ToString(settings.ui_texture_filter) << '\n';
     out << "launcher_script_mode=" << ToString(settings.launcher_script_mode) << '\n';
+    out << "dialog_font_hd_enabled="
+        << (settings.dialog_font_hd_enabled ? "1" : "0") << '\n';
     out << "system_font_oversample_enabled="
         << (settings.system_font_oversample_enabled ? "1" : "0") << '\n';
     out << "gamepad_enabled=" << (settings.gamepad_enabled ? "1" : "0") << '\n';
@@ -152,14 +154,17 @@ bool ParseInjectPersistedSettings(
             }
             continue;
         }
-        if (key == "system_font_oversample_enabled" ||
+        if (key == "dialog_font_hd_enabled" ||
+            key == "system_font_oversample_enabled" ||
             key == "gamepad_enabled" ||
             key == "gamepad_log_enabled") {
-            bool* flag = key == "system_font_oversample_enabled"
-                ? &out->system_font_oversample_enabled
-                : (key == "gamepad_enabled"
-                    ? &out->gamepad_enabled
-                    : &out->gamepad_log_enabled);
+            bool* flag = key == "dialog_font_hd_enabled"
+                ? &out->dialog_font_hd_enabled
+                : (key == "system_font_oversample_enabled"
+                    ? &out->system_font_oversample_enabled
+                    : (key == "gamepad_enabled"
+                        ? &out->gamepad_enabled
+                        : &out->gamepad_log_enabled));
             if (value == "1" || value == "true" || value == "on") {
                 *flag = true;
             } else if (value == "0" || value == "false" || value == "off") {

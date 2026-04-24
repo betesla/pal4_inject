@@ -109,6 +109,7 @@ struct RuntimeSnapshot {
     bool ui_dispatch_ready = false;
     bool crash_handler_ready = false;
     ShadowResolution shadow_resolution = ShadowResolution::x64;
+    bool dialog_font_hd_enabled = true;
     bool system_font_oversample_enabled = false;
     bool gamepad_enabled = true;
     bool gamepad_log_enabled = false;

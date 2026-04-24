@@ -49,18 +49,10 @@ constexpr int kColumnHeaderHeight = 20;
 constexpr int kHookToggleBaseId = 1000;
 constexpr int kHookComboBaseId = 2000;
 constexpr int kHookLogToggleBaseId = 2500;
-constexpr int kMsaaComboId = 3000;
-constexpr int kMsaaStatusId = 3001;
+constexpr int kLaunchSettingsStatusId = 3000;
 constexpr int kOverviewStatusId = 3002;
 constexpr int kScriptModeStatusId = 3003;
 constexpr int kInputStatusId = 3004;
-constexpr int kUiTextureFilterCheckboxId = 3005;
-constexpr int kUiTextureFilterStatusId = 3006;
-constexpr int kSystemFontOversampleCheckboxId = 3007;
-constexpr int kSystemFontOversampleStatusId = 3008;
-constexpr int kShadowResolutionSliderId = 3009;
-constexpr int kShadowResolutionStatusId = 3010;
-constexpr int kShadowResolutionValueId = 3011;
 constexpr int kFooterLabelId = 4000;
 constexpr int kShutdownButtonId = 4001;
 constexpr int kTabControlId = 4100;
@@ -99,15 +91,7 @@ HWND g_overview_status = nullptr;
 HWND g_gamepad_status = nullptr;
 HWND g_input_status = nullptr;
 HWND g_script_mode_status = nullptr;
-HWND g_msaa_combo = nullptr;
-HWND g_msaa_status = nullptr;
-HWND g_shadow_resolution_slider = nullptr;
-HWND g_shadow_resolution_value = nullptr;
-HWND g_shadow_resolution_status = nullptr;
-HWND g_ui_texture_filter_checkbox = nullptr;
-HWND g_ui_texture_filter_status = nullptr;
-HWND g_system_font_oversample_checkbox = nullptr;
-HWND g_system_font_oversample_status = nullptr;
+HWND g_launch_settings_status = nullptr;
 bool g_follow_game_window = true;
 
 int PageIndex(const InjectControlPanelPage page) noexcept {
@@ -118,6 +102,7 @@ void ApplyFont(HWND hwnd);
 int BuildHookPageHeader(HWND panel, InjectControlPanelPage page, int y, bool show_msaa_block);
 void BuildHookRowsForPage(HWND panel, InjectControlPanelPage page, int y);
 std::wstring BuildShadowResolutionLabel(ShadowResolution resolution);
+const HookStatus* FindStatus(const std::vector<HookStatus>& statuses, HookId id);
 
 std::wstring WideFromNarrow(const std::string_view text) {
     if (text.empty()) {
@@ -438,6 +423,52 @@ std::wstring BuildLocalizedSystemFontOversampleStatusText(
     return text;
 }
 
+std::wstring BuildLocalizedDialogFontHdStatusText(
+    const RuntimeState& state,
+    const HookStatus* font_hook) {
+    std::wstring text = state.DialogFontHdEnabled()
+        ? L"\u5df2\u5f00\u542f"
+        : L"\u672a\u5f00\u542f";
+    text += L" | dialog_simsun oversample + draw/metric/getCharAtPixel + RichText \u8865\u507f\u94fe";
+    if (font_hook) {
+        text += L" | load_font_file \u8c03\u7528=";
+        text += WideFromUnsigned(font_hook->call_count);
+        if (font_hook->mode == HookMode::observe_only ||
+            font_hook->mode == HookMode::mirror_compare) {
+            text += L" | Hook \u672a\u542f\u7528";
+        }
+        if (!font_hook->last_error.empty()) {
+            text += L" | \u9519\u8bef=";
+            text += WideFromNarrow(font_hook->last_error);
+        }
+    }
+    text +=
+        L" | \u7528\u4e8e A/B \u6d4b\u8bd5\u5bf9\u767d\u70b9\u51fb/\u6392\u7248\uff0c\u4ec5\u4fdd\u5b58\u5f00\u5173\uff0c\u5efa\u8bae\u91cd\u542f\u6e38\u620f\u540e\u9a8c\u8bc1";
+    return text;
+}
+
+std::wstring BuildLaunchManagedRenderSettingsText(
+    const RuntimeState& state,
+    const std::vector<HookStatus>& statuses) {
+    const auto* msaa_hook = FindStatus(statuses, HookId::d3d9_set_present_parameters);
+    const auto* renderer_hook = FindStatus(statuses, HookId::cegui_renderer_constructor_2);
+    const auto* font_hook = FindStatus(statuses, HookId::load_font_file);
+
+    std::wstring text;
+    text += L"\u8fd9\u4e9b\u9009\u9879\u5df2\u7ecf\u6536\u56de\u5230\u201c\u6ce8\u5165\u542f\u52a8\u5668\u201d\uff0c\u8fd9\u91cc\u53ea\u663e\u793a\u5f53\u524d\u751f\u6548\u72b6\u6001\uff0c\u4e0d\u518d\u652f\u6301\u8fd0\u884c\u4e2d\u70ed\u5207\u3002";
+    text += L"\r\n- \u6297\u952f\u9f7f\uff1a";
+    text += BuildLocalizedMsaaStatusText(state, msaa_hook);
+    text += L"\r\n- \u4eba\u7269\u9634\u5f71\uff1a";
+    text += BuildLocalizedShadowResolutionStatusText(state);
+    text += L"\r\n- UI \u91c7\u6837\uff1a";
+    text += BuildLocalizedUiTextureFilterStatusText(state, renderer_hook);
+    text += L"\r\n- \u7cfb\u7edf\u5b57\u4f53\uff1a";
+    text += BuildLocalizedSystemFontOversampleStatusText(state, font_hook);
+    text += L"\r\n- \u5bf9\u767d\u5b57\u4f53\uff1a";
+    text += BuildLocalizedDialogFontHdStatusText(state, font_hook);
+    return text;
+}
+
 std::wstring BuildPageNote(const InjectControlPanelPage page) {
     switch (page) {
     case InjectControlPanelPage::overview:
@@ -449,7 +480,7 @@ std::wstring BuildPageNote(const InjectControlPanelPage page) {
     case InjectControlPanelPage::script_runtime:
         return L"\u96c6\u4e2d\u67e5\u770b\u5bf9\u767d\u811a\u672c\u3001\u5267\u60c5\u8c03\u5ea6\u7b49\u8fd0\u884c\u65f6\u5267\u60c5\u76f8\u5173 Hook\u3002";
     case InjectControlPanelPage::render_visual:
-        return L"\u96c6\u4e2d\u7ba1\u7406 MSAA \u3001\u91c7\u6837\u4e0e\u5176\u4ed6\u66f4\u504f\u6e32\u67d3\u7ba1\u7ebf\u7684\u753b\u9762\u8d28\u91cf\u5f00\u5173\u3002";
+        return L"\u8fd9\u4e00\u9875\u4e3b\u8981\u7528\u6765\u786e\u8ba4\u753b\u9762 Hook \u662f\u5426\u751f\u6548\u3002MSAA\u3001\u9634\u5f71\u3001UI \u91c7\u6837\u548c\u5b57\u4f53\u5b9e\u9a8c\u90fd\u6539\u4e3a\u5728\u542f\u52a8\u5668\u91cc\u5148\u8bbe\u5b9a\u3002";
     case InjectControlPanelPage::camera:
         return L"\u5355\u72ec\u7ba1\u7406\u76f8\u673a\u89d2\u5ea6\u3001\u4fef\u4ef0\u4fdd\u62a4\u548c\u89c6\u89d2\u5b89\u5168\u76f8\u5173 Hook\u3002";
     }
@@ -619,84 +650,11 @@ const HookStatus* FindStatus(
     return nullptr;
 }
 
-std::array<MsaaLevel, 4> BuildMsaaLevels() {
-    return {
-        MsaaLevel::off,
-        MsaaLevel::x2,
-        MsaaLevel::x4,
-        MsaaLevel::x8,
-    };
-}
-
-std::array<ShadowResolution, 4> BuildShadowResolutions() {
-    return {
-        ShadowResolution::x64,
-        ShadowResolution::x128,
-        ShadowResolution::x256,
-        ShadowResolution::x512,
-    };
-}
-
-void PopulateMsaaCombo(const HWND combo) {
-    for (const auto level : BuildMsaaLevels()) {
-        const auto text = WideFromNarrow(ToString(level));
-        SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(text.c_str()));
-    }
-}
-
-void PopulateShadowResolutionSlider(const HWND slider) {
-    SendMessageW(slider, TBM_SETRANGEMIN, FALSE, 0);
-    SendMessageW(
-        slider,
-        TBM_SETRANGEMAX,
-        FALSE,
-        static_cast<LPARAM>(BuildShadowResolutions().size() - 1));
-    SendMessageW(slider, TBM_SETTICFREQ, 1, 0);
-    SendMessageW(slider, TBM_SETPAGESIZE, 0, 1);
-    SendMessageW(slider, TBM_SETLINESIZE, 0, 1);
-}
-
 void PopulateHookModeCombo(const HWND combo) {
     for (const auto mode : BuildInjectControlPanelModes()) {
         const auto text = BuildInjectControlPanelModeLabel(mode);
         SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(text.data()));
     }
-}
-
-int FindMsaaLevelIndex(const MsaaLevel level) noexcept {
-    const auto levels = BuildMsaaLevels();
-    for (int i = 0; i < static_cast<int>(levels.size()); ++i) {
-        if (levels[static_cast<std::size_t>(i)] == level) {
-            return i;
-        }
-    }
-    return 0;
-}
-
-MsaaLevel MsaaLevelFromIndex(const int index) noexcept {
-    const auto levels = BuildMsaaLevels();
-    if (index < 0 || index >= static_cast<int>(levels.size())) {
-        return MsaaLevel::off;
-    }
-    return levels[static_cast<std::size_t>(index)];
-}
-
-int FindShadowResolutionIndex(const ShadowResolution resolution) noexcept {
-    const auto levels = BuildShadowResolutions();
-    for (int i = 0; i < static_cast<int>(levels.size()); ++i) {
-        if (levels[static_cast<std::size_t>(i)] == resolution) {
-            return i;
-        }
-    }
-    return 0;
-}
-
-ShadowResolution ShadowResolutionFromIndex(const int index) noexcept {
-    const auto levels = BuildShadowResolutions();
-    if (index < 0 || index >= static_cast<int>(levels.size())) {
-        return ShadowResolution::x64;
-    }
-    return levels[static_cast<std::size_t>(index)];
 }
 
 std::wstring BuildShadowResolutionLabel(const ShadowResolution resolution) {
@@ -783,13 +741,6 @@ bool IsComboInteractionActive(const HWND combo) {
     return GetFocus() == combo;
 }
 
-bool IsSliderInteractionActive(const HWND slider) {
-    if (!slider || !IsWindow(slider)) {
-        return false;
-    }
-    return GetFocus() == slider || GetCapture() == slider;
-}
-
 void RefreshPanelPlacement(const HWND hwnd) {
     if (!g_follow_game_window) {
         return;
@@ -862,71 +813,10 @@ void RefreshPanelContent(const HWND hwnd) {
     auto& state = GetRuntimeState();
     const auto statuses = state.CopyHookStatuses();
 
-    const bool msaa_combo_interaction = IsComboInteractionActive(g_msaa_combo);
-    if (g_msaa_combo && !msaa_combo_interaction) {
-        const int expected_index = FindMsaaLevelIndex(state.GetMsaaLevel());
-        const int current_index = static_cast<int>(
-            SendMessageW(g_msaa_combo, CB_GETCURSEL, 0, 0));
-        if (current_index != expected_index) {
-            SendMessageW(g_msaa_combo, CB_SETCURSEL, expected_index, 0);
-        }
-    }
-    if (g_msaa_combo) {
-        EnableWindow(g_msaa_combo, FALSE);
-    }
-
-    if (g_msaa_status) {
-        const auto* msaa_hook = FindStatus(statuses, HookId::d3d9_set_present_parameters);
-        SetWindowTextW(g_msaa_status, BuildLocalizedMsaaStatusText(state, msaa_hook).c_str());
-    }
-    const bool shadow_slider_interaction = IsSliderInteractionActive(g_shadow_resolution_slider);
-    if (g_shadow_resolution_slider && !shadow_slider_interaction) {
-        const int expected_index = FindShadowResolutionIndex(state.GetShadowResolution());
-        const int current_index = static_cast<int>(
-            SendMessageW(g_shadow_resolution_slider, TBM_GETPOS, 0, 0));
-        if (current_index != expected_index) {
-            SendMessageW(g_shadow_resolution_slider, TBM_SETPOS, TRUE, expected_index);
-        }
-    }
-    if (g_shadow_resolution_slider) {
-        EnableWindow(g_shadow_resolution_slider, FALSE);
-    }
-    if (g_shadow_resolution_value) {
+    if (g_launch_settings_status) {
         SetWindowTextW(
-            g_shadow_resolution_value,
-            BuildShadowResolutionLabel(state.GetShadowResolution()).c_str());
-    }
-    if (g_shadow_resolution_status) {
-        SetWindowTextW(
-            g_shadow_resolution_status,
-            BuildLocalizedShadowResolutionStatusText(state).c_str());
-    }
-
-    if (g_ui_texture_filter_checkbox) {
-        SendMessageW(
-            g_ui_texture_filter_checkbox,
-            BM_SETCHECK,
-            state.GetUiTextureFilter() == UiTextureFilter::nearest ? BST_CHECKED : BST_UNCHECKED,
-            0);
-    }
-    if (g_ui_texture_filter_status) {
-        const auto* renderer_hook = FindStatus(statuses, HookId::cegui_renderer_constructor_2);
-        SetWindowTextW(
-            g_ui_texture_filter_status,
-            BuildLocalizedUiTextureFilterStatusText(state, renderer_hook).c_str());
-    }
-    if (g_system_font_oversample_checkbox) {
-        SendMessageW(
-            g_system_font_oversample_checkbox,
-            BM_SETCHECK,
-            state.SystemFontOversampleEnabled() ? BST_CHECKED : BST_UNCHECKED,
-            0);
-    }
-    if (g_system_font_oversample_status) {
-        const auto* font_hook = FindStatus(statuses, HookId::load_font_file);
-        SetWindowTextW(
-            g_system_font_oversample_status,
-            BuildLocalizedSystemFontOversampleStatusText(state, font_hook).c_str());
+            g_launch_settings_status,
+            BuildLaunchManagedRenderSettingsText(state, statuses).c_str());
     }
 
     for (const auto& runtime : PanelRows()) {
@@ -1033,89 +923,15 @@ int BuildHookPageHeader(
     y += kPageNoteHeight + 8;
 
     if (show_msaa_block) {
-        CreateStaticControl(panel, L"\u6297\u952f\u9f7f MSAA", kPageMargin, y + 4, kNameWidth, 20);
-        g_msaa_combo = CreateComboControl(
+        CreateStaticControl(panel, L"\u542f\u52a8\u524d\u753b\u8d28\u8bbe\u5b9a\u6458\u8981", kPageMargin, y + 2, 220, 20);
+        g_launch_settings_status = CreateReadOnlyTextBox(
             panel,
-            kPageMargin + kNameWidth + kToggleWidth,
-            y,
-            kComboWidth,
-            240,
-            kMsaaComboId);
-        PopulateMsaaCombo(g_msaa_combo);
-        g_msaa_status = CreateStaticControl(
-            panel,
-            L"",
-            kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
-            y + 4,
-            kStatusWidth,
-            20,
-            kMsaaStatusId);
-        y += kRowHeight + 6;
-
-        CreateStaticControl(panel, L"\u4eba\u7269\u5f71\u5b50", kPageMargin, y + 4, kNameWidth, 20);
-        g_shadow_resolution_slider = CreateTrackbarControl(
-            panel,
-            kPageMargin + kNameWidth + kToggleWidth,
-            y - 2,
-            kComboWidth + 40,
-            28,
-            kShadowResolutionSliderId);
-        PopulateShadowResolutionSlider(g_shadow_resolution_slider);
-        g_shadow_resolution_value = CreateStaticControl(
-            panel,
-            L"",
-            kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 52,
-            y + 4,
-            72,
-            20,
-            kShadowResolutionValueId);
-        g_shadow_resolution_status = CreateStaticControl(
-            panel,
-            L"",
-            kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 128,
-            y + 4,
-            kStatusWidth + 200,
-            20,
-            kShadowResolutionStatusId);
-        y += kRowHeight + 10;
-
-        CreateStaticControl(panel, L"UI \u91c7\u6837", kPageMargin, y + 4, kNameWidth, 20);
-        g_ui_texture_filter_checkbox = CreateButtonControl(
-            panel,
-            L"Nearest / \u50cf\u7d20\u91c7\u6837",
-            kPageMargin + kNameWidth + 8,
-            y + 2,
-            kComboWidth + 20,
-            20,
-            kUiTextureFilterCheckboxId);
-        g_ui_texture_filter_status = CreateStaticControl(
-            panel,
-            L"",
-            kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
-            y + 4,
-            kStatusWidth + 180,
-            20,
-            kUiTextureFilterStatusId);
-        y += kRowHeight + 6;
-
-        CreateStaticControl(panel, L"\u7cfb\u7edf\u5b57\u4f53", kPageMargin, y + 4, kNameWidth, 20);
-        g_system_font_oversample_checkbox = CreateButtonControl(
-            panel,
-            L"\u9ad8\u6e05\u5b9e\u9a8c\uff08system/systemBold\uff09",
-            kPageMargin + kNameWidth + 8,
-            y + 2,
-            kComboWidth + 120,
-            20,
-            kSystemFontOversampleCheckboxId);
-        g_system_font_oversample_status = CreateStaticControl(
-            panel,
-            L"",
-            kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 10,
-            y + 4,
-            kStatusWidth + 280,
-            20,
-            kSystemFontOversampleStatusId);
-        y += kRowHeight + 6;
+            kPageMargin,
+            y + 24,
+            980,
+            120,
+            kLaunchSettingsStatusId);
+        y += 152;
 
         CreateWindowExW(
             0,
@@ -1240,15 +1056,7 @@ void BuildPanelControls(const HWND hwnd) {
     g_gamepad_status = nullptr;
     g_input_status = nullptr;
     g_script_mode_status = nullptr;
-    g_msaa_combo = nullptr;
-    g_msaa_status = nullptr;
-    g_shadow_resolution_slider = nullptr;
-    g_shadow_resolution_value = nullptr;
-    g_shadow_resolution_status = nullptr;
-    g_ui_texture_filter_checkbox = nullptr;
-    g_ui_texture_filter_status = nullptr;
-    g_system_font_oversample_checkbox = nullptr;
-    g_system_font_oversample_status = nullptr;
+    g_launch_settings_status = nullptr;
 
     RECT client_rect{};
     GetClientRect(hwnd, &client_rect);
@@ -1359,47 +1167,12 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
         }
         break;
     }
-    case WM_HSCROLL:
-        if (reinterpret_cast<HWND>(lparam) == g_shadow_resolution_slider) {
-            const int position = static_cast<int>(
-                SendMessageW(g_shadow_resolution_slider, TBM_GETPOS, 0, 0));
-            ApplyShadowResolutionPreference(
-                ShadowResolutionFromIndex(position),
-                true,
-                true);
-            RefreshPanelContent(hwnd);
-            return 0;
-        }
-        break;
     case WM_COMMAND: {
         const int control_id = LOWORD(wparam);
         const int notify_code = HIWORD(wparam);
         if (control_id == kShutdownButtonId && notify_code == BN_CLICKED) {
             GetRuntimeState().RequestShutdown();
             DestroyWindow(hwnd);
-            return 0;
-        }
-        if (control_id == kMsaaComboId && notify_code == CBN_SELCHANGE) {
-            const int selected = static_cast<int>(SendMessageW(g_msaa_combo, CB_GETCURSEL, 0, 0));
-            ApplyMsaaPreference(MsaaLevelFromIndex(selected), true, true);
-            RefreshPanelContent(hwnd);
-            return 0;
-        }
-        if (control_id == kUiTextureFilterCheckboxId && notify_code == BN_CLICKED) {
-            const bool nearest =
-                SendMessageW(g_ui_texture_filter_checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
-            ApplyUiTextureFilterPreference(
-                nearest ? UiTextureFilter::nearest : UiTextureFilter::linear,
-                true,
-                true);
-            RefreshPanelContent(hwnd);
-            return 0;
-        }
-        if (control_id == kSystemFontOversampleCheckboxId && notify_code == BN_CLICKED) {
-            const bool enabled =
-                SendMessageW(g_system_font_oversample_checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
-            ApplySystemFontOversamplePreference(enabled, true, true, false);
-            RefreshPanelContent(hwnd);
             return 0;
         }
         if (control_id >= kHookToggleBaseId &&
@@ -1469,15 +1242,7 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
         g_gamepad_status = nullptr;
         g_input_status = nullptr;
         g_script_mode_status = nullptr;
-        g_msaa_combo = nullptr;
-        g_msaa_status = nullptr;
-        g_shadow_resolution_slider = nullptr;
-        g_shadow_resolution_value = nullptr;
-        g_shadow_resolution_status = nullptr;
-        g_ui_texture_filter_checkbox = nullptr;
-        g_ui_texture_filter_status = nullptr;
-        g_system_font_oversample_checkbox = nullptr;
-        g_system_font_oversample_status = nullptr;
+        g_launch_settings_status = nullptr;
         PostQuitMessage(0);
         return 0;
     default:
@@ -1568,15 +1333,7 @@ void StopInjectControlWindow() {
     g_gamepad_status = nullptr;
     g_input_status = nullptr;
     g_script_mode_status = nullptr;
-    g_msaa_combo = nullptr;
-    g_msaa_status = nullptr;
-    g_shadow_resolution_slider = nullptr;
-    g_shadow_resolution_value = nullptr;
-    g_shadow_resolution_status = nullptr;
-    g_ui_texture_filter_checkbox = nullptr;
-    g_ui_texture_filter_status = nullptr;
-    g_system_font_oversample_checkbox = nullptr;
-    g_system_font_oversample_status = nullptr;
+    g_launch_settings_status = nullptr;
     g_follow_game_window = true;
 }
 

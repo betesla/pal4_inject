@@ -67,10 +67,12 @@ cmake -S . -B build -A Win32 -DPAL4_INJECT_SYNC_TEST_DEPLOY=OFF
   - `PAL4_inject.exe` 是 GUI 程序，双击启动时不会弹出 CMD 黑窗口
   - 注入相关文件放在游戏目录下的 `pal4_inject` 子目录，便于后续覆盖更新
   - 注入配置、runtime log、crash report / dump 等运行产物也统一放在 `pal4_inject` 子目录
-  - 双击 `PAL4_inject.exe` 后由 GUI 选择 `CS` 或 `CSB`，并记住上次脚本模式选择
-  - GUI 会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、全屏/窗口化、宽屏和垂直同步
-  - GUI 也会读取并保存 `pal4_inject\inject_panel_settings.ini` 里的注入渲染选项，可在启动前设置 `MSAA`、人物阴影分辨率、`UI` 像素采样和系统字体高清实验
-  - 分辨率列表分为“常用分辨率”和“主显示器支持”两个页签
+  - 双击 `PAL4_inject.exe` 后会进入一个常驻中文启动器，不再是“一次性选完就退出”的对话框
+  - 启动器按页签拆成“启动前准备 / 显示与分辨率 / 画面与文字”三块，把需要在进游戏前决定的选项都集中到这里
+  - 启动器会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、全屏/窗口化、宽屏和垂直同步
+  - 启动器也会读取并保存 `pal4_inject\inject_panel_settings.ini` 里的启动前画质策略，可设置 `MSAA`、人物阴影分辨率、`UI` 像素采样、对白高清实验和系统字体高清实验
+  - 分辨率列表仍保留“常用分辨率”和“主显示器支持”两个页签
+  - 启动器底部提供 `启动游戏 / 停止游戏 / 重启游戏 / 检查更新 / 最小化` 按钮；关闭窗口也只会最小化，不会直接退出
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
   - GUI 右上角显示当前版本和作者信息，点击 `B站 @北风7P` 可打开作者主页
   - 当前内置版本为 `v0.1.4`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
@@ -124,8 +126,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
 - runtime DLL 还会拉起一个原生 Win32 注入控制面板：
   - 默认隐藏，按 `Ctrl+J` 显示 / 隐藏
   - 默认会先跟随游戏窗口定位；用户手动拖动后就不再强制吸附
-  - 顶部会显示当前 `MSAA` 和人物阴影分辨率状态，但相关热修改现已改为建议在启动器里设置
-  - 可选开启 `system / systemBold` 的系统字体高清实验：`system` 走更保守的 oversample，并基于原始 metrics 轻微收紧行距/下压基线；`systemBold` 继续走更激进的字形重建并补一点基线
+  - 渲染与文字页顶部现在只显示“启动前画质设定摘要”，告诉你当前 `MSAA`、阴影、UI 采样和字体实验的实际状态；这些设置统一改到启动器里配置
   - 每个 hook 一行，带快速开关、`HookMode` 下拉框和状态栏
   - 面板配置和启动器脚本模式会记忆到游戏目录下的 `pal4_inject\inject_panel_settings.ini`，下次启动自动恢复
   - `Ctrl+J` 显示 / 隐藏面板
@@ -226,9 +227,8 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - [docs/control_panel_guide.md](I:/PAL4/projects/pal4_inject/docs/control_panel_guide.md)
   - [docs/gamepad_guide.md](I:/PAL4/projects/pal4_inject/docs/gamepad_guide.md)
 - 注入后会创建 `PAL4 Inject Control` 小面板，但默认隐藏；按 `Ctrl+J` 显示 / 隐藏。
-- 面板会先显示一个独立的 `Render MSAA` 选项：
-  - 当前支持 `off / 2x / 4x / 8x`
-  - 改动会记忆，但真正生效要等下一次 D3D9 reset 或下一次启动
+- 面板的“渲染与画面”页现在先显示一块启动前设定摘要，用来确认本局实际生效的 `MSAA`、阴影、UI 采样和字体实验状态。
+- 这些启动前设定已经迁移到启动器里统一管理，注入面板不再提供热切编辑。
 - hook 列表区会显示：
   - 更短的可读名称
   - `On` 快速开关

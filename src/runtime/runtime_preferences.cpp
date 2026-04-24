@@ -10,6 +10,18 @@
 namespace pal4::inject {
 namespace {
 
+HookMode NormalizePersistedHookMode(const HookMode mode) {
+    switch (mode) {
+    case HookMode::observe_only:
+    case HookMode::replace_with_fallback:
+        return mode;
+    case HookMode::mirror_compare:
+    case HookMode::replace_strict:
+        return HookMode::replace_with_fallback;
+    }
+    return HookMode::replace_with_fallback;
+}
+
 void RecordPersistenceError(const std::string& error) {
     if (error.empty()) {
         return;
@@ -26,7 +38,8 @@ std::filesystem::path RuntimePreferencesPath() {
 }
 
 HookMode ResolveEnabledHookMode(const HookId id) {
-    const auto preferred = GetRuntimeState().GetPreferredActiveHookMode(id);
+    const auto preferred =
+        NormalizePersistedHookMode(GetRuntimeState().GetPreferredActiveHookMode(id));
     return preferred == HookMode::observe_only
         ? HookMode::replace_with_fallback
         : preferred;
@@ -41,6 +54,7 @@ bool SavePersistedRuntimePreferences(std::string* error) {
     settings.msaa_level = GetRuntimeState().GetMsaaLevel();
     settings.shadow_resolution = GetRuntimeState().GetShadowResolution();
     settings.ui_texture_filter = GetRuntimeState().GetUiTextureFilter();
+    settings.dialog_font_hd_enabled = GetRuntimeState().DialogFontHdEnabled();
     settings.system_font_oversample_enabled =
         GetRuntimeState().SystemFontOversampleEnabled();
     settings.gamepad_enabled = GetRuntimeState().GamepadEnabled();
@@ -97,13 +111,14 @@ void ApplyHookModePreference(
     const bool persist,
     const bool update_last_ui_event) {
     auto& state = GetRuntimeState();
-    state.SetHookMode(id, mode);
+    const HookMode normalized_mode = NormalizePersistedHookMode(mode);
+    state.SetHookMode(id, normalized_mode);
     if (id == HookId::cegui_renderer_constructor_2) {
-        ApplyCeguiRendererHookMode(mode);
+        ApplyCeguiRendererHookMode(normalized_mode);
     } else if (id == HookId::d3d9_set_present_parameters) {
         std::string error;
         const auto requested_level =
-            (mode == HookMode::observe_only || mode == HookMode::mirror_compare)
+            normalized_mode == HookMode::observe_only
             ? MsaaLevel::off
             : state.GetMsaaLevel();
         if (!ApplyRequestedMsaaLevel(requested_level, &error) &&
@@ -113,7 +128,7 @@ void ApplyHookModePreference(
     }
     if (update_last_ui_event) {
         state.SetLastUiEvent(
-            std::string("inject_control:") + ToString(id) + "=" + ToString(mode));
+            std::string("inject_control:") + ToString(id) + "=" + ToString(normalized_mode));
     }
     if (persist) {
         std::string error;
@@ -133,7 +148,7 @@ void ApplyMsaaPreference(
     std::string error;
     const auto hook_mode = state.GetHookMode(HookId::d3d9_set_present_parameters);
     const auto requested_level =
-        (hook_mode == HookMode::observe_only || hook_mode == HookMode::mirror_compare)
+        hook_mode == HookMode::observe_only
         ? MsaaLevel::off
         : level;
     if (!ApplyRequestedMsaaLevel(requested_level, &error) &&
@@ -185,6 +200,33 @@ void ApplyUiTextureFilterPreference(
     if (update_last_ui_event) {
         state.SetLastUiEvent(
             std::string("inject_control:ui_texture_filter=") + ToString(filter));
+    }
+    if (persist) {
+        std::string error;
+        if (!SavePersistedRuntimePreferences(&error)) {
+            RecordPersistenceError(error);
+        }
+    }
+}
+
+void ApplyDialogFontHdPreference(
+    const bool enabled,
+    const bool persist,
+    const bool update_last_ui_event,
+    const bool apply_live_fonts) {
+    auto& state = GetRuntimeState();
+    state.SetDialogFontHdEnabled(enabled);
+    if (update_last_ui_event) {
+        state.SetLastUiEvent(
+            std::string("inject_control:dialog_font_hd=") +
+            (enabled ? "on" : "off"));
+    }
+    if (apply_live_fonts) {
+        std::string error;
+        if (!ApplyDialogFontHdPreferenceToLoadedFonts(enabled, &error) &&
+            !error.empty()) {
+            RecordPersistenceError(error);
+        }
     }
     if (persist) {
         std::string error;
@@ -251,14 +293,25 @@ bool LoadPersistedRuntimePreferences(std::string* error) {
         false,
         false,
         false);
+    ApplyDialogFontHdPreference(
+        settings.dialog_font_hd_enabled,
+        false,
+        false,
+        false);
     ApplyShadowResolutionPreference(settings.shadow_resolution, false, false);
     ApplyGamepadEnabledPreference(settings.gamepad_enabled, false, false);
     ApplyGamepadLogPreference(settings.gamepad_log_enabled, false, false);
     ApplyUiTextureFilterPreference(settings.ui_texture_filter, false, false);
     for (const auto& hook : settings.hooks) {
-        GetRuntimeState().SetPreferredActiveHookMode(hook.id, hook.active_mode);
+        GetRuntimeState().SetPreferredActiveHookMode(
+            hook.id,
+            NormalizePersistedHookMode(hook.active_mode));
         GetRuntimeState().SetHookLogEnabled(hook.id, hook.log_enabled);
-        ApplyHookModePreference(hook.id, hook.mode, false, false);
+        ApplyHookModePreference(
+            hook.id,
+            NormalizePersistedHookMode(hook.mode),
+            false,
+            false);
     }
     ApplyMsaaPreference(settings.msaa_level, false, false);
     if (error) {

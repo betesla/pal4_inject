@@ -5,9 +5,21 @@
 namespace pal4::inject {
 namespace {
 
+HookMode NormalizeSupportedHookMode(const HookMode mode) {
+    switch (mode) {
+    case HookMode::observe_only:
+    case HookMode::replace_with_fallback:
+        return mode;
+    case HookMode::mirror_compare:
+    case HookMode::replace_strict:
+        return HookMode::replace_with_fallback;
+    }
+    return HookMode::replace_with_fallback;
+}
+
 HookMode DefaultPreferredActiveMode(const HookDescriptor& descriptor) {
     if (descriptor.mode != HookMode::observe_only) {
-        return descriptor.mode;
+        return NormalizeSupportedHookMode(descriptor.mode);
     }
     return HookMode::replace_with_fallback;
 }
@@ -81,6 +93,17 @@ bool RuntimeState::UiDispatchReady() const {
 bool RuntimeState::CrashHandlerReady() const {
     std::scoped_lock lock(mutex_);
     return crash_handler_ready_;
+}
+
+void RuntimeState::SetDialogFontHdEnabled(const bool enabled) {
+    std::scoped_lock lock(mutex_);
+    dialog_font_hd_enabled_ = enabled;
+    state_cv_.notify_all();
+}
+
+bool RuntimeState::DialogFontHdEnabled() const {
+    std::scoped_lock lock(mutex_);
+    return dialog_font_hd_enabled_;
 }
 
 void RuntimeState::SetSystemFontOversampleEnabled(const bool enabled) {
@@ -185,9 +208,10 @@ void RuntimeState::IncrementHookCall(const HookId id) {
 void RuntimeState::SetHookMode(const HookId id, const HookMode mode) {
     std::scoped_lock lock(mutex_);
     if (auto* status = FindHookStatusUnlocked(id)) {
-        status->mode = mode;
-        if (mode != HookMode::observe_only) {
-            status->preferred_active_mode = mode;
+        const HookMode normalized = NormalizeSupportedHookMode(mode);
+        status->mode = normalized;
+        if (normalized != HookMode::observe_only) {
+            status->preferred_active_mode = normalized;
         }
     }
     state_cv_.notify_all();
@@ -204,8 +228,9 @@ HookMode RuntimeState::GetHookMode(const HookId id) const {
 void RuntimeState::SetPreferredActiveHookMode(const HookId id, const HookMode mode) {
     std::scoped_lock lock(mutex_);
     if (auto* status = FindHookStatusUnlocked(id)) {
+        const HookMode normalized = NormalizeSupportedHookMode(mode);
         status->preferred_active_mode =
-            mode == HookMode::observe_only ? HookMode::replace_with_fallback : mode;
+            normalized == HookMode::observe_only ? HookMode::replace_with_fallback : normalized;
     }
     state_cv_.notify_all();
 }
@@ -373,6 +398,7 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.ui_dispatch_ready = ui_dispatch_ready_;
     snapshot.crash_handler_ready = crash_handler_ready_;
     snapshot.shadow_resolution = shadow_resolution_;
+    snapshot.dialog_font_hd_enabled = dialog_font_hd_enabled_;
     snapshot.system_font_oversample_enabled = system_font_oversample_enabled_;
     snapshot.gamepad_enabled = gamepad_enabled_;
     snapshot.gamepad_log_enabled = gamepad_log_enabled_;

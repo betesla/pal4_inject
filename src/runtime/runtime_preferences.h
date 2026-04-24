@@ -31,6 +31,11 @@ void ApplyUiTextureFilterPreference(
     UiTextureFilter filter,
     bool persist,
     bool update_last_ui_event);
+void ApplyDialogFontHdPreference(
+    bool enabled,
+    bool persist,
+    bool update_last_ui_event,
+    bool apply_live_fonts);
 void ApplySystemFontOversamplePreference(
     bool enabled,
     bool persist,

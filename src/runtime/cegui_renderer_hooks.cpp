@@ -24,7 +24,6 @@ namespace pal4::inject {
 namespace {
 
 using CeguiRendererConstructor2Fn = void* (__thiscall*)(void*);
-using CeguiSystemInitializeFn = float* (__thiscall*)(float*, void*, void*);
 using SetRenderStatesFn = void (__cdecl*)();
 using PalGameIvInitCameraSubsystemFn = int (__cdecl*)();
 using CameraGetActiveCameraInternalIdFn = int (__thiscall*)(void*);
@@ -62,7 +61,6 @@ constexpr std::ptrdiff_t kRendererScaleXOffset = 0x110;
 constexpr std::ptrdiff_t kRendererScaleYOffset = 0x114;
 
 CeguiRendererConstructor2Fn g_original_cegui_renderer_constructor_2 = nullptr;
-CeguiSystemInitializeFn g_original_cegui_system_initialize = nullptr;
 SetRenderStatesFn g_set_render_states = nullptr;
 PalGameIvInitCameraSubsystemFn g_pal_game_iv_init_camera_subsystem = nullptr;
 CameraGetActiveCameraInternalIdFn g_camera_get_active_camera_internal_id = nullptr;
@@ -507,30 +505,12 @@ void* __fastcall Hook_CeguiRendererConstructor2(void* self, void*) {
     return renderer;
 }
 
-float* __fastcall Hook_CeguiSystemInitialize(
-    float* self,
-    void*,
-    void* renderer,
-    void* resource_provider) {
-    auto& state = GetRuntimeState();
-    state.IncrementHookCall(HookId::cegui_system_initialize);
-    if (!g_original_cegui_system_initialize) {
-        state.SetHookError(
-            HookId::cegui_system_initialize,
-            "original CEGUI_System_Initialize trampoline is null");
-        return nullptr;
-    }
-    return g_original_cegui_system_initialize(self, renderer, resource_provider);
-}
-
 }  // namespace
 
 void* GetCeguiRendererReplacementForHook(const HookId id) {
     switch (id) {
     case HookId::cegui_renderer_constructor_2:
         return reinterpret_cast<void*>(&Hook_CeguiRendererConstructor2);
-    case HookId::cegui_system_initialize:
-        return reinterpret_cast<void*>(&Hook_CeguiSystemInitialize);
     default:
         return nullptr;
     }
@@ -541,10 +521,6 @@ void SetCeguiRendererOriginalTrampoline(const HookId id, void* trampoline) {
     case HookId::cegui_renderer_constructor_2:
         g_original_cegui_renderer_constructor_2 =
             reinterpret_cast<CeguiRendererConstructor2Fn>(trampoline);
-        break;
-    case HookId::cegui_system_initialize:
-        g_original_cegui_system_initialize =
-            reinterpret_cast<CeguiSystemInitializeFn>(trampoline);
         break;
     default:
         break;

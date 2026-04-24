@@ -21,6 +21,7 @@ struct InjectPersistedSettings {
     ShadowResolution shadow_resolution = ShadowResolution::x64;
     UiTextureFilter ui_texture_filter = UiTextureFilter::nearest;
     ScriptMode launcher_script_mode = ScriptMode::csb;
+    bool dialog_font_hd_enabled = true;
     bool system_font_oversample_enabled = false;
     bool gamepad_enabled = true;
     bool gamepad_log_enabled = false;

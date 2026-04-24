@@ -656,15 +656,36 @@
   - `oversampled_point_size=...`
   - `draw_scale=0.500000`
   - `extent_scale=...`
+  - `observe_glyph_image_offsets=1`
+  - `set_vert_scaling_hook=1`
+- 2026-04-24 新增了只观测链路：
+  - `system` 在重建 `system_auto_glyph_images` 时，会额外记录 `hook=imageset_define_image_observe`
+  - 同一批 glyph 会继续记录 `hook=image_set_vert_scaling_observe`
+  - 第二条日志里的 `final_offset_y` 就等价于当时 `Image::getOffsetY()` 会返回的值，因为 `getOffsetY()` 只是直接读 `Image + 0x28`
+  - 当前实测 `system` glyph 的 `final_offset_y` 与 `defineImage(...)` 输入基本一致，只存在像素对齐带来的约 `+1` 取整差值，说明 glyph image 偏移链本身没有明显异常
+  - 因此下一步调查要转向 `system` 文本消费方自己的 `drawText rect / formatting / 控件布局`
+  - 进一步追到 `OIRAMLOOK.dll` 后，已确认偏上的按钮标题来自：
+    - `CEGUI::OLButton::drawNormal @ 0x10017398`
+    - `CEGUI::OLButton::drawHover @ 0x100173A0`
+  - `CEGUI::OLButton::drawPushed @ 0x10017610`
+- 这三条路径都会硬编码 `formatting=2`，并在调用 `Font::drawText(...)` 前自行计算按钮标题 `rect`
+- 因此当前最窄修复先不改全局 `system` metrics，而是在这三条 `OLButton` caller 上对 `drawText rect` 做小幅下移
+- 2026-04-24 继续细化后，这条窄修复会额外输出 `hook=oiramlook_olbutton_rect_adjust`，并把 `system` 页签标题下移量从 `1.0` 提到 `2.0`，便于区分“分支未命中”和“命中了但 1px 不够”
+- 同日进一步确认：按钮“选中态”并不总走前面三条路径，部分页签会改走：
+  - `CEGUI::OLButton::drawDisabled @ 0x10017a00`，其 `drawText` return caller 为 `OIRAMLOOK.dll+0x17ae2`
+  - `CEGUI::OLButton::drawSelected @ 0x10017b20`，其 `drawText` return caller 为 `OIRAMLOOK.dll+0x17ca2`
+- 因此 `OLButton` 标题下移的 caller 白名单需要一并覆盖这两条“已选中/禁用态”路径，否则会出现“不点按钮时稍微下移，点了后仍旧靠上”的现象
+- 运行时实际匹配时，优先直接使用已验证可靠的 `caller=OIRAMLOOK.dll+0x...` 描述串，而不是重新做一次模块/RVA 拆分；这样更贴近 live log 里的真实观测值，也更容易和截图、日志一一对照
 - 因此下一轮人工验证时，应该优先看：
   1. 对白框正文是否比之前更接近“同字号但更实”
   2. 是否出现行距、换行、裁剪等新副作用
   3. 是否需要继续把缩放补偿扩展到其它 `Font::*draw*` 路径
 
 ### TODO
-- [ ] 为 `system_auto_glyph_images` 增加只观测、不改值的运行时日志，记录 `defineImage(...)` 传入的 `offsetY`
-- [ ] 对比 `Image::setVertScaling()` 后的最终 `Image::getOffsetY()`，确认问题是否出在 glyph image 的缩放后偏移
+- [x] 为 `system_auto_glyph_images` 增加只观测、不改值的运行时日志，记录 `defineImage(...)` 传入的 `offsetY`
+- [x] 对比 `Image::setVertScaling()` 后的最终 `Image::getOffsetY()`，确认问题是否出在 glyph image 的缩放后偏移
 - [ ] 如果 `offsetY` 本身正常，则继续追 `system` 文本所在控件的消费方布局，而不是再调 font metrics
+- [ ] 用开启高清化后的“仙剑探秘”实机界面再验证一次 `hook=oiramlook_olbutton_rect_adjust` 是否命中，并确认 `2.0` 的 `rect.y` 下移是否足够
 - [ ] 只有在观测证据充分后，才重新引入更窄的 `offsetY` 修正实验；默认产物保持当前稳定链路
 
 ## 2026-04-22 Failed attempt: inline hook at `appendCharacter`
@@ -1199,12 +1220,13 @@
   - 字体 runtime 已把 `dialog_simsun` 的 `line_spacing_final` 收敛到约 `17.38`
   - 但 `SDialogEditbox` 仍会额外叠加布局里的 `LineSpaceExtent=3`
   - 所以继续调 `Font::lineSpacing` 会误伤字体全局语义，也不能解释“没有姓名行也一样”
-- 当前 runtime 修正：
+- 当时的 runtime 修正：
   - 在 `dialog_HandleTextDisplay` hook 入口拿到 `ScenarioDialog/EditDialog` 的 editbox 指针
   - 首次看到该 editbox 时调用 `Window::setProperty("LineSpaceExtent", "0.000000")`
   - 只作用于剧情对白 hook 路径，不改其它窗口 XML，也不影响装备/任务/帮助等其它大量使用 `LineSpaceExtent` 的界面
-  - 成功时事件日志会出现：
-    - `hook=dialog_line_space_fix property=LineSpaceExtent value=0.000000`
+  - 2026-04-24 已根据运行时 A/B 结果移除：
+    - 它会干扰对白点击与下一句推进
+    - 不再保留在当前默认 runtime 中
 
 ## 2026-04-23 修正：OIRAMLOOK 富文本行高仍消费未缩放 glyph 高度
 - 用户用实际截图继续确认：正文内部两行之间仍然被拉开，已经不是单纯的“姓名行到正文行”间距，也不是 `ScenarioDialog/EditDialog` 的 `LineSpaceExtent` 能解释的量级。
@@ -1287,9 +1309,9 @@ Runtime 修复：
   - 2026-04-23 已修正 oversampled `dialog_simsun` 的横向度量二次补偿问题：
     - `drawText` 内部调用 `getTextExtent / getFormattedTextExtent / getWrappedTextExtent / getCharAtPixel` 时不再重复乘 `0.5`
     - 这应直接收敛 AverageWidth/Justified 分支把字间距摊大的问题
-  - 2026-04-23 已确认对白布局本身有 `LineSpaceExtent=3.000000`，并加入剧情对白 editbox 的 runtime 属性覆盖：
+  - 2026-04-23 已确认对白布局本身有 `LineSpaceExtent=3.000000`，并做过剧情对白 editbox 的 runtime 属性覆盖实验：
     - `LineSpaceExtent -> 0.000000`
-    - 这条修复是控件级行间距修正，不再继续全局压字体 `lineSpacing`
+    - 但 2026-04-24 已因点击/翻页回归移除
   - 2026-04-23 已加入 OIRAMLOOK 富文本行高 hook：
     - `TextGlyph::getHeight` 直接读取 `Font + 0xD0`
     - 若读到的仍是 oversample 未缩放高度，则按 `0.5 * 1.0` 收回
@@ -1316,3 +1338,20 @@ Runtime 修复：
   2. 不再把 `font_height_before/after` 不变直接等同于“没重建”
   3. 下一步优先继续下探 `createFontFromFT_Face(...)` 及其底层 FreeType helper，确认真实 glyph 栅格尺寸控制点
   4. point/nearest filter 实验保留为可切换辅证，但不再把它当成主修复方向
+
+## 2026-04-24 对白无法点击的结论
+- 经过启动器 A/B 与运行时回退验证，当前高置信度结论是：
+  - 启动前开启 `dialog_simsun` 的对白高清实验，本身不会导致“对白不能点击下一句”
+  - 真正导致异常的是后续加进 `dialog_pagination_hooks.cpp` 的对白控件 runtime 覆盖实验：
+    - `ScenarioDialog/EditDialog`
+    - `LineSpaceExtent -> 0.000000`
+- 该实验的实际副作用表现为：
+  - 点击对白时会先把当前句一次性打完
+  - 但随后不能正常推进到下一句
+- 因此当前仓库结论应记录为：
+  - 对白基础高清链 `dialog_simsun oversample + draw/metric/getCharAtPixel/RichText compensation` 不是这次点击回归的主因
+  - `LineSpaceExtent -> 0` 才是已通过实机 A/B 证伪后确认的错误分支
+  - 这条覆盖已从默认 runtime 中移除
+- 另外一条独立经验是：
+  - 在游戏运行中对已加载的 `dialog_simsun` 做 live restore/reapply 会带来卡死风险
+  - 所以注入面板里的“对白高清实验”现在只保存状态，建议通过启动器在进入游戏前做 A/B
