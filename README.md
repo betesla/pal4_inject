@@ -20,7 +20,7 @@
 - `tests`
   - 单元测试与可选的原始 EXE 集成测试
 - `docs`
-  - 架构、Hook inventory、控制面板和手柄说明文档
+  - 架构、Hook inventory、控制面板、手柄说明和调查文档
 
 ## 构建
 必须使用 Win32/x86 生成器。
@@ -69,6 +69,7 @@ cmake -S . -B build -A Win32 -DPAL4_INJECT_SYNC_TEST_DEPLOY=OFF
   - 注入配置、runtime log、crash report / dump 等运行产物也统一放在 `pal4_inject` 子目录
   - 双击 `PAL4_inject.exe` 后由 GUI 选择 `CS` 或 `CSB`，并记住上次脚本模式选择
   - GUI 会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、全屏/窗口化、宽屏和垂直同步
+  - GUI 也会读取并保存 `pal4_inject\inject_panel_settings.ini` 里的注入渲染选项，可在启动前设置 `MSAA`、人物阴影分辨率、`UI` 像素采样和系统字体高清实验
   - 分辨率列表分为“常用分辨率”和“主显示器支持”两个页签
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
   - GUI 右上角显示当前版本和作者信息，点击 `B站 @北风7P` 可打开作者主页
@@ -123,7 +124,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
 - runtime DLL 还会拉起一个原生 Win32 注入控制面板：
   - 默认隐藏，按 `Ctrl+J` 显示 / 隐藏
   - 默认会先跟随游戏窗口定位；用户手动拖动后就不再强制吸附
-  - 顶部单独暴露 `MSAA` 画质项
+  - 顶部会显示当前 `MSAA` 和人物阴影分辨率状态，但相关热修改现已改为建议在启动器里设置
   - 可选开启 `system / systemBold` 的系统字体高清实验：`system` 走更保守的 oversample，并基于原始 metrics 轻微收紧行距/下压基线；`systemBold` 继续走更激进的字形重建并补一点基线
   - 每个 hook 一行，带快速开关、`HookMode` 下拉框和状态栏
   - 面板配置和启动器脚本模式会记忆到游戏目录下的 `pal4_inject\inject_panel_settings.ini`，下次启动自动恢复
@@ -242,6 +243,12 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - `CEGUI_Renderer_Constructor_2` widescreen pillarbox
   - `Camera_UpdateMatrix` pitch guard
   - `D3D9SetPresentParameters` multisample override
+
+## Investigation Notes
+- 文本宽屏发糊调查：
+  - [docs/text_rendering_investigation.md](I:/PAL4/projects/pal4_inject/docs/text_rendering_investigation.md)
+- 人物影子渲染链调查：
+  - [docs/shadow_rendering_investigation.md](I:/PAL4/projects/pal4_inject/docs/shadow_rendering_investigation.md)
 
 ## 测试
 - `pal4_inject_tests.exe`

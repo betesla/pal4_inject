@@ -32,6 +32,13 @@ enum class MsaaLevel : std::uint8_t {
     x8,
 };
 
+enum class ShadowResolution : std::uint8_t {
+    x64 = 0,
+    x128,
+    x256,
+    x512,
+};
+
 enum class UiTextureFilter : std::uint8_t {
     linear = 0,
     nearest,
@@ -101,6 +108,7 @@ struct RuntimeSnapshot {
     bool pipe_ready = false;
     bool ui_dispatch_ready = false;
     bool crash_handler_ready = false;
+    ShadowResolution shadow_resolution = ShadowResolution::x64;
     bool system_font_oversample_enabled = false;
     bool gamepad_enabled = true;
     bool gamepad_log_enabled = false;
@@ -145,12 +153,14 @@ public:
 const char* ToString(CallingConvention cc) noexcept;
 const char* ToString(HookMode mode) noexcept;
 const char* ToString(MsaaLevel level) noexcept;
+const char* ToString(ShadowResolution resolution) noexcept;
 const char* ToString(UiTextureFilter filter) noexcept;
 const char* ToString(ScriptMode mode) noexcept;
 const char* ToString(HookId id) noexcept;
 
 bool TryParseHookMode(std::string_view text, HookMode* out) noexcept;
 bool TryParseMsaaLevel(std::string_view text, MsaaLevel* out) noexcept;
+bool TryParseShadowResolution(std::string_view text, ShadowResolution* out) noexcept;
 bool TryParseUiTextureFilter(std::string_view text, UiTextureFilter* out) noexcept;
 bool TryParseScriptMode(std::string_view text, ScriptMode* out) noexcept;
 bool TryParseHookId(std::string_view text, HookId* out) noexcept;

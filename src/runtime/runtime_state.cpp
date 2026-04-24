@@ -261,6 +261,17 @@ MsaaLevel RuntimeState::GetMsaaLevel() const {
     return msaa_level_;
 }
 
+void RuntimeState::SetShadowResolution(const ShadowResolution resolution) {
+    std::scoped_lock lock(mutex_);
+    shadow_resolution_ = resolution;
+    state_cv_.notify_all();
+}
+
+ShadowResolution RuntimeState::GetShadowResolution() const {
+    std::scoped_lock lock(mutex_);
+    return shadow_resolution_;
+}
+
 void RuntimeState::SetUiTextureFilter(const UiTextureFilter filter) {
     std::scoped_lock lock(mutex_);
     ui_texture_filter_ = filter;
@@ -361,6 +372,7 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.pipe_ready = pipe_ready_;
     snapshot.ui_dispatch_ready = ui_dispatch_ready_;
     snapshot.crash_handler_ready = crash_handler_ready_;
+    snapshot.shadow_resolution = shadow_resolution_;
     snapshot.system_font_oversample_enabled = system_font_oversample_enabled_;
     snapshot.gamepad_enabled = gamepad_enabled_;
     snapshot.gamepad_log_enabled = gamepad_log_enabled_;

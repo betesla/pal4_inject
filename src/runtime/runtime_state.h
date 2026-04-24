@@ -55,6 +55,8 @@ public:
     void ClearHookError(HookId id);
     void SetMsaaLevel(MsaaLevel level);
     MsaaLevel GetMsaaLevel() const;
+    void SetShadowResolution(ShadowResolution resolution);
+    ShadowResolution GetShadowResolution() const;
     void SetUiTextureFilter(UiTextureFilter filter);
     UiTextureFilter GetUiTextureFilter() const;
 
@@ -105,6 +107,7 @@ private:
     std::string pipe_name_;
     std::vector<HookStatus> hook_statuses_;
     MsaaLevel msaa_level_ = MsaaLevel::off;
+    ShadowResolution shadow_resolution_ = ShadowResolution::x64;
     UiTextureFilter ui_texture_filter_ = UiTextureFilter::nearest;
     std::uint32_t last_paliv_entry_observed_ = 0;
     std::string last_ui_event_;

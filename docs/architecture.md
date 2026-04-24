@@ -119,6 +119,12 @@
   - `d3d9_quality_hooks.cpp`
     - `D3D9SetPresentParameters` seam
     - 通过原始多重采样探测路径接入 `MSAA` 请求值
+  - `shadow_quality_hooks.cpp`
+    - 人物阴影 shadow-camera 质量参数覆盖
+    - 当前集中管理：
+      - shadow raster 分辨率
+      - half-res 中间纹理
+      - blur pass 次数
   - `minimap_hooks.cpp`
     - `SetupMinimapTexture` widescreen remap so minimap image follows the centered UI frame
   - `input_hooks.cpp`
@@ -128,13 +134,13 @@
   - `crash_handler.cpp`
     - VEH / unhandled exception handler、crash report、minidump
   - `inject_control_window.cpp`
-    - 原生 Win32 控制面板、`MSAA` 选项、hook 快速开关和 mode 下拉框、`Ctrl+F10` 隐藏/显示
+    - 原生 Win32 控制面板、`MSAA` / 人物阴影分辨率滑块、hook 快速开关和 mode 下拉框、`Ctrl+J` 隐藏/显示
     - 每条 hook 独立的 `日志` 勾选框，可只打开某一项的运行时诊断输出
     - 初始吸附游戏窗口；手动拖动后停止自动跟随
     - 作为游戏窗口 owned popup 存在，减少焦点切回游戏时的外部窗体干扰
   - `runtime_preferences.cpp`
     - 把 panel 改动统一转成 runtime side effect
-    - 保存 / 加载 remembered hook mode 与 `MSAA` 设置
+    - 保存 / 加载 remembered hook mode 与 `MSAA` / 人物阴影分辨率设置
   - `memory_debug_runtime.cpp`
     - `IDA EA / runtime VA` 解析
     - `VirtualQuery` region 探测

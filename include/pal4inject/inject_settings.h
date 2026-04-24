@@ -18,6 +18,7 @@ struct PersistedHookSetting {
 
 struct InjectPersistedSettings {
     MsaaLevel msaa_level = MsaaLevel::off;
+    ShadowResolution shadow_resolution = ShadowResolution::x64;
     UiTextureFilter ui_texture_filter = UiTextureFilter::nearest;
     ScriptMode launcher_script_mode = ScriptMode::csb;
     bool system_font_oversample_enabled = false;

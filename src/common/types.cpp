@@ -32,6 +32,13 @@ constexpr std::array<EnumName<MsaaLevel>, 4> kMsaaLevels{{
     {MsaaLevel::x8, "8x"},
 }};
 
+constexpr std::array<EnumName<ShadowResolution>, 4> kShadowResolutions{{
+    {ShadowResolution::x64, "64"},
+    {ShadowResolution::x128, "128"},
+    {ShadowResolution::x256, "256"},
+    {ShadowResolution::x512, "512"},
+}};
+
 constexpr std::array<EnumName<UiTextureFilter>, 2> kUiTextureFilters{{
     {UiTextureFilter::linear, "linear"},
     {UiTextureFilter::nearest, "nearest"},
@@ -108,6 +115,10 @@ const char* ToString(const MsaaLevel level) noexcept {
     return FindEnumName(level, kMsaaLevels);
 }
 
+const char* ToString(const ShadowResolution resolution) noexcept {
+    return FindEnumName(resolution, kShadowResolutions);
+}
+
 const char* ToString(const UiTextureFilter filter) noexcept {
     return FindEnumName(filter, kUiTextureFilters);
 }
@@ -126,6 +137,10 @@ bool TryParseHookMode(const std::string_view text, HookMode* out) noexcept {
 
 bool TryParseMsaaLevel(const std::string_view text, MsaaLevel* out) noexcept {
     return TryParseEnum(text, kMsaaLevels, out);
+}
+
+bool TryParseShadowResolution(const std::string_view text, ShadowResolution* out) noexcept {
+    return TryParseEnum(text, kShadowResolutions, out);
 }
 
 bool TryParseUiTextureFilter(const std::string_view text, UiTextureFilter* out) noexcept {

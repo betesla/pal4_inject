@@ -23,6 +23,10 @@ void ApplyMsaaPreference(
     MsaaLevel level,
     bool persist,
     bool update_last_ui_event);
+void ApplyShadowResolutionPreference(
+    ShadowResolution resolution,
+    bool persist,
+    bool update_last_ui_event);
 void ApplyUiTextureFilterPreference(
     UiTextureFilter filter,
     bool persist,

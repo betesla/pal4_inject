@@ -144,6 +144,7 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/minimap_hooks.cpp
     src/runtime/runtime_preferences.cpp
     src/runtime/runtime_state.cpp
+    src/runtime/shadow_quality_hooks.cpp
     src/runtime/ui_snapshot_runtime.cpp
     src/runtime/window_focus_hooks.cpp
 )

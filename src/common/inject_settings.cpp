@@ -12,7 +12,7 @@
 namespace pal4::inject {
 namespace {
 
-constexpr int kSettingsVersion = 2;
+constexpr int kSettingsVersion = 4;
 
 std::string TrimAscii(const std::string_view text) {
     std::size_t begin = 0;
@@ -40,6 +40,7 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
     std::ostringstream out;
     out << "version=" << kSettingsVersion << '\n';
     out << "msaa_level=" << ToString(settings.msaa_level) << '\n';
+    out << "shadow_resolution=" << ToString(settings.shadow_resolution) << '\n';
     out << "ui_texture_filter=" << ToString(settings.ui_texture_filter) << '\n';
     out << "launcher_script_mode=" << ToString(settings.launcher_script_mode) << '\n';
     out << "system_font_oversample_enabled="
@@ -104,6 +105,29 @@ bool ParseInjectPersistedSettings(
             if (!TryParseMsaaLevel(value, &out->msaa_level)) {
                 if (error) {
                     *error = "invalid msaa_level value: " + value;
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "shadow_resolution") {
+            if (!TryParseShadowResolution(value, &out->shadow_resolution)) {
+                if (error) {
+                    *error = "invalid shadow_resolution value: " + value;
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "hd_shadow_enabled") {
+            // Backward compatibility for v3 settings files.
+            if (value == "1" || value == "true" || value == "on") {
+                out->shadow_resolution = ShadowResolution::x256;
+            } else if (value == "0" || value == "false" || value == "off") {
+                out->shadow_resolution = ShadowResolution::x64;
+            } else {
+                if (error) {
+                    *error = "invalid hd_shadow_enabled value: " + value;
                 }
                 return false;
             }

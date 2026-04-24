@@ -5,6 +5,7 @@
 #include "d3d9_quality_hooks.h"
 #include "pal4inject/inject_settings.h"
 #include "runtime_state.h"
+#include "shadow_quality_hooks.h"
 
 namespace pal4::inject {
 namespace {
@@ -38,6 +39,7 @@ bool SavePersistedRuntimePreferences(std::string* error) {
         settings = {};
     }
     settings.msaa_level = GetRuntimeState().GetMsaaLevel();
+    settings.shadow_resolution = GetRuntimeState().GetShadowResolution();
     settings.ui_texture_filter = GetRuntimeState().GetUiTextureFilter();
     settings.system_font_oversample_enabled =
         GetRuntimeState().SystemFontOversampleEnabled();
@@ -150,6 +152,30 @@ void ApplyMsaaPreference(
     }
 }
 
+void ApplyShadowResolutionPreference(
+    const ShadowResolution resolution,
+    const bool persist,
+    const bool update_last_ui_event) {
+    auto& state = GetRuntimeState();
+    state.SetShadowResolution(resolution);
+
+    std::string error;
+    if (!ApplyShadowResolutionGlobals(resolution, &error) &&
+        state.MainModuleBase() != 0) {
+        RecordPersistenceError(error);
+    }
+
+    if (update_last_ui_event) {
+        state.SetLastUiEvent(
+            std::string("inject_control:shadow_resolution=") + ToString(resolution));
+    }
+    if (persist) {
+        if (!SavePersistedRuntimePreferences(&error)) {
+            RecordPersistenceError(error);
+        }
+    }
+}
+
 void ApplyUiTextureFilterPreference(
     const UiTextureFilter filter,
     const bool persist,
@@ -225,6 +251,7 @@ bool LoadPersistedRuntimePreferences(std::string* error) {
         false,
         false,
         false);
+    ApplyShadowResolutionPreference(settings.shadow_resolution, false, false);
     ApplyGamepadEnabledPreference(settings.gamepad_enabled, false, false);
     ApplyGamepadLogPreference(settings.gamepad_log_enabled, false, false);
     ApplyUiTextureFilterPreference(settings.ui_texture_filter, false, false);

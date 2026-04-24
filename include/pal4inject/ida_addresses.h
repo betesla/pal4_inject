@@ -51,6 +51,10 @@ inline constexpr std::uint32_t kD3d9MaxMsaaQualityLevelsGlobal = 0x8D572C;
 inline constexpr std::uint32_t kD3d9RequestedNonMaskableQualityGlobal = 0x8D5730;
 inline constexpr std::uint32_t kD3d9PresentMultiSampleTypeGlobal = 0x97A4F0;
 inline constexpr std::uint32_t kD3d9PresentMultiSampleQualityGlobal = 0x97A4F4;
+inline constexpr std::uint32_t kShadowQualityEnableGlobal = 0x8C27E4;
+inline constexpr std::uint32_t kShadowResolutionShiftGlobal = 0x8C27E8;
+inline constexpr std::uint32_t kShadowBlurPassCountGlobal = 0x8C27EC;
+inline constexpr std::uint32_t kShadowHalfResGlobal = 0x8C27F0;
 inline constexpr std::uint32_t kRenderStateInterfaceGlobal = 0x950CD0;
 
 inline constexpr std::ptrdiff_t kUiFrameManagerProcessUiEventThisOffset = 408;

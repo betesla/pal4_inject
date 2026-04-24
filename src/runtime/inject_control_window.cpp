@@ -22,6 +22,7 @@
 #include "pal4inject_build_info.h"
 #include "runtime_preferences.h"
 #include "runtime_state.h"
+#include "shadow_quality_hooks.h"
 
 namespace pal4::inject {
 namespace {
@@ -57,6 +58,9 @@ constexpr int kUiTextureFilterCheckboxId = 3005;
 constexpr int kUiTextureFilterStatusId = 3006;
 constexpr int kSystemFontOversampleCheckboxId = 3007;
 constexpr int kSystemFontOversampleStatusId = 3008;
+constexpr int kShadowResolutionSliderId = 3009;
+constexpr int kShadowResolutionStatusId = 3010;
+constexpr int kShadowResolutionValueId = 3011;
 constexpr int kFooterLabelId = 4000;
 constexpr int kShutdownButtonId = 4001;
 constexpr int kTabControlId = 4100;
@@ -97,6 +101,9 @@ HWND g_input_status = nullptr;
 HWND g_script_mode_status = nullptr;
 HWND g_msaa_combo = nullptr;
 HWND g_msaa_status = nullptr;
+HWND g_shadow_resolution_slider = nullptr;
+HWND g_shadow_resolution_value = nullptr;
+HWND g_shadow_resolution_status = nullptr;
 HWND g_ui_texture_filter_checkbox = nullptr;
 HWND g_ui_texture_filter_status = nullptr;
 HWND g_system_font_oversample_checkbox = nullptr;
@@ -110,6 +117,7 @@ int PageIndex(const InjectControlPanelPage page) noexcept {
 void ApplyFont(HWND hwnd);
 int BuildHookPageHeader(HWND panel, InjectControlPanelPage page, int y, bool show_msaa_block);
 void BuildHookRowsForPage(HWND panel, InjectControlPanelPage page, int y);
+std::wstring BuildShadowResolutionLabel(ShadowResolution resolution);
 
 std::wstring WideFromNarrow(const std::string_view text) {
     if (text.empty()) {
@@ -362,6 +370,23 @@ std::wstring BuildLocalizedMsaaStatusText(
             text += WideFromNarrow(msaa_hook->last_error);
         }
     }
+    text += L" | \u8bf7\u5728\u542f\u52a8\u5668\u4e2d\u4fee\u6539";
+    return text;
+}
+
+std::wstring BuildLocalizedShadowResolutionStatusText(const RuntimeState& state) {
+    ShadowQualitySnapshot snapshot{};
+    std::wstring text;
+    if (BuildShadowQualitySnapshot(&snapshot)) {
+        text = WideFromNarrow(DescribeShadowQualityState(snapshot));
+    } else {
+        text = L"Desired ";
+        text += BuildShadowResolutionLabel(state.GetShadowResolution());
+        text += L" | waiting for runtime";
+    }
+    text +=
+        L" | \u5bf9\u5df2\u521b\u5efa\u7684\u5f71\u5b50\u76f8\u673a\uff0c\u901a\u5e38\u9700\u5207\u56fe/\u91cd\u8fdb\u573a\u666f\u540e\u624d\u4f1a\u5b8c\u5168\u91cd\u5efa";
+    text += L" | \u8bf7\u5728\u542f\u52a8\u5668\u4e2d\u4fee\u6539";
     return text;
 }
 
@@ -535,6 +560,30 @@ HWND CreateComboControl(
     return control;
 }
 
+HWND CreateTrackbarControl(
+    const HWND parent,
+    const int x,
+    const int y,
+    const int width,
+    const int height,
+    const int control_id) {
+    const HWND control = CreateWindowExW(
+        0,
+        TRACKBAR_CLASSW,
+        L"",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_AUTOTICKS | TBS_HORZ,
+        x,
+        y,
+        width,
+        height,
+        parent,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(control_id)),
+        nullptr,
+        nullptr);
+    ApplyFont(control);
+    return control;
+}
+
 HWND CreateReadOnlyTextBox(
     const HWND parent,
     const int x,
@@ -579,11 +628,32 @@ std::array<MsaaLevel, 4> BuildMsaaLevels() {
     };
 }
 
+std::array<ShadowResolution, 4> BuildShadowResolutions() {
+    return {
+        ShadowResolution::x64,
+        ShadowResolution::x128,
+        ShadowResolution::x256,
+        ShadowResolution::x512,
+    };
+}
+
 void PopulateMsaaCombo(const HWND combo) {
     for (const auto level : BuildMsaaLevels()) {
         const auto text = WideFromNarrow(ToString(level));
         SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(text.c_str()));
     }
+}
+
+void PopulateShadowResolutionSlider(const HWND slider) {
+    SendMessageW(slider, TBM_SETRANGEMIN, FALSE, 0);
+    SendMessageW(
+        slider,
+        TBM_SETRANGEMAX,
+        FALSE,
+        static_cast<LPARAM>(BuildShadowResolutions().size() - 1));
+    SendMessageW(slider, TBM_SETTICFREQ, 1, 0);
+    SendMessageW(slider, TBM_SETPAGESIZE, 0, 1);
+    SendMessageW(slider, TBM_SETLINESIZE, 0, 1);
 }
 
 void PopulateHookModeCombo(const HWND combo) {
@@ -609,6 +679,28 @@ MsaaLevel MsaaLevelFromIndex(const int index) noexcept {
         return MsaaLevel::off;
     }
     return levels[static_cast<std::size_t>(index)];
+}
+
+int FindShadowResolutionIndex(const ShadowResolution resolution) noexcept {
+    const auto levels = BuildShadowResolutions();
+    for (int i = 0; i < static_cast<int>(levels.size()); ++i) {
+        if (levels[static_cast<std::size_t>(i)] == resolution) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+ShadowResolution ShadowResolutionFromIndex(const int index) noexcept {
+    const auto levels = BuildShadowResolutions();
+    if (index < 0 || index >= static_cast<int>(levels.size())) {
+        return ShadowResolution::x64;
+    }
+    return levels[static_cast<std::size_t>(index)];
+}
+
+std::wstring BuildShadowResolutionLabel(const ShadowResolution resolution) {
+    return WideFromNarrow(ToString(resolution)) + L"x" + WideFromNarrow(ToString(resolution));
 }
 
 RECT GetPageContentRect() {
@@ -689,6 +781,13 @@ bool IsComboInteractionActive(const HWND combo) {
         return true;
     }
     return GetFocus() == combo;
+}
+
+bool IsSliderInteractionActive(const HWND slider) {
+    if (!slider || !IsWindow(slider)) {
+        return false;
+    }
+    return GetFocus() == slider || GetCapture() == slider;
 }
 
 void RefreshPanelPlacement(const HWND hwnd) {
@@ -772,10 +871,35 @@ void RefreshPanelContent(const HWND hwnd) {
             SendMessageW(g_msaa_combo, CB_SETCURSEL, expected_index, 0);
         }
     }
+    if (g_msaa_combo) {
+        EnableWindow(g_msaa_combo, FALSE);
+    }
 
     if (g_msaa_status) {
         const auto* msaa_hook = FindStatus(statuses, HookId::d3d9_set_present_parameters);
         SetWindowTextW(g_msaa_status, BuildLocalizedMsaaStatusText(state, msaa_hook).c_str());
+    }
+    const bool shadow_slider_interaction = IsSliderInteractionActive(g_shadow_resolution_slider);
+    if (g_shadow_resolution_slider && !shadow_slider_interaction) {
+        const int expected_index = FindShadowResolutionIndex(state.GetShadowResolution());
+        const int current_index = static_cast<int>(
+            SendMessageW(g_shadow_resolution_slider, TBM_GETPOS, 0, 0));
+        if (current_index != expected_index) {
+            SendMessageW(g_shadow_resolution_slider, TBM_SETPOS, TRUE, expected_index);
+        }
+    }
+    if (g_shadow_resolution_slider) {
+        EnableWindow(g_shadow_resolution_slider, FALSE);
+    }
+    if (g_shadow_resolution_value) {
+        SetWindowTextW(
+            g_shadow_resolution_value,
+            BuildShadowResolutionLabel(state.GetShadowResolution()).c_str());
+    }
+    if (g_shadow_resolution_status) {
+        SetWindowTextW(
+            g_shadow_resolution_status,
+            BuildLocalizedShadowResolutionStatusText(state).c_str());
     }
 
     if (g_ui_texture_filter_checkbox) {
@@ -928,6 +1052,33 @@ int BuildHookPageHeader(
             kMsaaStatusId);
         y += kRowHeight + 6;
 
+        CreateStaticControl(panel, L"\u4eba\u7269\u5f71\u5b50", kPageMargin, y + 4, kNameWidth, 20);
+        g_shadow_resolution_slider = CreateTrackbarControl(
+            panel,
+            kPageMargin + kNameWidth + kToggleWidth,
+            y - 2,
+            kComboWidth + 40,
+            28,
+            kShadowResolutionSliderId);
+        PopulateShadowResolutionSlider(g_shadow_resolution_slider);
+        g_shadow_resolution_value = CreateStaticControl(
+            panel,
+            L"",
+            kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 52,
+            y + 4,
+            72,
+            20,
+            kShadowResolutionValueId);
+        g_shadow_resolution_status = CreateStaticControl(
+            panel,
+            L"",
+            kPageMargin + kNameWidth + kToggleWidth + kComboWidth + 128,
+            y + 4,
+            kStatusWidth + 200,
+            20,
+            kShadowResolutionStatusId);
+        y += kRowHeight + 10;
+
         CreateStaticControl(panel, L"UI \u91c7\u6837", kPageMargin, y + 4, kNameWidth, 20);
         g_ui_texture_filter_checkbox = CreateButtonControl(
             panel,
@@ -1067,6 +1218,7 @@ void BuildHookPage(const HWND panel, const InjectControlPanelPage page) {
 LRESULT CALLBACK PagePanelProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
     case WM_COMMAND:
+    case WM_HSCROLL:
     case WM_NOTIFY: {
         const HWND root = GetAncestor(hwnd, GA_ROOT);
         if (root && root != hwnd) {
@@ -1090,6 +1242,9 @@ void BuildPanelControls(const HWND hwnd) {
     g_script_mode_status = nullptr;
     g_msaa_combo = nullptr;
     g_msaa_status = nullptr;
+    g_shadow_resolution_slider = nullptr;
+    g_shadow_resolution_value = nullptr;
+    g_shadow_resolution_status = nullptr;
     g_ui_texture_filter_checkbox = nullptr;
     g_ui_texture_filter_status = nullptr;
     g_system_font_oversample_checkbox = nullptr;
@@ -1178,7 +1333,7 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
     case WM_CREATE: {
         INITCOMMONCONTROLSEX controls{};
         controls.dwSize = sizeof(controls);
-        controls.dwICC = ICC_TAB_CLASSES;
+        controls.dwICC = ICC_TAB_CLASSES | ICC_BAR_CLASSES;
         InitCommonControlsEx(&controls);
         BuildPanelControls(hwnd);
         SetTimer(hwnd, kRefreshTimerId, 300, nullptr);
@@ -1204,6 +1359,18 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
         }
         break;
     }
+    case WM_HSCROLL:
+        if (reinterpret_cast<HWND>(lparam) == g_shadow_resolution_slider) {
+            const int position = static_cast<int>(
+                SendMessageW(g_shadow_resolution_slider, TBM_GETPOS, 0, 0));
+            ApplyShadowResolutionPreference(
+                ShadowResolutionFromIndex(position),
+                true,
+                true);
+            RefreshPanelContent(hwnd);
+            return 0;
+        }
+        break;
     case WM_COMMAND: {
         const int control_id = LOWORD(wparam);
         const int notify_code = HIWORD(wparam);
@@ -1304,6 +1471,9 @@ LRESULT CALLBACK PanelWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
         g_script_mode_status = nullptr;
         g_msaa_combo = nullptr;
         g_msaa_status = nullptr;
+        g_shadow_resolution_slider = nullptr;
+        g_shadow_resolution_value = nullptr;
+        g_shadow_resolution_status = nullptr;
         g_ui_texture_filter_checkbox = nullptr;
         g_ui_texture_filter_status = nullptr;
         g_system_font_oversample_checkbox = nullptr;
@@ -1400,6 +1570,9 @@ void StopInjectControlWindow() {
     g_script_mode_status = nullptr;
     g_msaa_combo = nullptr;
     g_msaa_status = nullptr;
+    g_shadow_resolution_slider = nullptr;
+    g_shadow_resolution_value = nullptr;
+    g_shadow_resolution_status = nullptr;
     g_ui_texture_filter_checkbox = nullptr;
     g_ui_texture_filter_status = nullptr;
     g_system_font_oversample_checkbox = nullptr;

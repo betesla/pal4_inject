@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 #include <iostream>
 #include <cstring>
@@ -57,6 +58,10 @@ constexpr int kWidescreenCheckId = 1012;
 constexpr int kVsyncCheckId = 1013;
 constexpr int kCheckUpdateButtonId = 1014;
 constexpr int kAuthorLinkId = 1015;
+constexpr int kMsaaComboId = 1016;
+constexpr int kShadowResolutionComboId = 1017;
+constexpr int kUiTextureFilterCheckId = 1018;
+constexpr int kSystemFontOversampleCheckId = 1019;
 constexpr UINT kAutoCheckUpdateMessage = WM_APP + 10;
 constexpr const wchar_t kGiteeLatestReleaseUrl[] = L"https://gitee.com/api/v5/repos/betesla/pal4_inject/releases/latest";
 constexpr const wchar_t kGiteeReleasePageUrl[] = L"https://gitee.com/betesla/pal4_inject/releases";
@@ -94,6 +99,7 @@ struct GuiLaunchState {
     std::filesystem::path runtime_dll;
     std::filesystem::path config_path;
     pal4::inject::ScriptMode script_mode = pal4::inject::ScriptMode::csb;
+    pal4::inject::InjectPersistedSettings inject_settings;
     GameConfig config;
     std::vector<Resolution> common_resolutions;
     std::vector<Resolution> display_resolutions;
@@ -102,6 +108,8 @@ struct GuiLaunchState {
     HWND width_edit = nullptr;
     HWND height_edit = nullptr;
     HWND resolution_tab = nullptr;
+    HWND msaa_combo = nullptr;
+    HWND shadow_resolution_combo = nullptr;
     bool auto_update_check_started = false;
     bool accepted = false;
 };
@@ -112,6 +120,8 @@ struct ReleaseInfo {
     std::string body;
     std::wstring source_name;
 };
+
+std::wstring WideFromUtf8(const std::string& text);
 
 bool StartsWith(const std::wstring_view text, const std::wstring_view prefix) {
     return text.size() >= prefix.size() &&
@@ -178,27 +188,97 @@ pal4::inject::ScriptMode NormalizeLauncherScriptMode(
         : pal4::inject::ScriptMode::csb;
 }
 
-pal4::inject::ScriptMode LoadPersistedLauncherScriptMode() {
+pal4::inject::InjectPersistedSettings LoadPersistedLauncherInjectSettings() {
     pal4::inject::InjectPersistedSettings settings{};
     std::string error;
     if (!pal4::inject::LoadInjectPersistedSettings(
             pal4::inject::DefaultInjectSettingsPath(),
             &settings,
             &error)) {
-        return pal4::inject::ScriptMode::csb;
-    }
-    return NormalizeLauncherScriptMode(settings.launcher_script_mode);
-}
-
-void SavePersistedLauncherScriptMode(const pal4::inject::ScriptMode mode) {
-    const auto settings_path = pal4::inject::DefaultInjectSettingsPath();
-    pal4::inject::InjectPersistedSettings settings{};
-    std::string error;
-    if (!pal4::inject::LoadInjectPersistedSettings(settings_path, &settings, &error)) {
         settings = {};
     }
-    settings.launcher_script_mode = NormalizeLauncherScriptMode(mode);
+    settings.launcher_script_mode = NormalizeLauncherScriptMode(settings.launcher_script_mode);
+    return settings;
+}
+
+void SavePersistedLauncherInjectSettings(const pal4::inject::InjectPersistedSettings& input) {
+    const auto settings_path = pal4::inject::DefaultInjectSettingsPath();
+    auto settings = input;
+    settings.launcher_script_mode = NormalizeLauncherScriptMode(settings.launcher_script_mode);
+    std::string error;
     pal4::inject::SaveInjectPersistedSettings(settings_path, settings, &error);
+}
+
+std::array<pal4::inject::MsaaLevel, 4> BuildMsaaLevels() {
+    return {
+        pal4::inject::MsaaLevel::off,
+        pal4::inject::MsaaLevel::x2,
+        pal4::inject::MsaaLevel::x4,
+        pal4::inject::MsaaLevel::x8,
+    };
+}
+
+std::array<pal4::inject::ShadowResolution, 4> BuildShadowResolutions() {
+    return {
+        pal4::inject::ShadowResolution::x64,
+        pal4::inject::ShadowResolution::x128,
+        pal4::inject::ShadowResolution::x256,
+        pal4::inject::ShadowResolution::x512,
+    };
+}
+
+template <typename TEnum, std::size_t N>
+int FindEnumIndex(
+    const std::array<TEnum, N>& values,
+    const TEnum value,
+    const int fallback = 0) {
+    for (int i = 0; i < static_cast<int>(values.size()); ++i) {
+        if (values[static_cast<std::size_t>(i)] == value) {
+            return i;
+        }
+    }
+    return fallback;
+}
+
+void PopulateMsaaCombo(const HWND combo, const pal4::inject::MsaaLevel selected) {
+    const auto values = BuildMsaaLevels();
+    for (const auto value : values) {
+        const auto label = WideFromUtf8(pal4::inject::ToString(value));
+        SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+    }
+    SendMessageW(combo, CB_SETCURSEL, FindEnumIndex(values, selected), 0);
+}
+
+void PopulateShadowResolutionCombo(
+    const HWND combo,
+    const pal4::inject::ShadowResolution selected) {
+    const auto values = BuildShadowResolutions();
+    for (const auto value : values) {
+        const std::wstring label =
+            WideFromUtf8(pal4::inject::ToString(value)) +
+            L"x" +
+            WideFromUtf8(pal4::inject::ToString(value));
+        SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+    }
+    SendMessageW(combo, CB_SETCURSEL, FindEnumIndex(values, selected), 0);
+}
+
+pal4::inject::MsaaLevel MsaaLevelFromComboSelection(const HWND combo) {
+    const auto values = BuildMsaaLevels();
+    const int selected = static_cast<int>(SendMessageW(combo, CB_GETCURSEL, 0, 0));
+    if (selected < 0 || selected >= static_cast<int>(values.size())) {
+        return pal4::inject::MsaaLevel::off;
+    }
+    return values[static_cast<std::size_t>(selected)];
+}
+
+pal4::inject::ShadowResolution ShadowResolutionFromComboSelection(const HWND combo) {
+    const auto values = BuildShadowResolutions();
+    const int selected = static_cast<int>(SendMessageW(combo, CB_GETCURSEL, 0, 0));
+    if (selected < 0 || selected >= static_cast<int>(values.size())) {
+        return pal4::inject::ShadowResolution::x64;
+    }
+    return values[static_cast<std::size_t>(selected)];
 }
 
 std::wstring WideFromUtf8(const std::string& text) {
@@ -891,10 +971,10 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
             TRUE);
         CreateLabel(
             hwnd,
-            L"请选择脚本模式后启动游戏。启动后可在游戏内按 Ctrl+J 显示或隐藏注入面板。",
+            L"请先在启动器里设置脚本模式和注入渲染选项。MSAA / 阴影分辨率等建议只在启动前修改。",
             26,
             58,
-            560,
+            570,
             22,
             default_font);
 
@@ -1104,15 +1184,119 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
         SendMessageW(widescreen_check, BM_SETCHECK, state->config.widescreen ? BST_CHECKED : BST_UNCHECKED, 0);
         SendMessageW(vsync_check, BM_SETCHECK, state->config.sync ? BST_CHECKED : BST_UNCHECKED, 0);
 
-        CreateLabel(hwnd, L"游戏程序", 28, 366, 80, 20, default_font);
-        CreateLabel(hwnd, ShortenPathForDisplay(state->game_exe), 108, 366, 456, 20, default_font);
-        CreateLabel(hwnd, L"配置文件", 28, 392, 80, 20, default_font);
-        CreateLabel(hwnd, ShortenPathForDisplay(state->config_path), 108, 392, 456, 20, default_font);
+        CreateWindowExW(
+            0,
+            L"BUTTON",
+            L"注入渲染选项",
+            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+            24,
+            366,
+            548,
+            92,
+            hwnd,
+            nullptr,
+            GetModuleHandleW(nullptr),
+            nullptr);
+        CreateLabel(hwnd, L"MSAA", 42, 392, 72, 20, default_font);
+        state->msaa_combo = CreateWindowExW(
+            0,
+            L"COMBOBOX",
+            L"",
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
+            110,
+            389,
+            92,
+            220,
+            hwnd,
+            reinterpret_cast<HMENU>(kMsaaComboId),
+            GetModuleHandleW(nullptr),
+            nullptr);
+        SendMessageW(state->msaa_combo, WM_SETFONT, reinterpret_cast<WPARAM>(default_font), TRUE);
+        PopulateMsaaCombo(state->msaa_combo, state->inject_settings.msaa_level);
+
+        CreateLabel(hwnd, L"人物阴影", 284, 392, 82, 20, default_font);
+        state->shadow_resolution_combo = CreateWindowExW(
+            0,
+            L"COMBOBOX",
+            L"",
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
+            368,
+            389,
+            112,
+            220,
+            hwnd,
+            reinterpret_cast<HMENU>(kShadowResolutionComboId),
+            GetModuleHandleW(nullptr),
+            nullptr);
+        SendMessageW(
+            state->shadow_resolution_combo,
+            WM_SETFONT,
+            reinterpret_cast<WPARAM>(default_font),
+            TRUE);
+        PopulateShadowResolutionCombo(
+            state->shadow_resolution_combo,
+            state->inject_settings.shadow_resolution);
+
+        const HWND ui_filter_check = CreateWindowExW(
+            0,
+            L"BUTTON",
+            L"UI 像素采样（Nearest）",
+            WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+            42,
+            420,
+            180,
+            22,
+            hwnd,
+            reinterpret_cast<HMENU>(kUiTextureFilterCheckId),
+            GetModuleHandleW(nullptr),
+            nullptr);
+        const HWND system_font_check = CreateWindowExW(
+            0,
+            L"BUTTON",
+            L"系统字体高清实验",
+            WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+            284,
+            420,
+            160,
+            22,
+            hwnd,
+            reinterpret_cast<HMENU>(kSystemFontOversampleCheckId),
+            GetModuleHandleW(nullptr),
+            nullptr);
+        SendMessageW(ui_filter_check, WM_SETFONT, reinterpret_cast<WPARAM>(default_font), TRUE);
+        SendMessageW(system_font_check, WM_SETFONT, reinterpret_cast<WPARAM>(default_font), TRUE);
+        SendMessageW(
+            ui_filter_check,
+            BM_SETCHECK,
+            state->inject_settings.ui_texture_filter == pal4::inject::UiTextureFilter::nearest
+                ? BST_CHECKED
+                : BST_UNCHECKED,
+            0);
+        SendMessageW(
+            system_font_check,
+            BM_SETCHECK,
+            state->inject_settings.system_font_oversample_enabled
+                ? BST_CHECKED
+                : BST_UNCHECKED,
+            0);
+        CreateLabel(
+            hwnd,
+            L"这些选项会写入 pal4_inject\\inject_panel_settings.ini，并在本次启动时生效。",
+            42,
+            444,
+            500,
+            18,
+            default_font);
+
+        CreateLabel(hwnd, L"游戏程序", 28, 476, 80, 20, default_font);
+        CreateLabel(hwnd, ShortenPathForDisplay(state->game_exe), 108, 476, 456, 20, default_font);
+        CreateLabel(hwnd, L"配置文件", 28, 502, 80, 20, default_font);
+        CreateLabel(hwnd, ShortenPathForDisplay(state->config_path), 108, 502, 456, 20, default_font);
         CreateLabel(
             hwnd,
             L"发布安装：把 PAL4_inject.exe 和 pal4_inject 文件夹复制到 PAL4.exe 所在目录。",
             28,
-            422,
+            532,
             540,
             20,
             default_font);
@@ -1123,7 +1307,7 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
             L"启动游戏",
             WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
             316,
-            456,
+            566,
             110,
             32,
             hwnd,
@@ -1136,7 +1320,7 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
             L"检查更新",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             436,
-            456,
+            566,
             90,
             32,
             hwnd,
@@ -1149,7 +1333,7 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
             L"退出",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             536,
-            456,
+            566,
             54,
             32,
             hwnd,
@@ -1232,7 +1416,25 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
                 ShowGuiError(save_error);
                 return 0;
             }
-            SavePersistedLauncherScriptMode(state->script_mode);
+            state->inject_settings.launcher_script_mode =
+                NormalizeLauncherScriptMode(state->script_mode);
+            if (state->msaa_combo) {
+                state->inject_settings.msaa_level =
+                    MsaaLevelFromComboSelection(state->msaa_combo);
+            }
+            if (state->shadow_resolution_combo) {
+                state->inject_settings.shadow_resolution =
+                    ShadowResolutionFromComboSelection(state->shadow_resolution_combo);
+            }
+            state->inject_settings.ui_texture_filter =
+                SendMessageW(GetDlgItem(hwnd, kUiTextureFilterCheckId), BM_GETCHECK, 0, 0) ==
+                    BST_CHECKED
+                ? pal4::inject::UiTextureFilter::nearest
+                : pal4::inject::UiTextureFilter::linear;
+            state->inject_settings.system_font_oversample_enabled =
+                SendMessageW(GetDlgItem(hwnd, kSystemFontOversampleCheckId), BM_GETCHECK, 0, 0) ==
+                BST_CHECKED;
+            SavePersistedLauncherInjectSettings(state->inject_settings);
             state->accepted = true;
             DestroyWindow(hwnd);
             return 0;
@@ -1291,7 +1493,8 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* options) {
     state.game_exe = install_dir / "PAL4.exe";
     state.runtime_dll = install_dir / "pal4_inject" / "runtime.dll";
     state.config_path = install_dir / "config.cfg";
-    state.script_mode = LoadPersistedLauncherScriptMode();
+    state.inject_settings = LoadPersistedLauncherInjectSettings();
+    state.script_mode = NormalizeLauncherScriptMode(state.inject_settings.launcher_script_mode);
     state.config = LoadGameConfig(state.config_path);
     state.common_resolutions = BuildCommonResolutions();
     state.display_resolutions = EnumeratePrimaryDisplayResolutions();
@@ -1323,7 +1526,7 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* options) {
     InitCommonControlsEx(&controls);
 
     const int width = 620;
-    const int height = 550;
+    const int height = 660;
     const int screen_width = GetSystemMetrics(SM_CXSCREEN);
     const int screen_height = GetSystemMetrics(SM_CYSCREEN);
     const HWND hwnd = CreateWindowExW(
