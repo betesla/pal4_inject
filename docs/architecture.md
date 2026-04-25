@@ -15,7 +15,7 @@
   - 等待 named event
   - 默认在 ready event 后恢复主线程
   - agent / 测试侧再通过 named pipe 读取 `read_ui_state` / `snapshot_ui` / memory debug 命令
-  - 启动器 UI 现按“启动前准备 / 显示与分辨率 / 画面与文字 / 实验性功能”分页，把稳定画质项和实验链路拆开
+  - 启动器 UI 现按“启动前准备 / 显示与分辨率 / 画面与文字 / 实验性功能 / 声明”分页，把稳定画质项、实验链路和项目说明拆开
 - `cli.exe`
   - 只做 pipe 客户端与人类可读输出
   - `snapshot -> click/fill/type/press -> snapshot`

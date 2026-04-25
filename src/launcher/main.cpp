@@ -69,6 +69,7 @@ constexpr int kRestartButtonId = 1023;
 constexpr int kProcessStatusId = 1024;
 constexpr int kStrategySummaryId = 1025;
 constexpr int kSeatedVrCheckId = 1026;
+constexpr int kProjectReleaseLinkId = 1027;
 constexpr UINT kLauncherRefreshTimerId = 1;
 constexpr UINT kAutoCheckUpdateMessage = WM_APP + 10;
 constexpr const wchar_t kGiteeLatestReleaseUrl[] = L"https://gitee.com/api/v5/repos/betesla/pal4_inject/releases/latest";
@@ -107,6 +108,7 @@ enum class LauncherPage : std::uint8_t {
     display,
     graphics,
     experimental,
+    declaration,
 };
 
 struct GuiLaunchState {
@@ -134,7 +136,9 @@ struct GuiLaunchState {
     HWND dialog_font_check = nullptr;
     HWND seated_vr_check = nullptr;
     HWND launcher_tab = nullptr;
-    std::array<HWND, 4> page_panels{};
+    std::array<HWND, 5> page_panels{};
+    HWND author_link = nullptr;
+    HWND release_link = nullptr;
     HWND process_status = nullptr;
     HWND strategy_summary = nullptr;
     HWND launch_button = nullptr;
@@ -1716,8 +1720,120 @@ void BuildExperimentalPage(const HWND panel, GuiLaunchState* state, const HFONT 
         44);
 }
 
+void BuildDeclarationPage(const HWND panel, GuiLaunchState* state, const HFONT default_font, const HFONT link_font) {
+    CreateLabel(
+        panel,
+        L"\u8fd9\u4e00\u9875\u96c6\u4e2d\u653e\u9879\u76ee\u57fa\u672c\u4fe1\u606f\u3001\u4f5c\u8005\u3001\u9e23\u8c22\u548c\u4f7f\u7528\u58f0\u660e\uff0c\u907f\u514d\u628a\u8fd9\u4e9b\u5185\u5bb9\u6563\u5728\u542f\u52a8\u5668\u9876\u90e8\u3002",
+        16,
+        16,
+        632,
+        40,
+        default_font);
+
+    CreateWindowExW(
+        0,
+        L"BUTTON",
+        L"\u9879\u76ee\u4fe1\u606f",
+        WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        16,
+        62,
+        652,
+        128,
+        panel,
+        nullptr,
+        GetModuleHandleW(nullptr),
+        nullptr);
+
+    CreateLabel(panel, L"\u9879\u76ee", 34, 96, 72, 20, default_font);
+    CreateLabel(panel, L"PAL4 \u6ce8\u5165\u542f\u52a8\u5668", 120, 96, 260, 20, default_font);
+    CreateLabel(panel, L"\u7248\u672c", 34, 122, 72, 20, default_font);
+    CreateLabel(
+        panel,
+        L"\u7248\u672c " + WideFromUtf8(pal4::inject::kPal4InjectVersion) +
+            L" | \u6784\u5efa " + WideFromUtf8(pal4::inject::kPal4InjectBuildId),
+        120,
+        122,
+        420,
+        20,
+        default_font);
+    CreateLabel(panel, L"\u4f5c\u8005", 34, 148, 72, 20, default_font);
+    state->author_link = CreateWindowExW(
+        0,
+        L"STATIC",
+        L"B\u7ad9 @\u5317\u98ce7P",
+        WS_CHILD | WS_VISIBLE | SS_NOTIFY,
+        120,
+        148,
+        120,
+        20,
+        panel,
+        reinterpret_cast<HMENU>(kAuthorLinkId),
+        GetModuleHandleW(nullptr),
+        nullptr);
+    SendMessageW(
+        state->author_link,
+        WM_SETFONT,
+        reinterpret_cast<WPARAM>(link_font ? link_font : default_font),
+        TRUE);
+    CreateLabel(panel, L"\u66f4\u65b0\u4e0e\u53d1\u5e03", 340, 148, 92, 20, default_font);
+    state->release_link = CreateWindowExW(
+        0,
+        L"STATIC",
+        L"\u6253\u5f00 Release \u9875",
+        WS_CHILD | WS_VISIBLE | SS_NOTIFY,
+        442,
+        148,
+        120,
+        20,
+        panel,
+        reinterpret_cast<HMENU>(kProjectReleaseLinkId),
+        GetModuleHandleW(nullptr),
+        nullptr);
+    SendMessageW(
+        state->release_link,
+        WM_SETFONT,
+        reinterpret_cast<WPARAM>(link_font ? link_font : default_font),
+        TRUE);
+
+    CreateWindowExW(
+        0,
+        L"BUTTON",
+        L"\u58f0\u660e\u4e0e\u9e23\u8c22",
+        WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        16,
+        206,
+        652,
+        156,
+        panel,
+        nullptr,
+        GetModuleHandleW(nullptr),
+        nullptr);
+    CreateReadOnlyNote(
+        panel,
+        L"\u58f0\u660e\uff1a\u672c\u5de5\u5177\u4e3b\u8981\u7528\u4e8e PAL4 \u517c\u5bb9\u6027\u3001\u753b\u8d28\u589e\u5f3a\u3001\u9006\u5411\u4e0e\u8fd0\u884c\u65f6\u7814\u7a76\u3002\u8bf7\u5728\u5408\u7406\u3001\u5408\u6cd5\u7684\u8303\u56f4\u5185\u4f7f\u7528\uff0c\u4e0d\u5efa\u8bae\u628a\u5b9e\u9a8c\u6027\u529f\u80fd\u76f4\u63a5\u5f53\u6210\u7a33\u5b9a\u53d1\u5e03\u529f\u80fd\u3002\r\n\r\n\u9e23\u8c22\uff1a\u611f\u8c22 PAL4 \u9006\u5411\u3001RenderWare / CEGUI \u7814\u7a76\u3001\u5b9e\u673a\u6d4b\u8bd5\u548c\u4f7f\u7528\u53cd\u9988\u7684\u670b\u53cb\u4eec\u3002\u5f53\u524d\u9879\u76ee\u4ecd\u5728\u6301\u7eed\u6574\u7406\u4e2d\uff0c\u540e\u7eed\u4f1a\u518d\u628a\u66f4\u8be6\u7ec6\u7684\u81f4\u8c22\u4fe1\u606f\u9010\u6b65\u6536\u62e2\u5230\u6587\u6863\u4e2d\u3002",
+        34,
+        236,
+        610,
+        104);
+}
+
 LRESULT CALLBACK LauncherPagePanelProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
+    case WM_ERASEBKGND: {
+        RECT rect{};
+        GetClientRect(hwnd, &rect);
+        FillRect(reinterpret_cast<HDC>(wparam), &rect, GetSysColorBrush(COLOR_WINDOW));
+        return 1;
+    }
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLORBTN:
+    case WM_CTLCOLOREDIT: {
+        const HWND root = GetAncestor(hwnd, GA_ROOT);
+        if (root && root != hwnd) {
+            return SendMessageW(root, message, wparam, lparam);
+        }
+        break;
+    }
     case WM_COMMAND:
     case WM_NOTIFY: {
         const HWND root = GetAncestor(hwnd, GA_ROOT);
@@ -1732,7 +1848,11 @@ LRESULT CALLBACK LauncherPagePanelProc(HWND hwnd, UINT message, WPARAM wparam, L
     return DefWindowProcW(hwnd, message, wparam, lparam);
 }
 
-void BuildLauncherPanels(const HWND hwnd, GuiLaunchState* state, const HFONT default_font) {
+void BuildLauncherPanels(
+    const HWND hwnd,
+    GuiLaunchState* state,
+    const HFONT default_font,
+    const HFONT link_font) {
     state->launcher_tab = CreateWindowExW(
         0,
         WC_TABCONTROLW,
@@ -1752,6 +1872,7 @@ void BuildLauncherPanels(const HWND hwnd, GuiLaunchState* state, const HFONT def
     InsertResolutionTab(state->launcher_tab, 1, L"\u663e\u793a\u4e0e\u5206\u8fa8\u7387");
     InsertResolutionTab(state->launcher_tab, 2, L"\u753b\u9762\u4e0e\u6587\u5b57");
     InsertResolutionTab(state->launcher_tab, 3, L"\u5b9e\u9a8c\u6027\u529f\u80fd");
+    InsertResolutionTab(state->launcher_tab, 4, L"\u58f0\u660e");
 
     const RECT page_rect = GetLauncherTabContentRect(state->launcher_tab);
     for (auto& panel : state->page_panels) {
@@ -1778,6 +1899,11 @@ void BuildLauncherPanels(const HWND hwnd, GuiLaunchState* state, const HFONT def
         state->page_panels[LauncherPageIndex(LauncherPage::experimental)],
         state,
         default_font);
+    BuildDeclarationPage(
+        state->page_panels[LauncherPageIndex(LauncherPage::declaration)],
+        state,
+        default_font,
+        link_font);
     ShowLauncherPage(state, LauncherPageIndex(LauncherPage::startup));
 }
 
@@ -1810,37 +1936,16 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
         SetPropW(hwnd, L"PAL4InjectLinkFont", link_font);
 
         CreateLabel(hwnd, L"PAL4 注入启动器", 24, 18, 260, 34, title_font);
-        const std::wstring version_text =
-            L"版本 " + WideFromUtf8(pal4::inject::kPal4InjectVersion) + L"  |  作者：";
-        CreateLabel(hwnd, version_text, 292, 25, 144, 20, default_font);
-        const HWND author_link = CreateWindowExW(
-            0,
-            L"STATIC",
-            L"B站 @北风7P",
-            WS_CHILD | WS_VISIBLE | SS_NOTIFY,
-            438,
-            25,
-            94,
-            20,
-            hwnd,
-            reinterpret_cast<HMENU>(kAuthorLinkId),
-            GetModuleHandleW(nullptr),
-            nullptr);
-        SendMessageW(
-            author_link,
-            WM_SETFONT,
-            reinterpret_cast<WPARAM>(link_font ? link_font : default_font),
-            TRUE);
         CreateLabel(
             hwnd,
-            L"\u628a\u201c\u5fc5\u987b\u8fdb\u6e38\u620f\u524d\u51b3\u5b9a\u201d\u7684\u8bbe\u7f6e\u7edf\u4e00\u653e\u5728\u8fd9\u91cc\uff0c\u6ce8\u5165\u9762\u677f\u53ea\u4fdd\u7559\u771f\u6b63\u9700\u8981\u8fd0\u884c\u65f6\u5207\u6362\u7684\u529f\u80fd\u3002",
+            L"\u628a\u201c\u5fc5\u987b\u8fdb\u6e38\u620f\u524d\u51b3\u5b9a\u201d\u7684\u8bbe\u7f6e\u7edf\u4e00\u653e\u5728\u8fd9\u91cc\uff0c\u58f0\u660e\u3001\u4f5c\u8005\u548c\u9e23\u8c22\u5df2\u6536\u5230\u201c\u58f0\u660e\u201d\u9875\u7b7e\u3002",
             24,
             54,
             690,
             24,
             default_font);
 
-        BuildLauncherPanels(hwnd, state, default_font);
+        BuildLauncherPanels(hwnd, state, default_font, link_font);
 
         CreateWindowExW(
             0,
@@ -1977,6 +2082,10 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
             ShellExecuteW(hwnd, L"open", kAuthorHomepageUrl, nullptr, nullptr, SW_SHOWNORMAL);
             return 0;
         }
+        if (control_id == kProjectReleaseLinkId && notify_code == STN_CLICKED) {
+            ShellExecuteW(hwnd, L"open", kGiteeReleasePageUrl, nullptr, nullptr, SW_SHOWNORMAL);
+            return 0;
+        }
         if (control_id == kRadioCsId) {
             state->script_mode = pal4::inject::ScriptMode::cs;
             RefreshLauncherStatus(hwnd, state);
@@ -2055,7 +2164,7 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
         break;
     }
     case WM_CLOSE:
-        MinimizeLauncherWindow(hwnd);
+        DestroyWindow(hwnd);
         return 0;
     case WM_DESTROY: {
         KillTimer(hwnd, kLauncherRefreshTimerId);
@@ -2073,16 +2182,26 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
     }
     case WM_CTLCOLORSTATIC: {
         const HWND child = reinterpret_cast<HWND>(lparam);
-        if (child && GetDlgCtrlID(child) == kAuthorLinkId) {
+        if (child &&
+            state &&
+            (child == state->author_link || child == state->release_link)) {
             const HDC dc = reinterpret_cast<HDC>(wparam);
             SetTextColor(dc, RGB(0, 90, 180));
+            SetBkMode(dc, TRANSPARENT);
+            return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+        }
+        if (child) {
+            const HDC dc = reinterpret_cast<HDC>(wparam);
+            SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
             SetBkMode(dc, TRANSPARENT);
             return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
         }
         break;
     }
     case WM_SETCURSOR: {
-        if (reinterpret_cast<HWND>(wparam) == GetDlgItem(hwnd, kAuthorLinkId)) {
+        if (state &&
+            (reinterpret_cast<HWND>(wparam) == state->author_link ||
+             reinterpret_cast<HWND>(wparam) == state->release_link)) {
             SetCursor(LoadCursorW(nullptr, MAKEINTRESOURCEW(32649)));
             return TRUE;
         }
