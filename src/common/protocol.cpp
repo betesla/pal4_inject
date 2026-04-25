@@ -2,6 +2,8 @@
 
 #include <charconv>
 #include <cctype>
+#include <cstdlib>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -48,6 +50,28 @@ bool ParseUint32Value(const std::string_view text, std::uint32_t* out) {
     }
     *out = static_cast<std::uint32_t>(value);
     return true;
+}
+
+bool ParseFloatValue(const std::string_view text, float* out) {
+    if (!out || text.empty()) {
+        return false;
+    }
+    std::string storage(text);
+    char* end = nullptr;
+    const float value = std::strtof(storage.c_str(), &end);
+    if (!end || *end != '\0') {
+        return false;
+    }
+    *out = value;
+    return true;
+}
+
+std::string FormatFloatValue(const float value) {
+    std::ostringstream out;
+    out.setf(std::ios::fixed);
+    out.precision(3);
+    out << value;
+    return out.str();
 }
 
 std::string HexByte(const unsigned char value) {
@@ -145,6 +169,8 @@ const char* ToString(const ProtocolCommandKind kind) noexcept {
         return "read_memory";
     case ProtocolCommandKind::write_memory:
         return "write_memory";
+    case ProtocolCommandKind::set_vr_pose:
+        return "set_vr_pose";
     case ProtocolCommandKind::shutdown:
         return "shutdown";
     }
@@ -220,6 +246,15 @@ std::string FormatProtocolCommand(const ProtocolCommand& command) {
         out += " addr=" + FormatHexValue(command.address);
         out += " bytes=" + EscapeProtocolToken(command.hex_bytes);
         out += " unsafe_code_write=" + std::string(command.unsafe_code_write ? "1" : "0");
+        break;
+    case ProtocolCommandKind::set_vr_pose:
+        out += " active=" + std::string(command.vr_head_pose.active ? "1" : "0");
+        out += " yaw=" + FormatFloatValue(command.vr_head_pose.yaw_degrees);
+        out += " pitch=" + FormatFloatValue(command.vr_head_pose.pitch_degrees);
+        out += " roll=" + FormatFloatValue(command.vr_head_pose.roll_degrees);
+        out += " x=" + FormatFloatValue(command.vr_head_pose.offset_x);
+        out += " y=" + FormatFloatValue(command.vr_head_pose.offset_y);
+        out += " z=" + FormatFloatValue(command.vr_head_pose.offset_z);
         break;
     default:
         break;
@@ -352,6 +387,50 @@ bool ParseProtocolCommand(
             if (!ParseUint32Value(value, &parsed.size)) {
                 if (error) {
                     *error = "invalid size";
+                }
+                return false;
+            }
+        } else if (key == "active") {
+            parsed.vr_head_pose.active = (value == "1" || value == "true");
+        } else if (key == "yaw") {
+            if (!ParseFloatValue(value, &parsed.vr_head_pose.yaw_degrees)) {
+                if (error) {
+                    *error = "invalid yaw";
+                }
+                return false;
+            }
+        } else if (key == "pitch") {
+            if (!ParseFloatValue(value, &parsed.vr_head_pose.pitch_degrees)) {
+                if (error) {
+                    *error = "invalid pitch";
+                }
+                return false;
+            }
+        } else if (key == "roll") {
+            if (!ParseFloatValue(value, &parsed.vr_head_pose.roll_degrees)) {
+                if (error) {
+                    *error = "invalid roll";
+                }
+                return false;
+            }
+        } else if (key == "x") {
+            if (!ParseFloatValue(value, &parsed.vr_head_pose.offset_x)) {
+                if (error) {
+                    *error = "invalid x";
+                }
+                return false;
+            }
+        } else if (key == "y") {
+            if (!ParseFloatValue(value, &parsed.vr_head_pose.offset_y)) {
+                if (error) {
+                    *error = "invalid y";
+                }
+                return false;
+            }
+        } else if (key == "z") {
+            if (!ParseFloatValue(value, &parsed.vr_head_pose.offset_z)) {
+                if (error) {
+                    *error = "invalid z";
                 }
                 return false;
             }

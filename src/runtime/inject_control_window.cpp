@@ -462,6 +462,10 @@ std::wstring BuildLaunchManagedRenderSettingsText(
     text += BuildLocalizedShadowResolutionStatusText(state);
     text += L"\r\n- UI \u91c7\u6837\uff1a";
     text += BuildLocalizedUiTextureFilterStatusText(state, renderer_hook);
+    text += L"\r\n- \u5750\u59ff VR\uff1a";
+    text += state.GetVrMode() == VrMode::seated_experimental
+        ? L"\u5df2\u542f\u7528\u5b9e\u9a8c\u6027\u76f8\u673a\u9aa8\u67b6 | \u53ef\u901a\u8fc7 CLI/IPC \u6ce8\u5165 vr-pose"
+        : L"\u5173\u95ed";
     text += L"\r\n- \u7cfb\u7edf\u5b57\u4f53\uff1a";
     text += BuildLocalizedSystemFontOversampleStatusText(state, font_hook);
     text += L"\r\n- \u5bf9\u767d\u5b57\u4f53\uff1a";
@@ -480,9 +484,9 @@ std::wstring BuildPageNote(const InjectControlPanelPage page) {
     case InjectControlPanelPage::script_runtime:
         return L"\u96c6\u4e2d\u67e5\u770b\u5bf9\u767d\u811a\u672c\u3001\u5267\u60c5\u8c03\u5ea6\u7b49\u8fd0\u884c\u65f6\u5267\u60c5\u76f8\u5173 Hook\u3002";
     case InjectControlPanelPage::render_visual:
-        return L"\u8fd9\u4e00\u9875\u4e3b\u8981\u7528\u6765\u786e\u8ba4\u753b\u9762 Hook \u662f\u5426\u751f\u6548\u3002MSAA\u3001\u9634\u5f71\u3001UI \u91c7\u6837\u548c\u5b57\u4f53\u5b9e\u9a8c\u90fd\u6539\u4e3a\u5728\u542f\u52a8\u5668\u91cc\u5148\u8bbe\u5b9a\u3002";
+        return L"\u8fd9\u4e00\u9875\u4e3b\u8981\u7528\u6765\u786e\u8ba4\u753b\u9762 Hook \u662f\u5426\u751f\u6548\u3002MSAA\u3001\u9634\u5f71\u3001UI \u91c7\u6837\u3001\u5750\u59ff VR \u9aa8\u67b6\u548c\u5b57\u4f53\u5b9e\u9a8c\u90fd\u6539\u4e3a\u5728\u542f\u52a8\u5668\u91cc\u5148\u8bbe\u5b9a\u3002";
     case InjectControlPanelPage::camera:
-        return L"\u5355\u72ec\u7ba1\u7406\u76f8\u673a\u89d2\u5ea6\u3001\u4fef\u4ef0\u4fdd\u62a4\u548c\u89c6\u89d2\u5b89\u5168\u76f8\u5173 Hook\u3002";
+        return L"\u5355\u72ec\u7ba1\u7406\u76f8\u673a\u89d2\u5ea6\u3001\u4fef\u4ef0\u4fdd\u62a4\u3001VR \u76f8\u673a\u91c7\u6837\u548c\u89c6\u89d2\u5b89\u5168\u76f8\u5173 Hook\u3002";
     }
     return {};
 }

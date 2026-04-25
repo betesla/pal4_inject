@@ -68,6 +68,7 @@ constexpr int kStopButtonId = 1022;
 constexpr int kRestartButtonId = 1023;
 constexpr int kProcessStatusId = 1024;
 constexpr int kStrategySummaryId = 1025;
+constexpr int kSeatedVrCheckId = 1026;
 constexpr UINT kLauncherRefreshTimerId = 1;
 constexpr UINT kAutoCheckUpdateMessage = WM_APP + 10;
 constexpr const wchar_t kGiteeLatestReleaseUrl[] = L"https://gitee.com/api/v5/repos/betesla/pal4_inject/releases/latest";
@@ -105,6 +106,7 @@ enum class LauncherPage : std::uint8_t {
     startup = 0,
     display,
     graphics,
+    experimental,
 };
 
 struct GuiLaunchState {
@@ -130,8 +132,9 @@ struct GuiLaunchState {
     HWND ui_filter_check = nullptr;
     HWND system_font_check = nullptr;
     HWND dialog_font_check = nullptr;
+    HWND seated_vr_check = nullptr;
     HWND launcher_tab = nullptr;
-    std::array<HWND, 3> page_panels{};
+    std::array<HWND, 4> page_panels{};
     HWND process_status = nullptr;
     HWND strategy_summary = nullptr;
     HWND launch_button = nullptr;
@@ -1033,6 +1036,10 @@ std::wstring BuildGraphicsPresetSummary(const GuiLaunchState& state) {
     summary += state.inject_settings.ui_texture_filter == pal4::inject::UiTextureFilter::nearest
         ? L"\u50cf\u7d20\u8fb9\u7f18\u66f4\u786c"
         : L"\u539f\u7248\u7ebf\u6027\u8fc7\u6ee4";
+    summary += L"\r\n- \u5750\u59ff VR\uff08\u5b9e\u9a8c\u6027\uff09\uff1a";
+    summary += state.inject_settings.vr_mode == pal4::inject::VrMode::seated_experimental
+        ? L"\u5df2\u542f\u7528\u5934\u59ff\u76f8\u673a\u5b9e\u9a8c\u9aa8\u67b6"
+        : L"\u5173\u95ed";
     summary += L"\r\n- \u7cfb\u7edf\u5b57\u4f53\uff1a";
     summary += state.inject_settings.system_font_oversample_enabled
         ? L"\u542f\u7528\u9ad8\u6e05\u5b9e\u9a8c"
@@ -1060,6 +1067,12 @@ void SyncPreviewSelectionsFromControls(GuiLaunchState* state) {
             SendMessageW(state->ui_filter_check, BM_GETCHECK, 0, 0) == BST_CHECKED
             ? pal4::inject::UiTextureFilter::nearest
             : pal4::inject::UiTextureFilter::linear;
+    }
+    if (state->seated_vr_check) {
+        state->inject_settings.vr_mode =
+            SendMessageW(state->seated_vr_check, BM_GETCHECK, 0, 0) == BST_CHECKED
+            ? pal4::inject::VrMode::seated_experimental
+            : pal4::inject::VrMode::off;
     }
     if (state->system_font_check) {
         state->inject_settings.system_font_oversample_enabled =
@@ -1160,6 +1173,10 @@ bool SaveLauncherSelections(GuiLaunchState* state, std::wstring* error) {
         SendMessageW(state->ui_filter_check, BM_GETCHECK, 0, 0) == BST_CHECKED
         ? pal4::inject::UiTextureFilter::nearest
         : pal4::inject::UiTextureFilter::linear;
+    state->inject_settings.vr_mode =
+        SendMessageW(state->seated_vr_check, BM_GETCHECK, 0, 0) == BST_CHECKED
+        ? pal4::inject::VrMode::seated_experimental
+        : pal4::inject::VrMode::off;
     state->inject_settings.system_font_oversample_enabled =
         SendMessageW(state->system_font_check, BM_GETCHECK, 0, 0) == BST_CHECKED;
     state->inject_settings.dialog_font_hd_enabled =
@@ -1510,7 +1527,7 @@ void BuildDisplayPage(const HWND panel, GuiLaunchState* state, const HFONT defau
 void BuildGraphicsPage(const HWND panel, GuiLaunchState* state, const HFONT default_font) {
     CreateLabel(
         panel,
-        L"\u753b\u9762\u3001\u9634\u5f71\u3001UI \u91c7\u6837\u548c\u5b57\u4f53\u8fd9\u7c7b\u9009\u9879\u57fa\u672c\u90fd\u9700\u8981\u5728\u8fdb\u6e38\u620f\u524d\u786e\u5b9a\uff0c\u6240\u4ee5\u7edf\u4e00\u653e\u5728\u542f\u52a8\u5668\u91cc\u8bbe\u7f6e\u3002",
+        L"\u753b\u9762\u3001\u9634\u5f71\u3001UI \u91c7\u6837\u548c\u5b57\u4f53\u8fd9\u7c7b\u57fa\u7840\u753b\u8d28\u9009\u9879\u90fd\u9700\u8981\u5728\u8fdb\u6e38\u620f\u524d\u786e\u5b9a\uff0c\u6240\u4ee5\u7edf\u4e00\u653e\u5728\u542f\u52a8\u5668\u91cc\u8bbe\u7f6e\u3002",
         16,
         16,
         620,
@@ -1525,7 +1542,7 @@ void BuildGraphicsPage(const HWND panel, GuiLaunchState* state, const HFONT defa
         16,
         62,
         652,
-        248,
+        236,
         panel,
         nullptr,
         GetModuleHandleW(nullptr),
@@ -1573,7 +1590,7 @@ void BuildGraphicsPage(const HWND panel, GuiLaunchState* state, const HFONT defa
         L"UI \u50cf\u7d20\u91c7\u6837\uff1a\u8ba9\u90e8\u5206 UI \u7eb9\u7406\u4fdd\u6301\u66f4\u786c\u7684\u50cf\u7d20\u611f",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         34,
-        170,
+        168,
         560,
         22,
         panel,
@@ -1586,7 +1603,7 @@ void BuildGraphicsPage(const HWND panel, GuiLaunchState* state, const HFONT defa
         L"\u7cfb\u7edf\u5b57\u4f53\u9ad8\u6e05\u5b9e\u9a8c\uff1a\u63d0\u5347 menu / HUD \u7528\u7684 system \u548c systemBold \u6e05\u6670\u5ea6",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         34,
-        202,
+        196,
         590,
         22,
         panel,
@@ -1599,7 +1616,7 @@ void BuildGraphicsPage(const HWND panel, GuiLaunchState* state, const HFONT defa
         L"\u5bf9\u767d\u5b57\u4f53\u9ad8\u6e05\u5b9e\u9a8c\uff1a\u53ea\u9488\u5bf9 dialog_simsun\uff0c\u9002\u5408\u505a\u5bf9\u767d\u70b9\u51fb / \u6392\u7248 A/B",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
         34,
-        234,
+        224,
         610,
         22,
         panel,
@@ -1629,11 +1646,74 @@ void BuildGraphicsPage(const HWND panel, GuiLaunchState* state, const HFONT defa
 
     CreateReadOnlyNote(
         panel,
-        L"\u8bf4\u660e\uff1a\u8fd9\u4e9b\u9009\u9879\u4f1a\u5199\u5165 pal4_inject\\\\inject_panel_settings.ini\u3002\u9ad8\u6e05\u6587\u5b57\u7c7b\u8bbe\u7f6e\u5efa\u8bae\u91cd\u542f\u6e38\u620f\u540e\u518d\u770b\u6548\u679c\uff0c\u907f\u514d\u5c06\u8fd0\u884c\u4e2d\u70ed\u5207\u8bef\u5224\u6210\u771f\u5b9e\u6548\u679c\u3002",
+        L"\u8bf4\u660e\uff1a\u8fd9\u4e9b\u57fa\u7840\u753b\u8d28\u9009\u9879\u4f1a\u5199\u5165 pal4_inject\\\\inject_panel_settings.ini\u3002\u9ad8\u6e05\u6587\u5b57\u7c7b\u8bbe\u7f6e\u5efa\u8bae\u91cd\u542f\u6e38\u620f\u540e\u518d\u770b\u6548\u679c\uff0c\u907f\u514d\u628a\u8fd0\u884c\u4e2d\u70ed\u5207\u8bef\u5224\u6210\u771f\u5b9e\u6548\u679c\u3002",
         34,
-        270,
+        252,
         610,
-        36);
+        40);
+}
+
+void BuildExperimentalPage(const HWND panel, GuiLaunchState* state, const HFONT default_font) {
+    CreateLabel(
+        panel,
+        L"\u8fd9\u4e00\u9875\u53ea\u653e\u8fd8\u5728\u9a8c\u8bc1\u4e2d\u7684\u5b9e\u9a8c\u6027\u80fd\u529b\u3002\u5b83\u4eec\u548c\u6b63\u5f0f\u753b\u8d28\u9879\u5206\u5f00\uff0c\u907f\u514d\u628a\u65e5\u5e38\u914d\u7f6e\u548c\u5b9e\u9a8c\u94fe\u8def\u6df7\u5728\u4e00\u8d77\u3002",
+        16,
+        16,
+        632,
+        40,
+        default_font);
+
+    CreateWindowExW(
+        0,
+        L"BUTTON",
+        L"VR \u4e0e\u76f8\u673a\u5b9e\u9a8c",
+        WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        16,
+        62,
+        652,
+        134,
+        panel,
+        nullptr,
+        GetModuleHandleW(nullptr),
+        nullptr);
+
+    state->seated_vr_check = CreateWindowExW(
+        0,
+        L"BUTTON",
+        L"\u5750\u59ff VR\uff08\u5b9e\u9a8c\u6027\uff09",
+        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        34,
+        96,
+        190,
+        22,
+        panel,
+        reinterpret_cast<HMENU>(kSeatedVrCheckId),
+        GetModuleHandleW(nullptr),
+        nullptr);
+    SendMessageW(state->seated_vr_check, WM_SETFONT, reinterpret_cast<WPARAM>(default_font), TRUE);
+    SendMessageW(
+        state->seated_vr_check,
+        BM_SETCHECK,
+        state->inject_settings.vr_mode == pal4::inject::VrMode::seated_experimental
+            ? BST_CHECKED
+            : BST_UNCHECKED,
+        0);
+    CreateLabel(
+        panel,
+        L"\u5f53\u524d\u9636\u6bb5\u5148\u9a8c\u8bc1\u76f8\u673a\u4e3b\u94fe\uff1a\u53ef\u901a\u8fc7 CLI/IPC \u6ce8\u5165\u5934\u59ff\uff0c\u540e\u7eed\u518d\u63a5 OpenTrack \u6216 HMD runtime\u3002",
+        240,
+        94,
+        392,
+        36,
+        default_font);
+
+    CreateReadOnlyNote(
+        panel,
+        L"\u6ce8\u610f\uff1a\u8fd9\u662f\u5b9e\u9a8c\u6027\u80fd\u529b\uff0c\u76ee\u524d\u4e3b\u8981\u7528\u4e8e\u9a8c\u8bc1\u201c\u5934\u59ff -> \u76f8\u673a\u201d\u6ce8\u5165\u94fe\u8def\u3002\u5efa\u8bae\u53ea\u5728\u9700\u8981\u505a VR \u6216\u5934\u8ffd\u7814\u7a76\u65f6\u6253\u5f00\uff0c\u6539\u52a8\u540e\u9700\u8981\u91cd\u65b0\u542f\u52a8\u6e38\u620f\u624d\u80fd\u7a33\u5b9a\u751f\u6548\u3002",
+        34,
+        136,
+        610,
+        44);
 }
 
 LRESULT CALLBACK LauncherPagePanelProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -1671,6 +1751,7 @@ void BuildLauncherPanels(const HWND hwnd, GuiLaunchState* state, const HFONT def
     InsertResolutionTab(state->launcher_tab, 0, L"\u542f\u52a8\u524d\u51c6\u5907");
     InsertResolutionTab(state->launcher_tab, 1, L"\u663e\u793a\u4e0e\u5206\u8fa8\u7387");
     InsertResolutionTab(state->launcher_tab, 2, L"\u753b\u9762\u4e0e\u6587\u5b57");
+    InsertResolutionTab(state->launcher_tab, 3, L"\u5b9e\u9a8c\u6027\u529f\u80fd");
 
     const RECT page_rect = GetLauncherTabContentRect(state->launcher_tab);
     for (auto& panel : state->page_panels) {
@@ -1693,6 +1774,10 @@ void BuildLauncherPanels(const HWND hwnd, GuiLaunchState* state, const HFONT def
     BuildStartupPage(state->page_panels[LauncherPageIndex(LauncherPage::startup)], state, default_font);
     BuildDisplayPage(state->page_panels[LauncherPageIndex(LauncherPage::display)], state, default_font);
     BuildGraphicsPage(state->page_panels[LauncherPageIndex(LauncherPage::graphics)], state, default_font);
+    BuildExperimentalPage(
+        state->page_panels[LauncherPageIndex(LauncherPage::experimental)],
+        state,
+        default_font);
     ShowLauncherPage(state, LauncherPageIndex(LauncherPage::startup));
 }
 
@@ -1942,12 +2027,20 @@ LRESULT CALLBACK LaunchWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
             RefreshLauncherStatus(hwnd, state);
             return 0;
         }
-        if (control_id == kShadowResolutionComboId && notify_code == CBN_SELCHANGE) {
-            state->inject_settings.shadow_resolution =
-                ShadowResolutionFromComboSelection(state->shadow_resolution_combo);
-            RefreshLauncherStatus(hwnd, state);
-            return 0;
-        }
+    if (control_id == kShadowResolutionComboId && notify_code == CBN_SELCHANGE) {
+        state->inject_settings.shadow_resolution =
+            ShadowResolutionFromComboSelection(state->shadow_resolution_combo);
+        RefreshLauncherStatus(hwnd, state);
+        return 0;
+    }
+    if (control_id == kSeatedVrCheckId && notify_code == BN_CLICKED) {
+        state->inject_settings.vr_mode =
+            SendMessageW(state->seated_vr_check, BM_GETCHECK, 0, 0) == BST_CHECKED
+            ? pal4::inject::VrMode::seated_experimental
+            : pal4::inject::VrMode::off;
+        RefreshLauncherStatus(hwnd, state);
+        return 0;
+    }
         if ((control_id == kUiTextureFilterCheckId ||
              control_id == kSystemFontOversampleCheckId ||
              control_id == kDialogFontHdCheckId ||

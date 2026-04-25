@@ -136,6 +136,29 @@ ProtocolResponse BuildSnapshotResponse() {
     response.fields["pipe_ready"] = snapshot.pipe_ready ? "1" : "0";
     response.fields["ui_dispatch_ready"] = snapshot.ui_dispatch_ready ? "1" : "0";
     response.fields["crash_handler_ready"] = snapshot.crash_handler_ready ? "1" : "0";
+    response.fields["vr_mode"] = ToString(snapshot.vr_mode);
+    response.fields["vr_pose_active"] = snapshot.vr_head_pose.active ? "1" : "0";
+    response.fields["vr_pose_yaw"] = std::to_string(snapshot.vr_head_pose.yaw_degrees);
+    response.fields["vr_pose_pitch"] = std::to_string(snapshot.vr_head_pose.pitch_degrees);
+    response.fields["vr_pose_roll"] = std::to_string(snapshot.vr_head_pose.roll_degrees);
+    response.fields["vr_pose_x"] = std::to_string(snapshot.vr_head_pose.offset_x);
+    response.fields["vr_pose_y"] = std::to_string(snapshot.vr_head_pose.offset_y);
+    response.fields["vr_pose_z"] = std::to_string(snapshot.vr_head_pose.offset_z);
+    response.fields["vr_camera_valid"] = snapshot.vr_camera_state.valid ? "1" : "0";
+    response.fields["vr_camera_object"] =
+        HexValue(static_cast<std::uint32_t>(snapshot.vr_camera_state.camera_object));
+    response.fields["vr_camera_internal"] =
+        HexValue(static_cast<std::uint32_t>(snapshot.vr_camera_state.camera_internal));
+    response.fields["vr_camera_yaw"] = std::to_string(snapshot.vr_camera_state.yaw_degrees);
+    response.fields["vr_camera_pitch"] = std::to_string(snapshot.vr_camera_state.pitch_degrees);
+    response.fields["vr_camera_roll"] = std::to_string(snapshot.vr_camera_state.roll_degrees);
+    response.fields["vr_camera_distance"] = std::to_string(snapshot.vr_camera_state.distance);
+    response.fields["vr_camera_pos_x"] = std::to_string(snapshot.vr_camera_state.position_x);
+    response.fields["vr_camera_pos_y"] = std::to_string(snapshot.vr_camera_state.position_y);
+    response.fields["vr_camera_pos_z"] = std::to_string(snapshot.vr_camera_state.position_z);
+    response.fields["vr_camera_look_x"] = std::to_string(snapshot.vr_camera_state.look_at_x);
+    response.fields["vr_camera_look_y"] = std::to_string(snapshot.vr_camera_state.look_at_y);
+    response.fields["vr_camera_look_z"] = std::to_string(snapshot.vr_camera_state.look_at_z);
     response.fields["shadow_resolution"] = ToString(snapshot.shadow_resolution);
     response.fields["hd_shadow_enabled"] =
         snapshot.shadow_resolution != ShadowResolution::x64 ? "1" : "0";
@@ -389,6 +412,31 @@ ProtocolResponse DispatchCommand(const ProtocolCommand& command) {
         response.fields["unsafe_code_write"] = command.unsafe_code_write ? "1" : "0";
         return response;
     }
+    case ProtocolCommandKind::set_vr_pose:
+        GetRuntimeState().SetVrHeadPose(command.vr_head_pose);
+        GetRuntimeState().SetLastUiEvent(
+            std::string("vr_pose active=") +
+            (command.vr_head_pose.active ? "1" : "0") +
+            " yaw=" + std::to_string(command.vr_head_pose.yaw_degrees) +
+            " pitch=" + std::to_string(command.vr_head_pose.pitch_degrees));
+        GetRuntimeState().AppendEventLog(
+            std::string("set_vr_pose active=") +
+            (command.vr_head_pose.active ? "1" : "0") +
+            " yaw=" + std::to_string(command.vr_head_pose.yaw_degrees) +
+            " pitch=" + std::to_string(command.vr_head_pose.pitch_degrees) +
+            " roll=" + std::to_string(command.vr_head_pose.roll_degrees) +
+            " x=" + std::to_string(command.vr_head_pose.offset_x) +
+            " y=" + std::to_string(command.vr_head_pose.offset_y) +
+            " z=" + std::to_string(command.vr_head_pose.offset_z));
+        response.status = "set_vr_pose";
+        response.fields["active"] = command.vr_head_pose.active ? "1" : "0";
+        response.fields["yaw"] = std::to_string(command.vr_head_pose.yaw_degrees);
+        response.fields["pitch"] = std::to_string(command.vr_head_pose.pitch_degrees);
+        response.fields["roll"] = std::to_string(command.vr_head_pose.roll_degrees);
+        response.fields["x"] = std::to_string(command.vr_head_pose.offset_x);
+        response.fields["y"] = std::to_string(command.vr_head_pose.offset_y);
+        response.fields["z"] = std::to_string(command.vr_head_pose.offset_z);
+        return response;
     case ProtocolCommandKind::shutdown:
         response.status = "shutdown";
         response.fields["shutting_down"] = "1";

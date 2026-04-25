@@ -95,6 +95,39 @@ bool RuntimeState::CrashHandlerReady() const {
     return crash_handler_ready_;
 }
 
+void RuntimeState::SetVrMode(const VrMode mode) {
+    std::scoped_lock lock(mutex_);
+    vr_mode_ = mode;
+    state_cv_.notify_all();
+}
+
+VrMode RuntimeState::GetVrMode() const {
+    std::scoped_lock lock(mutex_);
+    return vr_mode_;
+}
+
+void RuntimeState::SetVrHeadPose(const VrHeadPose& pose) {
+    std::scoped_lock lock(mutex_);
+    vr_head_pose_ = pose;
+    state_cv_.notify_all();
+}
+
+VrHeadPose RuntimeState::GetVrHeadPose() const {
+    std::scoped_lock lock(mutex_);
+    return vr_head_pose_;
+}
+
+void RuntimeState::SetVrCameraState(const VrCameraState& state) {
+    std::scoped_lock lock(mutex_);
+    vr_camera_state_ = state;
+    state_cv_.notify_all();
+}
+
+VrCameraState RuntimeState::GetVrCameraState() const {
+    std::scoped_lock lock(mutex_);
+    return vr_camera_state_;
+}
+
 void RuntimeState::SetDialogFontHdEnabled(const bool enabled) {
     std::scoped_lock lock(mutex_);
     dialog_font_hd_enabled_ = enabled;
@@ -397,6 +430,9 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.pipe_ready = pipe_ready_;
     snapshot.ui_dispatch_ready = ui_dispatch_ready_;
     snapshot.crash_handler_ready = crash_handler_ready_;
+    snapshot.vr_mode = vr_mode_;
+    snapshot.vr_head_pose = vr_head_pose_;
+    snapshot.vr_camera_state = vr_camera_state_;
     snapshot.shadow_resolution = shadow_resolution_;
     snapshot.dialog_font_hd_enabled = dialog_font_hd_enabled_;
     snapshot.system_font_oversample_enabled = system_font_oversample_enabled_;

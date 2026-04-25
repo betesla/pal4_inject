@@ -44,13 +44,18 @@ constexpr std::array<EnumName<UiTextureFilter>, 2> kUiTextureFilters{{
     {UiTextureFilter::nearest, "nearest"},
 }};
 
+constexpr std::array<EnumName<VrMode>, 2> kVrModes{{
+    {VrMode::off, "off"},
+    {VrMode::seated_experimental, "seated_experimental"},
+}};
+
 constexpr std::array<EnumName<ScriptMode>, 3> kScriptModes{{
     {ScriptMode::inherit, "inherit"},
     {ScriptMode::cs, "cs"},
     {ScriptMode::csb, "csb"},
 }};
 
-constexpr std::array<EnumName<HookId>, 19> kHookIds{{
+constexpr std::array<EnumName<HookId>, 20> kHookIds{{
     {HookId::process_ui_event, "process_ui_event"},
     {HookId::handle_ui_message, "handle_ui_message"},
     {HookId::simulate_key_press_and_release, "simulate_key_press_and_release"},
@@ -64,6 +69,7 @@ constexpr std::array<EnumName<HookId>, 19> kHookIds{{
     {HookId::dialog_handle_text_display, "dialog_handle_text_display"},
     {HookId::setup_minimap_texture, "setup_minimap_texture"},
     {HookId::camera_update_matrix, "camera_update_matrix"},
+    {HookId::game_render_frame, "game_render_frame"},
     {HookId::d3d9_set_present_parameters, "d3d9_set_present_parameters"},
     {HookId::pal4_main_wndproc, "pal4_main_wndproc"},
     {HookId::handle_player_input_events, "handle_player_input_events"},
@@ -123,6 +129,10 @@ const char* ToString(const UiTextureFilter filter) noexcept {
     return FindEnumName(filter, kUiTextureFilters);
 }
 
+const char* ToString(const VrMode mode) noexcept {
+    return FindEnumName(mode, kVrModes);
+}
+
 const char* ToString(const ScriptMode mode) noexcept {
     return FindEnumName(mode, kScriptModes);
 }
@@ -145,6 +155,10 @@ bool TryParseShadowResolution(const std::string_view text, ShadowResolution* out
 
 bool TryParseUiTextureFilter(const std::string_view text, UiTextureFilter* out) noexcept {
     return TryParseEnum(text, kUiTextureFilters, out);
+}
+
+bool TryParseVrMode(const std::string_view text, VrMode* out) noexcept {
+    return TryParseEnum(text, kVrModes, out);
 }
 
 bool TryParseScriptMode(const std::string_view text, ScriptMode* out) noexcept {

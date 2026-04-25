@@ -266,6 +266,7 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::combat_console_set_image_position_2:
         case HookId::ui_show_combat_result:
         case HookId::camera_update_matrix:
+        case HookId::game_render_frame:
         case HookId::d3d9_set_present_parameters:
         case HookId::pal4_main_wndproc:
             registration.install_on_bootstrap = true;

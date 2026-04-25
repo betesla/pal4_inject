@@ -69,7 +69,7 @@ void TestResolveRuntimeAddress() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 14);
+    assert(inventory.size() == 15);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -80,6 +80,7 @@ void TestHookInventory() {
     bool found_combat_console_set_image_position_2 = false;
     bool found_ui_show_combat_result = false;
     bool found_camera_update_matrix = false;
+    bool found_game_render_frame = false;
     bool found_d3d9_present = false;
     bool found_reserved_wndproc = false;
     for (const auto& hook : inventory) {
@@ -147,6 +148,12 @@ void TestHookInventory() {
             assert(hook.patch_span == 7);
             assert(hook.ida_ea == pal4::inject::ida::kCameraUpdateMatrix);
         }
+        if (hook.id == HookId::game_render_frame) {
+            found_game_render_frame = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 5);
+            assert(hook.ida_ea == pal4::inject::ida::kGameRenderFrame);
+        }
         if (hook.id == HookId::d3d9_set_present_parameters) {
             found_d3d9_present = true;
             assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
@@ -169,6 +176,7 @@ void TestHookInventory() {
     assert(found_combat_console_set_image_position_2);
     assert(found_ui_show_combat_result);
     assert(found_camera_update_matrix);
+    assert(found_game_render_frame);
     assert(found_d3d9_present);
     assert(found_reserved_wndproc);
 }
@@ -213,6 +221,17 @@ void TestUiTextureFilterStrings() {
     assert(pal4::inject::TryParseUiTextureFilter("nearest", &parsed));
     assert(parsed == pal4::inject::UiTextureFilter::nearest);
     assert(!pal4::inject::TryParseUiTextureFilter("point", &parsed));
+}
+
+void TestVrModeStrings() {
+    assert(std::string(pal4::inject::ToString(pal4::inject::VrMode::off)) == "off");
+    assert(std::string(pal4::inject::ToString(pal4::inject::VrMode::seated_experimental)) ==
+           "seated_experimental");
+
+    pal4::inject::VrMode parsed = pal4::inject::VrMode::off;
+    assert(pal4::inject::TryParseVrMode("seated_experimental", &parsed));
+    assert(parsed == pal4::inject::VrMode::seated_experimental);
+    assert(!pal4::inject::TryParseVrMode("openxr", &parsed));
 }
 
 void TestScriptModeStrings() {
@@ -351,6 +370,18 @@ void TestProtocolRoundTrip() {
     assert(parsed.address == pal4::inject::ida::kIsCsbModeGlobal);
     assert(parsed.hex_bytes == "01000000");
     assert(parsed.unsafe_code_write);
+
+    command = {};
+    command.kind = ProtocolCommandKind::set_vr_pose;
+    command.vr_head_pose = {true, 1.5F, -2.5F, 0.25F, 0.1F, 0.2F, -0.3F};
+    assert(pal4::inject::ParseProtocolCommand(
+        pal4::inject::FormatProtocolCommand(command),
+        &parsed,
+        &error));
+    assert(parsed.kind == ProtocolCommandKind::set_vr_pose);
+    assert(parsed.vr_head_pose.active);
+    assert(parsed.vr_head_pose.yaw_degrees > 1.4F && parsed.vr_head_pose.yaw_degrees < 1.6F);
+    assert(parsed.vr_head_pose.offset_z < -0.2F && parsed.vr_head_pose.offset_z > -0.4F);
 
     ProtocolResponse response{};
     response.ok = true;
@@ -590,7 +621,7 @@ void TestMemoryRuntimeHelpers() {
 
 void TestInjectControlPanelModel() {
     const auto rows = pal4::inject::BuildInjectControlPanelRows();
-    assert(rows.size() == 14);
+    assert(rows.size() == 15);
 
     const auto find_row =
         [&rows](const HookId id) -> const pal4::inject::InjectControlPanelRow* {
@@ -607,6 +638,9 @@ void TestInjectControlPanelModel() {
     assert(process_ui_row->page == pal4::inject::InjectControlPanelPage::input_interaction);
     assert(process_ui_row->group_label == std::wstring_view(L"\u8f93\u5165\u4e0e\u4ea4\u4e92"));
     assert(process_ui_row->label == std::wstring_view(L"\u83dc\u5355\u70b9\u51fb\u4e0e\u6309\u952e\u63a5\u7ba1"));
+    const auto* vr_row = find_row(HookId::game_render_frame);
+    assert(vr_row);
+    assert(vr_row->page == pal4::inject::InjectControlPanelPage::camera);
     assert(process_ui_row->hook_name == std::string_view("process_ui_event"));
     assert(process_ui_row->allow_mode_change);
 
@@ -687,6 +721,7 @@ void TestInjectSettingsRoundTrip() {
     settings.msaa_level = pal4::inject::MsaaLevel::x4;
     settings.shadow_resolution = pal4::inject::ShadowResolution::x256;
     settings.ui_texture_filter = pal4::inject::UiTextureFilter::linear;
+    settings.vr_mode = pal4::inject::VrMode::seated_experimental;
     settings.launcher_script_mode = pal4::inject::ScriptMode::cs;
     settings.dialog_font_hd_enabled = false;
     settings.system_font_oversample_enabled = true;
@@ -718,6 +753,7 @@ void TestInjectSettingsRoundTrip() {
     assert(parsed.msaa_level == pal4::inject::MsaaLevel::x4);
     assert(parsed.shadow_resolution == pal4::inject::ShadowResolution::x256);
     assert(parsed.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
+    assert(parsed.vr_mode == pal4::inject::VrMode::seated_experimental);
     assert(parsed.launcher_script_mode == pal4::inject::ScriptMode::cs);
     assert(!parsed.dialog_font_hd_enabled);
     assert(parsed.system_font_oversample_enabled);
@@ -753,6 +789,7 @@ void TestInjectSettingsRoundTrip() {
     assert(loaded.msaa_level == pal4::inject::MsaaLevel::x4);
     assert(loaded.shadow_resolution == pal4::inject::ShadowResolution::x256);
     assert(loaded.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
+    assert(loaded.vr_mode == pal4::inject::VrMode::seated_experimental);
     assert(loaded.launcher_script_mode == pal4::inject::ScriptMode::cs);
     assert(!loaded.dialog_font_hd_enabled);
     assert(loaded.system_font_oversample_enabled);
@@ -869,6 +906,9 @@ void TestRuntimeEventLog() {
     state.SetMsaaLevel(pal4::inject::MsaaLevel::x2);
     state.SetShadowResolution(pal4::inject::ShadowResolution::x256);
     state.SetUiTextureFilter(pal4::inject::UiTextureFilter::linear);
+    state.SetVrMode(pal4::inject::VrMode::seated_experimental);
+    state.SetVrHeadPose({true, 3.0F, -2.0F, 1.0F, 0.1F, 0.2F, -0.3F});
+    state.SetVrCameraState({true, 0x1234, 0x5678, 12.0F, 34.0F, 56.0F, 78.0F, 1.0F, 2.0F, 3.0F, 4.0F, 5.0F, 6.0F});
     state.SetDialogFontHdEnabled(false);
     state.SetSystemFontOversampleEnabled(true);
     state.AppendEventLog("event-1");
@@ -889,6 +929,11 @@ void TestRuntimeEventLog() {
     assert(tail.find("event-2") != std::string::npos);
     const auto snapshot = state.BuildSnapshot(0);
     assert(snapshot.crash_handler_ready);
+    assert(snapshot.vr_mode == pal4::inject::VrMode::seated_experimental);
+    assert(snapshot.vr_head_pose.active);
+    assert(snapshot.vr_head_pose.yaw_degrees == 3.0F);
+    assert(snapshot.vr_camera_state.valid);
+    assert(snapshot.vr_camera_state.camera_internal == 0x5678);
     assert(snapshot.msaa_level == pal4::inject::MsaaLevel::x2);
     assert(snapshot.shadow_resolution == pal4::inject::ShadowResolution::x256);
     assert(snapshot.ui_texture_filter == pal4::inject::UiTextureFilter::linear);
@@ -1767,6 +1812,7 @@ int main() {
     TestMsaaLevelStrings();
     TestShadowResolutionStrings();
     TestUiTextureFilterStrings();
+    TestVrModeStrings();
     TestScriptModeStrings();
     TestInheritedScriptModeOverride();
     TestInjectControlPanelModel();

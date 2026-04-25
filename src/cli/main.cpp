@@ -55,7 +55,9 @@ void PrintUsage() {
         << "  mem-read (--ida|--va) <addr> --size <n>\n"
         << "  mem-read-scalar (--ida|--va) <addr> --type <type>\n"
         << "  mem-write-bytes (--ida|--va) <addr> <hex> [--unsafe-code-write]\n"
-        << "  mem-write-scalar (--ida|--va) <addr> --type <type> <value> [--unsafe-code-write]\n";
+        << "  mem-write-scalar (--ida|--va) <addr> --type <type> <value> [--unsafe-code-write]\n"
+        << "  vr-pose <yaw> <pitch> <roll> <x> <y> <z>\n"
+        << "  vr-reset\n";
 }
 
 std::string JoinArguments(
@@ -408,6 +410,25 @@ bool TryParseTrailingTimeout(
     return true;
 }
 
+bool ParseFloatArgument(const std::string& text, float* out, std::string* error) {
+    if (!out) {
+        if (error) {
+            *error = "float output pointer is null";
+        }
+        return false;
+    }
+    char* end = nullptr;
+    const float value = std::strtof(text.c_str(), &end);
+    if (!end || *end != '\0') {
+        if (error) {
+            *error = "invalid float value";
+        }
+        return false;
+    }
+    *out = value;
+    return true;
+}
+
 int HandleSnapshot(const CliOptions& options, std::string* error) {
     UiSnapshotTree tree{};
     if (!ReadSnapshotTree(options, &tree, error)) {
@@ -423,6 +444,50 @@ int HandleSnapshotRaw(const CliOptions& options, std::string* error) {
         return 1;
     }
     std::cout << pal4::inject::SerializeUiSnapshotTree(tree) << "\n";
+    return 0;
+}
+
+int HandleVrPose(
+    const CliOptions& options,
+    const std::vector<std::string>& args,
+    std::string* error) {
+    ProtocolCommand command{};
+    command.kind = ProtocolCommandKind::set_vr_pose;
+    command.vr_head_pose.active = true;
+
+    if (args.size() != 7) {
+        if (error) {
+            *error = "vr-pose expects 6 float arguments";
+        }
+        return 1;
+    }
+
+    if (!ParseFloatArgument(args[1], &command.vr_head_pose.yaw_degrees, error) ||
+        !ParseFloatArgument(args[2], &command.vr_head_pose.pitch_degrees, error) ||
+        !ParseFloatArgument(args[3], &command.vr_head_pose.roll_degrees, error) ||
+        !ParseFloatArgument(args[4], &command.vr_head_pose.offset_x, error) ||
+        !ParseFloatArgument(args[5], &command.vr_head_pose.offset_y, error) ||
+        !ParseFloatArgument(args[6], &command.vr_head_pose.offset_z, error)) {
+        return 1;
+    }
+
+    ProtocolResponse response{};
+    if (!ExpectOkResponse(options, command, &response, error)) {
+        return 1;
+    }
+    PrintFieldMap(response);
+    return 0;
+}
+
+int HandleVrReset(const CliOptions& options, std::string* error) {
+    ProtocolCommand command{};
+    command.kind = ProtocolCommandKind::set_vr_pose;
+    command.vr_head_pose = {};
+    ProtocolResponse response{};
+    if (!ExpectOkResponse(options, command, &response, error)) {
+        return 1;
+    }
+    PrintFieldMap(response);
     return 0;
 }
 
@@ -1048,6 +1113,10 @@ int main(int argc, char** argv) {
         exit_code = HandleState(options, &error);
     } else if (command == "event-log") {
         exit_code = HandleEventLog(options, &error);
+    } else if (command == "vr-pose") {
+        exit_code = HandleVrPose(options, options.args, &error);
+    } else if (command == "vr-reset") {
+        exit_code = HandleVrReset(options, &error);
     } else if (command == "wait-path") {
         exit_code = HandleWaitPath(options, options.args, &error);
     } else if (command == "wait-text") {

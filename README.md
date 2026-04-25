@@ -68,10 +68,11 @@ cmake -S . -B build -A Win32 -DPAL4_INJECT_SYNC_TEST_DEPLOY=OFF
   - 注入相关文件放在游戏目录下的 `pal4_inject` 子目录，便于后续覆盖更新
   - 注入配置、runtime log、crash report / dump 等运行产物也统一放在 `pal4_inject` 子目录
   - 双击 `PAL4_inject.exe` 后会进入一个常驻中文启动器，不再是“一次性选完就退出”的对话框
-  - 启动器按页签拆成“启动前准备 / 显示与分辨率 / 画面与文字”三块，把需要在进游戏前决定的选项都集中到这里
+  - 启动器按页签拆成“启动前准备 / 显示与分辨率 / 画面与文字 / 实验性功能”四块，把需要在进游戏前决定的选项都集中到这里
   - 启动器会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、全屏/窗口化、宽屏和垂直同步
-  - 启动器也会读取并保存 `pal4_inject\inject_panel_settings.ini` 里的启动前画质策略，可设置 `MSAA`、人物阴影分辨率、`UI` 像素采样、对白高清实验和系统字体高清实验
+- 启动器也会读取并保存 `pal4_inject\inject_panel_settings.ini` 里的启动前画质策略，可设置 `MSAA`、人物阴影分辨率、`UI` 像素采样、对白高清实验、系统字体高清实验，以及“坐姿 VR（实验性）”相机骨架开关
   - 分辨率列表仍保留“常用分辨率”和“主显示器支持”两个页签
+  - 稳定画质项留在“画面与文字”，而 VR / 头姿态研究一类尚在验证中的能力统一放到“实验性功能”页，避免和日常配置混在一起
   - 启动器底部提供 `启动游戏 / 停止游戏 / 重启游戏 / 检查更新 / 最小化` 按钮；关闭窗口也只会最小化，不会直接退出
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
   - GUI 右上角显示当前版本和作者信息，点击 `B站 @北风7P` 可打开作者主页
@@ -126,7 +127,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
 - runtime DLL 还会拉起一个原生 Win32 注入控制面板：
   - 默认隐藏，按 `Ctrl+J` 显示 / 隐藏
   - 默认会先跟随游戏窗口定位；用户手动拖动后就不再强制吸附
-  - 渲染与文字页顶部现在只显示“启动前画质设定摘要”，告诉你当前 `MSAA`、阴影、UI 采样和字体实验的实际状态；这些设置统一改到启动器里配置
+- 渲染与文字页顶部现在只显示“启动前画质设定摘要”，告诉你当前 `MSAA`、阴影、UI 采样、字体实验和坐姿 VR 实验链路的实际状态；这些设置统一改到启动器里配置
   - 每个 hook 一行，带快速开关、`HookMode` 下拉框和状态栏
   - 面板配置和启动器脚本模式会记忆到游戏目录下的 `pal4_inject\inject_panel_settings.ini`，下次启动自动恢复
   - `Ctrl+J` 显示 / 隐藏面板
@@ -259,3 +260,23 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
     - 安全数据页写入 + 恢复
     - 代码页无 `unsafe` 写入拒绝
   - 若额外设置 `PAL4_INJECT_RUN_FULL_SCENARIOS=1`，则继续跑 `snapshot -> click` 驱动的 `NewGame` / `Exit` 完整菜单场景
+
+## Seated VR Skeleton
+
+- 这一版先实现的是“坐姿 VR 相机骨架”，不是完整 OpenXR/HMD 输出。
+- 启动器里的 `坐姿 VR（实验性）` 会打开一条新的相机/渲染帧 hook 链：
+  - `Game_RenderFrame` 每帧采样当前活跃相机
+  - `Camera_UpdateMatrix` 可叠加一份外部头姿态偏移
+- 运行时可通过 CLI/IPC 注入头姿态，先验证“头部朝向/小幅位移 -> 相机矩阵”这条主链：
+
+```powershell
+I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 vr-pose 3 -2 0 0.01 0 0
+I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 vr-reset
+I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 state
+```
+
+- `state` / `read_ui_state` 现在会额外导出：
+  - `vr_mode`
+  - `vr_pose_*`
+  - `vr_camera_*`
+- 当前阶段的定位是为后续 `OpenTrack / OpenXR` 接入准备相机主链，不包含双眼渲染、OpenXR swapchain 和 VR UI。

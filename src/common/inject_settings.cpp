@@ -12,7 +12,7 @@
 namespace pal4::inject {
 namespace {
 
-constexpr int kSettingsVersion = 5;
+constexpr int kSettingsVersion = 6;
 
 std::string TrimAscii(const std::string_view text) {
     std::size_t begin = 0;
@@ -42,6 +42,7 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
     out << "msaa_level=" << ToString(settings.msaa_level) << '\n';
     out << "shadow_resolution=" << ToString(settings.shadow_resolution) << '\n';
     out << "ui_texture_filter=" << ToString(settings.ui_texture_filter) << '\n';
+    out << "vr_mode=" << ToString(settings.vr_mode) << '\n';
     out << "launcher_script_mode=" << ToString(settings.launcher_script_mode) << '\n';
     out << "dialog_font_hd_enabled="
         << (settings.dialog_font_hd_enabled ? "1" : "0") << '\n';
@@ -139,6 +140,15 @@ bool ParseInjectPersistedSettings(
             if (!TryParseUiTextureFilter(value, &out->ui_texture_filter)) {
                 if (error) {
                     *error = "invalid ui_texture_filter value: " + value;
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "vr_mode") {
+            if (!TryParseVrMode(value, &out->vr_mode)) {
+                if (error) {
+                    *error = "invalid vr_mode value: " + value;
                 }
                 return false;
             }

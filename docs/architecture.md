@@ -15,6 +15,7 @@
   - 等待 named event
   - 默认在 ready event 后恢复主线程
   - agent / 测试侧再通过 named pipe 读取 `read_ui_state` / `snapshot_ui` / memory debug 命令
+  - 启动器 UI 现按“启动前准备 / 显示与分辨率 / 画面与文字 / 实验性功能”分页，把稳定画质项和实验链路拆开
 - `cli.exe`
   - 只做 pipe 客户端与人类可读输出
   - `snapshot -> click/fill/type/press -> snapshot`
@@ -119,6 +120,9 @@
   - `d3d9_quality_hooks.cpp`
     - `D3D9SetPresentParameters` seam
     - 通过原始多重采样探测路径接入 `MSAA` 请求值
+  - `vr_hooks.cpp`
+    - `Game_RenderFrame` seam
+    - 每帧采样活跃相机内参，供坐姿 VR / 头姿态实验复用
   - `shadow_quality_hooks.cpp`
     - 人物阴影 shadow-camera 质量参数覆盖
     - 当前集中管理：
@@ -131,16 +135,17 @@
     - `ProcessUIEvent` 替换与 observe-only wrapper
   - `camera_hooks.cpp`
     - `Camera_UpdateMatrix` absolute pitch guard
+    - 当 `vr_mode=seated_experimental` 时，还会叠加一份外部头姿态偏移
   - `crash_handler.cpp`
     - VEH / unhandled exception handler、crash report、minidump
   - `inject_control_window.cpp`
-    - 原生 Win32 控制面板、`MSAA` / 人物阴影分辨率滑块、hook 快速开关和 mode 下拉框、`Ctrl+J` 隐藏/显示
+    - 原生 Win32 控制面板、hook 快速开关和 mode 下拉框、`Ctrl+J` 隐藏/显示
     - 每条 hook 独立的 `日志` 勾选框，可只打开某一项的运行时诊断输出
     - 初始吸附游戏窗口；手动拖动后停止自动跟随
     - 作为游戏窗口 owned popup 存在，减少焦点切回游戏时的外部窗体干扰
   - `runtime_preferences.cpp`
     - 把 panel 改动统一转成 runtime side effect
-    - 保存 / 加载 remembered hook mode 与 `MSAA` / 人物阴影分辨率设置
+    - 保存 / 加载 remembered hook mode 与 `MSAA` / 人物阴影分辨率 / `vr_mode` 设置
   - `memory_debug_runtime.cpp`
     - `IDA EA / runtime VA` 解析
     - `VirtualQuery` region 探测
@@ -149,7 +154,9 @@
     - `ping / hook_status / enqueue_ui_message / simulate_key / read_ui_state / read_paliv_state / set_hook_mode / shutdown`
     - `snapshot_ui / click_ui_ref / fill_ui_ref / type_text`
     - `query_memory / read_memory / write_memory`
+    - `set_vr_pose`
     - `read_ui_state` 同时导出 crash capture 状态、最近一次 artifact 路径，以及 `requested_script_mode / script_mode / script_mode_flag / main_module_base`
+    - 同时额外导出 `vr_mode / vr_pose_* / vr_camera_*`
   - `bootstrap.cpp`
     - bootstrap 主流程
     - 复核 launcher 期请求的脚本模式，必要时补写并记录日志
@@ -171,6 +178,7 @@
   - `ui_showCombatHint2`
   - `Camera_UpdateMatrix`
   - `D3D9SetPresentParameters`
+  - `Game_RenderFrame`
   - `PAL4_Main_WndProc`
 - 只做 inventory、不默认安装：
   - `HandlePlayerInputEvents`

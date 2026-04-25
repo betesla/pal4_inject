@@ -23,6 +23,7 @@ InjectControlPanelPage BuildPage(const HookId id) {
     case HookId::d3d9_set_present_parameters:
         return InjectControlPanelPage::render_visual;
     case HookId::camera_update_matrix:
+    case HookId::game_render_frame:
         return InjectControlPanelPage::camera;
     }
     return InjectControlPanelPage::overview;
@@ -48,6 +49,7 @@ std::wstring_view BuildGroupLabel(const HookId id) {
     case HookId::d3d9_set_present_parameters:
         return L"\u6e32\u67d3\u4e0e\u753b\u9762";
     case HookId::camera_update_matrix:
+    case HookId::game_render_frame:
         return L"\u76f8\u673a";
     }
     return L"\u672a\u77e5\u5206\u7ec4";
@@ -79,6 +81,8 @@ std::wstring_view BuildDisplayLabel(const HookId id) {
         return L"\u6218\u6597\u63d0\u793a\u7a97\u5c45\u4e2d B";
     case HookId::camera_update_matrix:
         return L"\u76f8\u673a\u4fef\u4ef0\u4fdd\u62a4";
+    case HookId::game_render_frame:
+        return L"VR \u6e32\u67d3\u5e27\u4e0e\u6d3b\u8dc3\u76f8\u673a\u91c7\u6837";
     case HookId::d3d9_set_present_parameters:
         return L"\u6297\u952f\u9f7f\u8bbe\u5907\u53c2\u6570\u8986\u5199";
     case HookId::pal4_main_wndproc:
@@ -109,6 +113,7 @@ std::vector<InjectControlPanelRow> BuildInjectControlPanelRows() {
         {HookId::ui_show_combat_result, BuildPage(HookId::ui_show_combat_result), BuildGroupLabel(HookId::ui_show_combat_result), BuildDisplayLabel(HookId::ui_show_combat_result), BuildHookName(HookId::ui_show_combat_result), true},
         {HookId::d3d9_set_present_parameters, BuildPage(HookId::d3d9_set_present_parameters), BuildGroupLabel(HookId::d3d9_set_present_parameters), BuildDisplayLabel(HookId::d3d9_set_present_parameters), BuildHookName(HookId::d3d9_set_present_parameters), true},
         {HookId::camera_update_matrix, BuildPage(HookId::camera_update_matrix), BuildGroupLabel(HookId::camera_update_matrix), BuildDisplayLabel(HookId::camera_update_matrix), BuildHookName(HookId::camera_update_matrix), true},
+        {HookId::game_render_frame, BuildPage(HookId::game_render_frame), BuildGroupLabel(HookId::game_render_frame), BuildDisplayLabel(HookId::game_render_frame), BuildHookName(HookId::game_render_frame), true},
     };
 }
 

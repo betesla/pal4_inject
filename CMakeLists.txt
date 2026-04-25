@@ -145,6 +145,7 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/runtime_state.cpp
     src/runtime/shadow_quality_hooks.cpp
     src/runtime/ui_snapshot_runtime.cpp
+    src/runtime/vr_hooks.cpp
     src/runtime/window_focus_hooks.cpp
 )
 target_include_directories(pal4_inject_runtime_core

@@ -44,6 +44,11 @@ enum class UiTextureFilter : std::uint8_t {
     nearest,
 };
 
+enum class VrMode : std::uint8_t {
+    off = 0,
+    seated_experimental,
+};
+
 enum class ScriptMode : std::uint8_t {
     inherit = 0,
     cs,
@@ -64,6 +69,7 @@ enum class HookId : std::uint8_t {
     dialog_handle_text_display,
     setup_minimap_texture,
     camera_update_matrix,
+    game_render_frame,
     d3d9_set_present_parameters,
     pal4_main_wndproc,
     handle_player_input_events,
@@ -95,6 +101,32 @@ struct HookStatus {
     std::string last_error;
 };
 
+struct VrHeadPose {
+    bool active = false;
+    float yaw_degrees = 0.0F;
+    float pitch_degrees = 0.0F;
+    float roll_degrees = 0.0F;
+    float offset_x = 0.0F;
+    float offset_y = 0.0F;
+    float offset_z = 0.0F;
+};
+
+struct VrCameraState {
+    bool valid = false;
+    std::uintptr_t camera_object = 0;
+    std::uintptr_t camera_internal = 0;
+    float yaw_degrees = 0.0F;
+    float pitch_degrees = 0.0F;
+    float roll_degrees = 0.0F;
+    float distance = 0.0F;
+    float position_x = 0.0F;
+    float position_y = 0.0F;
+    float position_z = 0.0F;
+    float look_at_x = 0.0F;
+    float look_at_y = 0.0F;
+    float look_at_z = 0.0F;
+};
+
 struct UiMessageCommand {
     std::uint32_t msg = 0;
     std::uint32_t wparam = 0;
@@ -108,6 +140,9 @@ struct RuntimeSnapshot {
     bool pipe_ready = false;
     bool ui_dispatch_ready = false;
     bool crash_handler_ready = false;
+    VrMode vr_mode = VrMode::off;
+    VrHeadPose vr_head_pose{};
+    VrCameraState vr_camera_state{};
     ShadowResolution shadow_resolution = ShadowResolution::x64;
     bool dialog_font_hd_enabled = true;
     bool system_font_oversample_enabled = false;
@@ -156,6 +191,7 @@ const char* ToString(HookMode mode) noexcept;
 const char* ToString(MsaaLevel level) noexcept;
 const char* ToString(ShadowResolution resolution) noexcept;
 const char* ToString(UiTextureFilter filter) noexcept;
+const char* ToString(VrMode mode) noexcept;
 const char* ToString(ScriptMode mode) noexcept;
 const char* ToString(HookId id) noexcept;
 
@@ -163,6 +199,7 @@ bool TryParseHookMode(std::string_view text, HookMode* out) noexcept;
 bool TryParseMsaaLevel(std::string_view text, MsaaLevel* out) noexcept;
 bool TryParseShadowResolution(std::string_view text, ShadowResolution* out) noexcept;
 bool TryParseUiTextureFilter(std::string_view text, UiTextureFilter* out) noexcept;
+bool TryParseVrMode(std::string_view text, VrMode* out) noexcept;
 bool TryParseScriptMode(std::string_view text, ScriptMode* out) noexcept;
 bool TryParseHookId(std::string_view text, HookId* out) noexcept;
 std::optional<std::uint32_t> ScriptModeToCsbFlag(ScriptMode mode) noexcept;

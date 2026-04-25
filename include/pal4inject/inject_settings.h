@@ -20,6 +20,7 @@ struct InjectPersistedSettings {
     MsaaLevel msaa_level = MsaaLevel::off;
     ShadowResolution shadow_resolution = ShadowResolution::x64;
     UiTextureFilter ui_texture_filter = UiTextureFilter::nearest;
+    VrMode vr_mode = VrMode::off;
     ScriptMode launcher_script_mode = ScriptMode::csb;
     bool dialog_font_hd_enabled = true;
     bool system_font_oversample_enabled = false;

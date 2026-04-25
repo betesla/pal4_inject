@@ -28,6 +28,7 @@ enum class ProtocolCommandKind : std::uint8_t {
     query_memory,
     read_memory,
     write_memory,
+    set_vr_pose,
     shutdown,
 };
 
@@ -45,6 +46,7 @@ struct ProtocolCommand {
     std::uint32_t size = 0;
     bool key_up = false;
     bool unsafe_code_write = false;
+    VrHeadPose vr_head_pose{};
     std::string ui_ref;
     std::string text;
     std::string hex_bytes;

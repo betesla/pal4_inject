@@ -25,6 +25,12 @@ public:
     bool PipeReady() const;
     bool UiDispatchReady() const;
     bool CrashHandlerReady() const;
+    void SetVrMode(VrMode mode);
+    VrMode GetVrMode() const;
+    void SetVrHeadPose(const VrHeadPose& pose);
+    VrHeadPose GetVrHeadPose() const;
+    void SetVrCameraState(const VrCameraState& state);
+    VrCameraState GetVrCameraState() const;
     void SetDialogFontHdEnabled(bool enabled);
     bool DialogFontHdEnabled() const;
     void SetSystemFontOversampleEnabled(bool enabled);
@@ -99,6 +105,9 @@ private:
     bool pipe_ready_ = false;
     bool ui_dispatch_ready_ = false;
     bool crash_handler_ready_ = false;
+    VrMode vr_mode_ = VrMode::off;
+    VrHeadPose vr_head_pose_{};
+    VrCameraState vr_camera_state_{};
     bool dialog_font_hd_enabled_ = true;
     bool system_font_oversample_enabled_ = false;
     bool gamepad_enabled_ = true;

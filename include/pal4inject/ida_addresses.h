@@ -32,6 +32,7 @@ inline constexpr std::uint32_t kCombatConsoleSetImageAndPosition2 = kUiShowComba
 inline constexpr std::uint32_t kUiShowCombatHint2 = 0x54A960;
 inline constexpr std::uint32_t kUiShowCombatResult = kUiShowCombatHint2;
 inline constexpr std::uint32_t kCameraUpdateMatrix = 0x5EA190;
+inline constexpr std::uint32_t kGameRenderFrame = pal4::ida::kGameRenderFrame;
 inline constexpr std::uint32_t kD3d9SetPresentParameters = 0x75F710;
 inline constexpr std::uint32_t kPal4MainWndProc = 0x40A170;
 inline constexpr std::uint32_t kHandlePlayerInputEvents = 0x4283B0;
@@ -43,7 +44,9 @@ inline constexpr std::uint32_t kTransformMouseCoordinates = 0x412320;
 inline constexpr std::uint32_t kSetRenderStates = 0x4149D0;
 inline constexpr std::uint32_t kRenderGeometryAndResetCounter = 0x414A20;
 inline constexpr std::uint32_t kPalGameIvInitCameraSubsystem = 0x5EADE0;
+inline constexpr std::uint32_t kCameraGetActiveCameraObject = 0x5EBA10;
 inline constexpr std::uint32_t kCameraGetActiveCameraInternalId = 0x5EBA20;
+inline constexpr std::uint32_t kObjectGetInternalId = 0x5EAC60;
 
 inline constexpr std::uint32_t kPalGameIvGetInstance = pal4::ida::kPalGameIvGetInstance;
 inline constexpr std::uint32_t kUiFrameManagerGetInstance = pal4::ida::kUiFrameManagerGetInstance;

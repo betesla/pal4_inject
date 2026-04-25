@@ -54,6 +54,7 @@ bool SavePersistedRuntimePreferences(std::string* error) {
     settings.msaa_level = GetRuntimeState().GetMsaaLevel();
     settings.shadow_resolution = GetRuntimeState().GetShadowResolution();
     settings.ui_texture_filter = GetRuntimeState().GetUiTextureFilter();
+    settings.vr_mode = GetRuntimeState().GetVrMode();
     settings.dialog_font_hd_enabled = GetRuntimeState().DialogFontHdEnabled();
     settings.system_font_oversample_enabled =
         GetRuntimeState().SystemFontOversampleEnabled();
@@ -209,6 +210,34 @@ void ApplyUiTextureFilterPreference(
     }
 }
 
+void ApplyVrModePreference(
+    const VrMode mode,
+    const bool persist,
+    const bool update_last_ui_event) {
+    auto& state = GetRuntimeState();
+    state.SetVrMode(mode);
+    const HookMode target_mode =
+        mode == VrMode::seated_experimental
+        ? ResolveEnabledHookMode(HookId::camera_update_matrix)
+        : HookMode::observe_only;
+    state.SetHookMode(HookId::camera_update_matrix, target_mode);
+    state.SetHookMode(
+        HookId::game_render_frame,
+        mode == VrMode::seated_experimental
+            ? ResolveEnabledHookMode(HookId::game_render_frame)
+            : HookMode::observe_only);
+    if (update_last_ui_event) {
+        state.SetLastUiEvent(
+            std::string("inject_control:vr_mode=") + ToString(mode));
+    }
+    if (persist) {
+        std::string error;
+        if (!SavePersistedRuntimePreferences(&error)) {
+            RecordPersistenceError(error);
+        }
+    }
+}
+
 void ApplyDialogFontHdPreference(
     const bool enabled,
     const bool persist,
@@ -313,6 +342,7 @@ bool LoadPersistedRuntimePreferences(std::string* error) {
             false,
             false);
     }
+    ApplyVrModePreference(settings.vr_mode, false, false);
     ApplyMsaaPreference(settings.msaa_level, false, false);
     if (error) {
         error->clear();
