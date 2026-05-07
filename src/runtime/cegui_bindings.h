@@ -22,6 +22,11 @@ struct CeguiUVector2 {
     CeguiUDim y{};
 };
 
+struct CeguiURect {
+    CeguiUVector2 min{};
+    CeguiUVector2 max{};
+};
+
 struct OpaqueCeguiString {
     std::array<std::byte, 152> storage{};
 };
@@ -51,7 +56,9 @@ struct CeguiBindings {
     using WindowGetFontFn = void* (__thiscall*)(const void*);
     using RequestRedrawFn = void (__thiscall*)(void*);
     using WindowGetWindowPositionFn = const CeguiUVector2* (__thiscall*)(void*);
+    using WindowGetAreaFn = const CeguiURect* (__thiscall*)(const void*);
     using WindowSetWindowPositionFn = void (__thiscall*)(void*, const CeguiUVector2&);
+    using WindowSetBoolFn = void (__thiscall*)(void*, bool);
     using WindowSetPropertyFn = void (__thiscall*)(void*, const void*, const void*);
     using FontManagerGetFontFn = void* (__thiscall*)(void*, const void*);
     using ImagesetManagerIsImagesetPresentFn = bool (__thiscall*)(const void*, const void*);
@@ -104,7 +111,9 @@ struct CeguiBindings {
     WindowGetFontFn window_get_font = nullptr;
     RequestRedrawFn request_redraw = nullptr;
     WindowGetWindowPositionFn window_get_window_position = nullptr;
+    WindowGetAreaFn window_get_area = nullptr;
     WindowSetWindowPositionFn window_set_window_position = nullptr;
+    WindowSetBoolFn window_set_clipped_by_parent = nullptr;
     WindowSetPropertyFn window_set_property = nullptr;
     FontManagerGetFontFn font_manager_get_font = nullptr;
     ImagesetManagerIsImagesetPresentFn imageset_manager_is_imageset_present = nullptr;

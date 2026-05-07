@@ -211,7 +211,12 @@
   - 保留第二个音频 key 参数，避免把语音资源路径一起改坏
 - wide-aspect UI
   - 对共享 renderer ctor 路径上的宽屏分辨率，注入 runtime 会改成“按高度等比缩放 + 左右 pillarbox + 居中”
+  - renderer ctor / render path 会读取 CEGUI Root 的 `UnifiedAreaRect` 作为当前逻辑画布；如果资源已经是宽屏逻辑画布，则 `horizontal_bias_pixels` 保持为 `0`
+  - 从窗口树推断宽屏时只使用最大 `right` 扩展逻辑宽度，逻辑高度仍取 gui sheet/root 高度；`loadWindow` 这类 4:3 UI 内部列表可能延伸到 `bottom=609`，不能据此降低按高度缩放比例
+  - 宽屏画布推断只看 desktop 下从 `(0,0)` 起始并覆盖整高的主 Root 子树；`CommonDialog/Root` 这类非零起点 overlay / modal dialog 不参与推断，否则弹窗会把普通 4:3 界面误判成宽屏画布并清掉居中偏移
   - 通过 object-local synthetic vtable 只改当前 renderer 对象的 `doRender` / `getRenderRect`
+  - 同时同步 PAL4 renderer 对象 `0xF4/0xF8/0xFC/0x100` 的 render rect 字段；IDA 显示 `CEGUI_Renderer_Constructor_2` 会把这里初始化为 `0,600,0,800`，若不改这份对象状态，CEGUI 裁剪链仍可能保留 800 宽
+  - 对 `MainWindow/Root` 这类宽屏节点，只在运行时关闭越界窗口的 `ClippedByParent`，不再扩写 `setWindowSize / setWidth / setHeight`，避免在宽屏菜单和普通 4:3 UI 之间切换时留下错误窗口宽度
   - 不直接改 `CEGUIBase.dll` 的全局 vtable，也不假设 renderer 对象有 `1280x800` 变体那么大的内存布局
   - minimap 贴图区域额外通过 `SetupMinimapTexture` hook 按同一套 wide plan 重算 `x / y / width / height`
   - 战斗内程序控制的浮动数字、状态图标和胜利图会在命中的 `SetProperties_4C2550` 调用点上补一层 `logical_horizontal_padding`

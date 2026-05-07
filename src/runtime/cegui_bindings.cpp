@@ -276,11 +276,20 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     cached.window_get_window_position =
         reinterpret_cast<CeguiBindings::WindowGetWindowPositionFn>(proc);
 
+    ResolveOptionalBinding(module, "?getWindowArea@Window@CEGUI@@QBEABVURect@2@XZ", &proc);
+    cached.window_get_area = reinterpret_cast<CeguiBindings::WindowGetAreaFn>(proc);
+
     if (!ResolveBinding(module, "?setWindowPosition@Window@CEGUI@@QAEXABVUVector2@2@@Z", &proc, error)) {
         return false;
     }
     cached.window_set_window_position =
         reinterpret_cast<CeguiBindings::WindowSetWindowPositionFn>(proc);
+
+    if (!ResolveBinding(module, "?setClippedByParent@Window@CEGUI@@QAEX_N@Z", &proc, error)) {
+        return false;
+    }
+    cached.window_set_clipped_by_parent =
+        reinterpret_cast<CeguiBindings::WindowSetBoolFn>(proc);
 
     ResolveOptionalBinding(module, "?setProperty@Window@CEGUI@@QAEXABVString@2@0@Z", &proc);
     cached.window_set_property = reinterpret_cast<CeguiBindings::WindowSetPropertyFn>(proc);

@@ -415,7 +415,11 @@ ProcessUiDispatchResult DispatchInjectedUiPlan(
         float transformed[2]{};
         transform_mouse_coordinates(static_cast<float*>(self), transformed, raw_coords);
         if (const int* config = ReadGameConfigPointer()) {
-            const auto widescreen_plan = BuildCeguiWidescreenPlan(config[0], config[1]);
+            auto widescreen_plan = BuildCeguiWidescreenPlan(config[0], config[1]);
+            CeguiWidescreenPlan active_plan{};
+            if (TryGetActiveCeguiWidescreenPlan(&active_plan)) {
+                widescreen_plan = active_plan;
+            }
             if (GetRuntimeState().GetHookMode(HookId::cegui_renderer_constructor_2) != HookMode::observe_only &&
                 GetRuntimeState().GetHookMode(HookId::cegui_renderer_constructor_2) != HookMode::mirror_compare) {
                 ApplyCeguiWidescreenMouseTransform(

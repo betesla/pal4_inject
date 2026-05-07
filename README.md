@@ -203,6 +203,9 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - 注入 runtime 会把 UI 改成按高度等比缩放
   - 计算左右 pillarbox 留白
   - 居中显示 4:3 逻辑 UI，而不是把 UI 横向拉伸铺满整个窗口
+  - 如果 CEGUI Root 的 `UnifiedAreaRect` 已经是宽屏逻辑画布（例如约 `1067x600`），则不会再追加 4:3 居中偏移
+  - PAL4 renderer 对象内部的 render rect 也会同步到同一套逻辑画布，避免 CEGUI 窗口树已变宽但最终仍按 `800x600` 裁剪
+  - 对越过父窗口边界的宽屏 UI 节点，只关闭 `ClippedByParent`；不修改 CEGUI 窗口尺寸，避免普通 4:3 UI 返回时被污染
 - 游戏内常驻 HUD 会额外补一层“贴边”修正，尽量接近原版 `1280x800` 的宽屏摆法：
   - `minimap.xml` 可见部件改为靠左下
   - `portrait.xml` 可见部件改为靠右上

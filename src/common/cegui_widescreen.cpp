@@ -66,11 +66,23 @@ float ProjectWidescreenLogicalXToPhysicalPixels(
 }
 
 CeguiWidescreenPlan BuildCeguiWidescreenPlan(const int width, const int height) noexcept {
+    return BuildCeguiWidescreenPlanForLogicalSize(
+        width,
+        height,
+        kLogicalUiWidth,
+        kLogicalUiHeight);
+}
+
+CeguiWidescreenPlan BuildCeguiWidescreenPlanForLogicalSize(
+    const int width,
+    const int height,
+    const float logical_width,
+    const float logical_height) noexcept {
     CeguiWidescreenPlan plan{};
     plan.width = width;
     plan.height = height;
-    plan.logical_width = kLogicalUiWidth;
-    plan.logical_height = kLogicalUiHeight;
+    plan.logical_width = logical_width > 0.0F ? logical_width : kLogicalUiWidth;
+    plan.logical_height = logical_height > 0.0F ? logical_height : kLogicalUiHeight;
     plan.use_original_variant = UsesOriginalWideRendererVariant(width, height);
 
     if (!IsWideAspectResolution(width, height)) {
@@ -78,8 +90,8 @@ CeguiWidescreenPlan BuildCeguiWidescreenPlan(const int width, const int height) 
     }
 
     plan.apply = true;
-    plan.uniform_scale = static_cast<float>(height) / kLogicalUiHeight;
-    const float scaled_width = kLogicalUiWidth * plan.uniform_scale;
+    plan.uniform_scale = static_cast<float>(height) / plan.logical_height;
+    const float scaled_width = plan.logical_width * plan.uniform_scale;
     if (static_cast<float>(width) > scaled_width) {
         plan.horizontal_bias_pixels =
             (static_cast<float>(width) - scaled_width) * 0.5F;

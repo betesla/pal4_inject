@@ -174,6 +174,8 @@ ProtocolResponse BuildSnapshotResponse() {
         HexValue(static_cast<std::uint32_t>(snapshot.main_module_base));
     response.fields["msaa_level"] = ToString(snapshot.msaa_level);
     response.fields["ui_texture_filter"] = ToString(snapshot.ui_texture_filter);
+    response.fields["cegui_widescreen_layout"] =
+        BuildCeguiWidescreenRuntimeLayoutDebugSummary();
     response.fields["current_paliv_entry"] = HexValue(snapshot.current_paliv_entry);
     response.fields["last_paliv_entry_observed"] = HexValue(snapshot.last_paliv_entry_observed);
     response.fields["last_ui_event"] = snapshot.last_ui_event;

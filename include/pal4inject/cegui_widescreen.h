@@ -31,6 +31,11 @@ enum class WidescreenHudAnchor {
 bool IsWideAspectResolution(int width, int height) noexcept;
 bool UsesOriginalWideRendererVariant(int width, int height) noexcept;
 CeguiWidescreenPlan BuildCeguiWidescreenPlan(int width, int height) noexcept;
+CeguiWidescreenPlan BuildCeguiWidescreenPlanForLogicalSize(
+    int width,
+    int height,
+    float logical_width,
+    float logical_height) noexcept;
 WidescreenMinimapPlacement BuildWidescreenMinimapPlacement(int width, int height) noexcept;
 float ComputeWidescreenHudLogicalX(
     const CeguiWidescreenPlan& plan,

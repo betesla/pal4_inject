@@ -8,6 +8,7 @@
 #endif
 #include <windows.h>
 
+#include "cegui_renderer_hooks.h"
 #include "hook_logging.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
@@ -77,7 +78,12 @@ void __fastcall Hook_SetupMinimapTexture(
     }
 
     if (const int* config = ReadGameConfigPointer()) {
-        const auto placement = BuildWidescreenMinimapPlacement(config[0], config[1]);
+        auto placement = BuildWidescreenMinimapPlacement(config[0], config[1]);
+        CeguiWidescreenPlan active_plan{};
+        if (TryGetActiveCeguiWidescreenPlan(&active_plan) &&
+            active_plan.logical_horizontal_padding <= 0.0F) {
+            placement.apply = false;
+        }
         if (placement.apply) {
             LogMinimapLayoutEvent(config[0], config[1], placement);
             g_original_setup_minimap_texture(

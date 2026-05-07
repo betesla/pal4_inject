@@ -1093,6 +1093,33 @@ void TestCeguiWidescreenPlanMath() {
         pal4::inject::ComputeCenteredUiLogicalX(plan_1920_1080, 102.0F);
     assert(centered_ui_x > 235.33F && centered_ui_x < 235.34F);
 
+    const auto plan_1920_1080_native_wide =
+        pal4::inject::BuildCeguiWidescreenPlanForLogicalSize(
+            1920,
+            1080,
+            1920.0F / 1.8F,
+            600.0F);
+    assert(plan_1920_1080_native_wide.apply);
+    assert(!plan_1920_1080_native_wide.use_original_variant);
+    assert(plan_1920_1080_native_wide.uniform_scale == 1.8F);
+    assert(plan_1920_1080_native_wide.horizontal_bias_pixels > -0.001F);
+    assert(plan_1920_1080_native_wide.horizontal_bias_pixels < 0.001F);
+    assert(plan_1920_1080_native_wide.logical_horizontal_padding > -0.001F);
+    assert(plan_1920_1080_native_wide.logical_horizontal_padding < 0.001F);
+    assert(pal4::inject::ComputeCenteredUiLogicalX(
+        plan_1920_1080_native_wide,
+        102.0F) == 102.0F);
+
+    const auto plan_1920_1080_root_1067 =
+        pal4::inject::BuildCeguiWidescreenPlanForLogicalSize(
+            1920,
+            1080,
+            1067.0F,
+            600.0F);
+    assert(plan_1920_1080_root_1067.apply);
+    assert(plan_1920_1080_root_1067.horizontal_bias_pixels > -0.5F);
+    assert(plan_1920_1080_root_1067.horizontal_bias_pixels < 0.5F);
+
     const float minimap_logical_x = pal4::inject::ComputeWidescreenHudLogicalX(
         plan_1920_1080,
         0.0F,

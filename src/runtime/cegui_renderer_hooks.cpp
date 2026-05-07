@@ -1,7 +1,9 @@
 #include "cegui_renderer_hooks.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -13,6 +15,7 @@
 #endif
 #include <windows.h>
 
+#include "cegui_bindings.h"
 #include "hook_logging.h"
 #include "cegui_font_texture_registry.h"
 #include "pal4inject/cegui_widescreen.h"
@@ -44,6 +47,7 @@ struct PatchedRendererState {
     float original_scale_x = 1.0F;
     float original_scale_y = 1.0F;
     bool applied = false;
+    CeguiRenderRectCopy original_render_rect{};
     CeguiRenderRectCopy render_rect{};
 };
 
@@ -57,6 +61,10 @@ constexpr std::ptrdiff_t kRendererQueuedRectsBeginOffset = 0xBC;
 constexpr std::ptrdiff_t kRendererQueuedRectsEndOffset = 0xC0;
 constexpr std::ptrdiff_t kRendererVertexBufferOffset = 0xCC;
 constexpr std::ptrdiff_t kRendererVertexCountOffset = 0x108;
+constexpr std::ptrdiff_t kRendererRenderRectTopOffset = 0xF4;
+constexpr std::ptrdiff_t kRendererRenderRectBottomOffset = 0xF8;
+constexpr std::ptrdiff_t kRendererRenderRectLeftOffset = 0xFC;
+constexpr std::ptrdiff_t kRendererRenderRectRightOffset = 0x100;
 constexpr std::ptrdiff_t kRendererScaleXOffset = 0x110;
 constexpr std::ptrdiff_t kRendererScaleYOffset = 0x114;
 
@@ -69,12 +77,23 @@ RenderStateSetFn g_render_state_set = nullptr;
 
 std::mutex g_patched_renderer_mutex;
 std::unordered_map<std::uintptr_t, std::unique_ptr<PatchedRendererState>> g_patched_renderers;
+std::mutex g_layout_debug_mutex;
+std::string g_layout_debug_summary = "not_run";
 
 std::string FormatPointer(const void* value) {
     std::ostringstream out;
     out << "0x" << std::hex << std::uppercase << reinterpret_cast<std::uintptr_t>(value);
     return out.str();
 }
+
+void SetLayoutDebugSummary(const std::string_view summary) {
+    std::scoped_lock lock(g_layout_debug_mutex);
+    g_layout_debug_summary = summary;
+}
+
+void LogWidescreenPlanRefreshed(
+    const CeguiWidescreenPlan& old_plan,
+    const CeguiWidescreenPlan& new_plan);
 
 float AlignToHalfPixel(const float value) noexcept {
     return std::floor(value + 0.5F) - 0.5F;
@@ -162,10 +181,388 @@ int* ReadGameConfigPointer() {
     return config_ptr_address ? *config_ptr_address : nullptr;
 }
 
+bool TryReadGuiSheetLogicalSize(float* out_width, float* out_height) {
+    if (!out_width || !out_height) {
+        return false;
+    }
+
+    CeguiBindings bindings{};
+    std::string error;
+    if (!TryGetCeguiBindings(&bindings, &error) ||
+        !bindings.get_system_singleton_ptr ||
+        !bindings.get_gui_sheet ||
+        !bindings.window_get_area) {
+        return false;
+    }
+
+    void* const system = bindings.get_system_singleton_ptr();
+    if (!system) {
+        return false;
+    }
+    void* const gui_sheet = bindings.get_gui_sheet(system);
+    if (!gui_sheet) {
+        return false;
+    }
+    const CeguiURect* const area = bindings.window_get_area(gui_sheet);
+    if (!area) {
+        return false;
+    }
+
+    const float logical_width = area->max.x.offset - area->min.x.offset;
+    const float logical_height = area->max.y.offset - area->min.y.offset;
+    if (!std::isfinite(logical_width) ||
+        !std::isfinite(logical_height) ||
+        logical_width <= 0.0F ||
+        logical_height <= 0.0F) {
+        return false;
+    }
+
+    *out_width = logical_width;
+    *out_height = logical_height;
+    return true;
+}
+
+bool TryBuildGuiSheetAwareWidescreenPlan(
+    const int width,
+    const int height,
+    CeguiWidescreenPlan* out) {
+    if (!out) {
+        return false;
+    }
+
+    float logical_width = 0.0F;
+    float logical_height = 0.0F;
+    if (!TryReadGuiSheetLogicalSize(&logical_width, &logical_height)) {
+        return false;
+    }
+
+    *out = BuildCeguiWidescreenPlanForLogicalSize(
+        width,
+        height,
+        logical_width,
+        logical_height);
+    return true;
+}
+
+bool CaptureWindowTreeMaxRect(
+    const CeguiBindings& bindings,
+    const void* window,
+    float* max_right,
+    float* max_bottom) {
+    if (!window || !max_right || !max_bottom) {
+        return false;
+    }
+
+    const float left = bindings.window_get_absolute_x
+        ? bindings.window_get_absolute_x(window)
+        : 0.0F;
+    const float top = bindings.window_get_absolute_y
+        ? bindings.window_get_absolute_y(window)
+        : 0.0F;
+    const float width = bindings.window_get_absolute_width
+        ? bindings.window_get_absolute_width(window)
+        : 0.0F;
+    const float height = bindings.window_get_absolute_height
+        ? bindings.window_get_absolute_height(window)
+        : 0.0F;
+    if (std::isfinite(left) &&
+        std::isfinite(top) &&
+        std::isfinite(width) &&
+        std::isfinite(height) &&
+        width > 0.0F &&
+        height > 0.0F) {
+        *max_right = std::max(*max_right, left + width);
+        *max_bottom = std::max(*max_bottom, top + height);
+    }
+
+    const unsigned int child_count = bindings.window_get_child_count
+        ? bindings.window_get_child_count(window)
+        : 0;
+    for (unsigned int i = 0; i < child_count; ++i) {
+        const void* const child = bindings.window_get_child_at_index
+            ? bindings.window_get_child_at_index(window, i)
+            : nullptr;
+        if (child) {
+            CaptureWindowTreeMaxRect(bindings, child, max_right, max_bottom);
+        }
+    }
+    return true;
+}
+
+bool CaptureDesktopAnchoredWindowTreeMaxRect(
+    const CeguiBindings& bindings,
+    const void* gui_sheet,
+    const float sheet_height,
+    float* max_right,
+    float* max_bottom) {
+    if (!gui_sheet || !max_right || !max_bottom) {
+        return false;
+    }
+
+    bool captured = false;
+    const unsigned int child_count = bindings.window_get_child_count
+        ? bindings.window_get_child_count(gui_sheet)
+        : 0;
+    for (unsigned int i = 0; i < child_count; ++i) {
+        const void* const child = bindings.window_get_child_at_index
+            ? bindings.window_get_child_at_index(gui_sheet, i)
+            : nullptr;
+        if (!child) {
+            continue;
+        }
+
+        const float left = bindings.window_get_absolute_x(child);
+        const float top = bindings.window_get_absolute_y(child);
+        const float height = bindings.window_get_absolute_height(child);
+        if (!std::isfinite(left) ||
+            !std::isfinite(top) ||
+            !std::isfinite(height) ||
+            std::fabs(left) > 1.0F ||
+            std::fabs(top) > 1.0F ||
+            height < sheet_height - 1.0F) {
+            continue;
+        }
+
+        CaptureWindowTreeMaxRect(bindings, child, max_right, max_bottom);
+        captured = true;
+    }
+
+    return captured;
+}
+
+bool RefreshWideWindowParentClipping(
+    const CeguiBindings& bindings,
+    void* const window,
+    const float parent_left,
+    const float parent_top,
+    const float parent_right,
+    const float parent_bottom,
+    const bool has_parent,
+    float* subtree_right,
+    float* subtree_bottom,
+    int* changed_count) {
+    if (!window || !subtree_right || !subtree_bottom || !changed_count) {
+        return false;
+    }
+
+    const float left = bindings.window_get_absolute_x
+        ? bindings.window_get_absolute_x(window)
+        : 0.0F;
+    const float top = bindings.window_get_absolute_y
+        ? bindings.window_get_absolute_y(window)
+        : 0.0F;
+    const float width = bindings.window_get_absolute_width
+        ? bindings.window_get_absolute_width(window)
+        : 0.0F;
+    const float height = bindings.window_get_absolute_height
+        ? bindings.window_get_absolute_height(window)
+        : 0.0F;
+    const float right = left + width;
+    const float bottom = top + height;
+    float max_right = std::isfinite(right) ? right : 0.0F;
+    float max_bottom = std::isfinite(bottom) ? bottom : 0.0F;
+
+    const unsigned int child_count = bindings.window_get_child_count
+        ? bindings.window_get_child_count(window)
+        : 0;
+    for (unsigned int i = 0; i < child_count; ++i) {
+        void* const child = bindings.window_get_child_at_index
+            ? bindings.window_get_child_at_index(window, i)
+            : nullptr;
+        if (!child) {
+            continue;
+        }
+        float child_right = 0.0F;
+        float child_bottom = 0.0F;
+        if (RefreshWideWindowParentClipping(
+                bindings,
+                child,
+                left,
+                top,
+                right,
+                bottom,
+                true,
+                &child_right,
+                &child_bottom,
+                changed_count)) {
+            max_right = std::max(max_right, child_right);
+            max_bottom = std::max(max_bottom, child_bottom);
+        }
+    }
+
+    const bool exceeds_parent =
+        has_parent &&
+        (left < parent_left - 1.0F ||
+         top < parent_top - 1.0F ||
+         right > parent_right + 1.0F ||
+         bottom > parent_bottom + 1.0F);
+    const bool has_wide_child =
+        max_right > right + 1.0F ||
+        max_bottom > bottom + 1.0F;
+    if ((exceeds_parent || has_wide_child) && bindings.window_set_clipped_by_parent) {
+        bindings.window_set_clipped_by_parent(window, false);
+        if (bindings.request_redraw) {
+            bindings.request_redraw(window);
+        }
+        ++(*changed_count);
+    }
+
+    *subtree_right = max_right;
+    *subtree_bottom = max_bottom;
+    return true;
+}
+
+void RefreshWindowTreeLayoutDebugSummary() {
+    CeguiBindings bindings{};
+    std::string error;
+    if (!TryGetCeguiBindings(&bindings, &error) ||
+        !bindings.get_system_singleton_ptr ||
+        !bindings.get_gui_sheet ||
+        !bindings.window_get_absolute_x ||
+        !bindings.window_get_absolute_y ||
+        !bindings.window_get_absolute_width ||
+        !bindings.window_get_absolute_height ||
+        !bindings.window_get_child_count ||
+        !bindings.window_get_child_at_index ||
+        !bindings.window_set_clipped_by_parent) {
+        std::ostringstream out;
+        out
+            << "bindings_missing"
+            << " get_system=" << (bindings.get_system_singleton_ptr ? 1 : 0)
+            << " get_sheet=" << (bindings.get_gui_sheet ? 1 : 0)
+            << " get_abs_w=" << (bindings.window_get_absolute_width ? 1 : 0)
+            << " child_count=" << (bindings.window_get_child_count ? 1 : 0)
+            << " set_clip_parent=" << (bindings.window_set_clipped_by_parent ? 1 : 0)
+            << " error=" << error;
+        SetLayoutDebugSummary(out.str());
+        return;
+    }
+
+    void* const system = bindings.get_system_singleton_ptr();
+    if (!system) {
+        SetLayoutDebugSummary("system_null");
+        return;
+    }
+    void* const gui_sheet = bindings.get_gui_sheet(system);
+    if (!gui_sheet) {
+        SetLayoutDebugSummary("gui_sheet_null");
+        return;
+    }
+
+    float max_right = 0.0F;
+    float max_bottom = 0.0F;
+    float anchored_right = 0.0F;
+    float anchored_bottom = 0.0F;
+    int changed_count = 0;
+    const float sheet_width = bindings.window_get_absolute_width(gui_sheet);
+    const float sheet_height = bindings.window_get_absolute_height(gui_sheet);
+    const bool have_anchored_tree =
+        CaptureDesktopAnchoredWindowTreeMaxRect(
+            bindings,
+            gui_sheet,
+            sheet_height,
+            &anchored_right,
+            &anchored_bottom);
+    RefreshWideWindowParentClipping(
+        bindings,
+        gui_sheet,
+        0.0F,
+        0.0F,
+        0.0F,
+        0.0F,
+        false,
+        &max_right,
+        &max_bottom,
+        &changed_count);
+    std::ostringstream out;
+    out
+        << "ok"
+        << " tree=" << max_right << "x" << max_bottom
+        << " anchored=" << (have_anchored_tree ? anchored_right : 0.0F)
+        << "x" << (have_anchored_tree ? anchored_bottom : 0.0F)
+        << " sheet=" << sheet_width << "x" << sheet_height
+        << " unclipped=" << changed_count;
+    SetLayoutDebugSummary(out.str());
+}
+
+bool TryBuildWindowTreeAwareWidescreenPlan(
+    const int width,
+    const int height,
+    CeguiWidescreenPlan* out) {
+    if (!out) {
+        return false;
+    }
+
+    CeguiBindings bindings{};
+    std::string error;
+    if (!TryGetCeguiBindings(&bindings, &error) ||
+        !bindings.get_system_singleton_ptr ||
+        !bindings.get_gui_sheet ||
+        !bindings.window_get_absolute_x ||
+        !bindings.window_get_absolute_y ||
+        !bindings.window_get_absolute_width ||
+        !bindings.window_get_absolute_height ||
+        !bindings.window_get_child_count ||
+        !bindings.window_get_child_at_index) {
+        return false;
+    }
+
+    void* const system = bindings.get_system_singleton_ptr();
+    if (!system) {
+        return false;
+    }
+    const void* const gui_sheet = bindings.get_gui_sheet(system);
+    if (!gui_sheet) {
+        return false;
+    }
+
+    const float sheet_width = bindings.window_get_absolute_width(gui_sheet);
+    const float sheet_height = bindings.window_get_absolute_height(gui_sheet);
+    const float logical_height =
+        std::isfinite(sheet_height) && sheet_height > 0.0F ? sheet_height : 600.0F;
+    float max_right = 0.0F;
+    float max_bottom = 0.0F;
+    if (!CaptureDesktopAnchoredWindowTreeMaxRect(
+            bindings,
+            gui_sheet,
+            logical_height,
+            &max_right,
+            &max_bottom)) {
+        max_right =
+            std::isfinite(sheet_width) && sheet_width > 0.0F ? sheet_width : 800.0F;
+    }
+    if (max_right <= 0.0F) {
+        return false;
+    }
+
+    *out = BuildCeguiWidescreenPlanForLogicalSize(width, height, max_right, logical_height);
+    return true;
+}
+
 PatchedRendererState* FindPatchedRendererState(const void* renderer) {
     std::scoped_lock lock(g_patched_renderer_mutex);
     const auto it = g_patched_renderers.find(reinterpret_cast<std::uintptr_t>(renderer));
     return it == g_patched_renderers.end() ? nullptr : it->second.get();
+}
+
+CeguiRenderRectCopy ReadRendererRenderRectFromObject(const void* const renderer) {
+    auto* const bytes = static_cast<const unsigned char*>(renderer);
+    CeguiRenderRectCopy rect{};
+    rect.top = *reinterpret_cast<const float*>(bytes + kRendererRenderRectTopOffset);
+    rect.bottom = *reinterpret_cast<const float*>(bytes + kRendererRenderRectBottomOffset);
+    rect.left = *reinterpret_cast<const float*>(bytes + kRendererRenderRectLeftOffset);
+    rect.right = *reinterpret_cast<const float*>(bytes + kRendererRenderRectRightOffset);
+    return rect;
+}
+
+void WriteRendererRenderRectToObject(
+    void* const renderer,
+    const CeguiRenderRectCopy& rect) {
+    auto* const bytes = static_cast<unsigned char*>(renderer);
+    *reinterpret_cast<float*>(bytes + kRendererRenderRectTopOffset) = rect.top;
+    *reinterpret_cast<float*>(bytes + kRendererRenderRectBottomOffset) = rect.bottom;
+    *reinterpret_cast<float*>(bytes + kRendererRenderRectLeftOffset) = rect.left;
+    *reinterpret_cast<float*>(bytes + kRendererRenderRectRightOffset) = rect.right;
 }
 
 void ApplyRendererStateToObject(
@@ -174,16 +571,87 @@ void ApplyRendererStateToObject(
     const bool enabled) {
     auto* bytes = static_cast<unsigned char*>(renderer);
     if (enabled) {
+        WriteRendererRenderRectToObject(renderer, state.render_rect);
         *reinterpret_cast<float*>(bytes + kRendererScaleXOffset) = state.plan.uniform_scale;
         *reinterpret_cast<float*>(bytes + kRendererScaleYOffset) = state.plan.uniform_scale;
         *reinterpret_cast<void***>(renderer) =
             reinterpret_cast<void**>(state.synthetic_vtable.data());
     } else {
+        WriteRendererRenderRectToObject(renderer, state.original_render_rect);
         *reinterpret_cast<float*>(bytes + kRendererScaleXOffset) = state.original_scale_x;
         *reinterpret_cast<float*>(bytes + kRendererScaleYOffset) = state.original_scale_y;
         *reinterpret_cast<void***>(renderer) = state.original_vtable;
     }
     state.applied = enabled;
+}
+
+void SetPatchedRendererPlan(
+    void* const renderer,
+    PatchedRendererState& state,
+    const CeguiWidescreenPlan& plan) {
+    state.plan = plan;
+    state.render_rect.top = 0.0F;
+    state.render_rect.bottom = plan.logical_height;
+    state.render_rect.left = -plan.logical_horizontal_padding;
+    state.render_rect.right = plan.logical_width + plan.logical_horizontal_padding;
+    if (state.applied && renderer) {
+        auto* const bytes = static_cast<unsigned char*>(renderer);
+        WriteRendererRenderRectToObject(renderer, state.render_rect);
+        *reinterpret_cast<float*>(bytes + kRendererScaleXOffset) = plan.uniform_scale;
+        *reinterpret_cast<float*>(bytes + kRendererScaleYOffset) = plan.uniform_scale;
+    }
+}
+
+void RefreshPatchedRendererPlanFromGuiSheet(
+    void* const renderer,
+    PatchedRendererState& state) {
+    CeguiWidescreenPlan refreshed{};
+    if (!TryBuildGuiSheetAwareWidescreenPlan(
+            state.plan.width,
+            state.plan.height,
+            &refreshed)) {
+        return;
+    }
+
+    if (refreshed.logical_width == state.plan.logical_width &&
+        refreshed.logical_height == state.plan.logical_height &&
+        refreshed.horizontal_bias_pixels == state.plan.horizontal_bias_pixels &&
+        refreshed.logical_horizontal_padding == state.plan.logical_horizontal_padding) {
+        return;
+    }
+    const CeguiWidescreenPlan old_plan = state.plan;
+    SetPatchedRendererPlan(renderer, state, refreshed);
+    LogWidescreenPlanRefreshed(old_plan, refreshed);
+}
+
+void RefreshPatchedRendererPlanFromWindowTree(
+    void* const renderer,
+    PatchedRendererState& state) {
+    CeguiWidescreenPlan refreshed{};
+    if (!TryBuildWindowTreeAwareWidescreenPlan(
+            state.plan.width,
+            state.plan.height,
+            &refreshed)) {
+        return;
+    }
+
+    if (std::fabs(refreshed.logical_width - state.plan.logical_width) <= 1.0F &&
+        std::fabs(refreshed.logical_height - state.plan.logical_height) <= 1.0F &&
+        std::fabs(
+            refreshed.horizontal_bias_pixels - state.plan.horizontal_bias_pixels) <= 1.0F &&
+        std::fabs(
+            refreshed.logical_horizontal_padding -
+            state.plan.logical_horizontal_padding) <= 1.0F) {
+        return;
+    }
+
+    const CeguiWidescreenPlan old_plan = state.plan;
+    SetPatchedRendererPlan(renderer, state, refreshed);
+    LogWidescreenPlanRefreshed(old_plan, refreshed);
+}
+
+void RefreshWindowTreeLayoutDiagnostics() {
+    RefreshWindowTreeLayoutDebugSummary();
 }
 
 int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
@@ -217,6 +685,9 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
     auto* quad = *reinterpret_cast<unsigned char**>(bytes + kRendererQueuedRectsBeginOffset);
     const auto* quad_end =
         *reinterpret_cast<unsigned char* const*>(bytes + kRendererQueuedRectsEndOffset);
+    RefreshPatchedRendererPlanFromGuiSheet(self, *patched);
+    RefreshPatchedRendererPlanFromWindowTree(self, *patched);
+    RefreshWindowTreeLayoutDiagnostics();
     const float reciprocal_camera_scale =
         1.0F / *reinterpret_cast<const float*>(
             *reinterpret_cast<const int*>(active_camera_internal) + 128);
@@ -373,10 +844,7 @@ CeguiRenderRectCopy* __fastcall Hook_CeguiRendererGetRenderRectWide(
     }
 
     auto* bytes = static_cast<unsigned char*>(self);
-    out_rect->top = *reinterpret_cast<const float*>(bytes + 0xF4);
-    out_rect->bottom = *reinterpret_cast<const float*>(bytes + 0xF8);
-    out_rect->left = *reinterpret_cast<const float*>(bytes + 0xFC);
-    out_rect->right = *reinterpret_cast<const float*>(bytes + 0x100);
+    *out_rect = ReadRendererRenderRectFromObject(bytes);
     return out_rect;
 }
 
@@ -401,10 +869,11 @@ bool InstallPatchedRenderer(
 
     auto* bytes = static_cast<unsigned char*>(renderer);
     auto state = std::make_unique<PatchedRendererState>();
-    state->plan = plan;
+    SetPatchedRendererPlan(renderer, *state, plan);
     state->original_vtable = vtable;
     state->original_scale_x = *reinterpret_cast<const float*>(bytes + kRendererScaleXOffset);
     state->original_scale_y = *reinterpret_cast<const float*>(bytes + kRendererScaleYOffset);
+    state->original_render_rect = ReadRendererRenderRectFromObject(renderer);
     for (std::size_t i = 0; i < state->synthetic_vtable.size(); ++i) {
         state->synthetic_vtable[i] = reinterpret_cast<std::uintptr_t>(vtable[i]);
     }
@@ -412,11 +881,6 @@ bool InstallPatchedRenderer(
         reinterpret_cast<std::uintptr_t>(&Hook_CeguiRendererDoRenderWide);
     state->synthetic_vtable[kGetRenderRectSlot] =
         reinterpret_cast<std::uintptr_t>(&Hook_CeguiRendererGetRenderRectWide);
-    state->render_rect.top = 0.0F;
-    state->render_rect.bottom = plan.logical_height;
-    state->render_rect.left = -plan.logical_horizontal_padding;
-    state->render_rect.right = plan.logical_width + plan.logical_horizontal_padding;
-
     ApplyRendererStateToObject(renderer, *state, true);
 
     std::scoped_lock lock(g_patched_renderer_mutex);
@@ -453,6 +917,26 @@ void LogWidescreenPatchSkipped(
     AppendHookEventLog(HookId::cegui_renderer_constructor_2, out.str());
 }
 
+void LogWidescreenPlanRefreshed(
+    const CeguiWidescreenPlan& old_plan,
+    const CeguiWidescreenPlan& new_plan) {
+    static int s_log_budget = 8;
+    if (s_log_budget <= 0) {
+        return;
+    }
+    --s_log_budget;
+
+    std::ostringstream out;
+    out
+        << "hook=cegui_renderer_ctor_2"
+        << " refreshed=root_area"
+        << " old_logical=" << old_plan.logical_width << "x" << old_plan.logical_height
+        << " new_logical=" << new_plan.logical_width << "x" << new_plan.logical_height
+        << " old_bias_px=" << old_plan.horizontal_bias_pixels
+        << " new_bias_px=" << new_plan.horizontal_bias_pixels;
+    AppendHookEventLog(HookId::cegui_renderer_constructor_2, out.str());
+}
+
 void* __fastcall Hook_CeguiRendererConstructor2(void* self, void*) {
     auto& state = GetRuntimeState();
     state.IncrementHookCall(HookId::cegui_renderer_constructor_2);
@@ -472,7 +956,11 @@ void* __fastcall Hook_CeguiRendererConstructor2(void* self, void*) {
         return renderer;
     }
 
-    const auto plan = BuildCeguiWidescreenPlan(config[0], config[1]);
+    auto plan = BuildCeguiWidescreenPlan(config[0], config[1]);
+    CeguiWidescreenPlan gui_sheet_plan{};
+    if (TryBuildGuiSheetAwareWidescreenPlan(config[0], config[1], &gui_sheet_plan)) {
+        plan = gui_sheet_plan;
+    }
     const HookMode mode = state.GetHookMode(HookId::cegui_renderer_constructor_2);
     if (mode == HookMode::observe_only || mode == HookMode::mirror_compare) {
         LogWidescreenPatchSkipped(renderer, plan, "mode_passthrough");
@@ -538,6 +1026,74 @@ void ApplyCeguiRendererHookMode(const HookMode mode) {
         ApplyRendererStateToObject(reinterpret_cast<void*>(renderer_key), *state, enabled);
     }
     RefreshWidescreenHudLayoutFixups();
+}
+
+bool TryGetActiveCeguiWidescreenPlan(CeguiWidescreenPlan* out) {
+    if (!out) {
+        return false;
+    }
+
+    std::scoped_lock lock(g_patched_renderer_mutex);
+    for (const auto& [renderer_key, state] : g_patched_renderers) {
+        if (state && state->applied) {
+            RefreshPatchedRendererPlanFromGuiSheet(
+                reinterpret_cast<void*>(renderer_key),
+                *state);
+            RefreshPatchedRendererPlanFromWindowTree(
+                reinterpret_cast<void*>(renderer_key),
+                *state);
+            *out = state->plan;
+            return true;
+        }
+    }
+    return false;
+}
+
+void RefreshCeguiWidescreenRuntimeLayout() {
+    const HookMode mode =
+        GetRuntimeState().GetHookMode(HookId::cegui_renderer_constructor_2);
+    if (mode == HookMode::observe_only || mode == HookMode::mirror_compare) {
+        return;
+    }
+
+    std::scoped_lock lock(g_patched_renderer_mutex);
+    for (const auto& [renderer_key, state] : g_patched_renderers) {
+        if (!state || !state->applied) {
+            continue;
+        }
+        auto* const renderer = reinterpret_cast<void*>(renderer_key);
+        RefreshPatchedRendererPlanFromGuiSheet(renderer, *state);
+        RefreshPatchedRendererPlanFromWindowTree(renderer, *state);
+    }
+    RefreshWindowTreeLayoutDiagnostics();
+}
+
+std::string BuildCeguiWidescreenRuntimeLayoutDebugSummary() {
+    std::string layout_summary;
+    {
+        std::scoped_lock lock(g_layout_debug_mutex);
+        layout_summary = g_layout_debug_summary;
+    }
+
+    std::scoped_lock lock(g_patched_renderer_mutex);
+    for (const auto& [renderer_key, state] : g_patched_renderers) {
+        if (!state || !state->applied) {
+            continue;
+        }
+        const auto object_rect =
+            ReadRendererRenderRectFromObject(reinterpret_cast<const void*>(renderer_key));
+        std::ostringstream out;
+        out
+            << layout_summary
+            << " renderer=" << FormatPointer(reinterpret_cast<const void*>(renderer_key))
+            << " plan=" << state->plan.logical_width << "x" << state->plan.logical_height
+            << " scale=" << state->plan.uniform_scale
+            << " rect="
+            << object_rect.left << "," << object_rect.top << ","
+            << object_rect.right << "," << object_rect.bottom;
+        return out.str();
+    }
+    return layout_summary;
 }
 
 }  // namespace pal4::inject

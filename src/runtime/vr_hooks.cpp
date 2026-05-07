@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "cegui_renderer_hooks.h"
 #include "pal4inject/ida_addresses.h"
 #include "runtime_state.h"
 
@@ -152,6 +153,7 @@ int __cdecl Hook_GameRenderFrame(const double delta_seconds, const int external_
     }
 
     const HookMode mode = runtime.GetHookMode(HookId::game_render_frame);
+    RefreshCeguiWidescreenRuntimeLayout();
     const bool vr_enabled = runtime.GetVrMode() == VrMode::seated_experimental;
     float* active_camera = nullptr;
     if (vr_enabled || mode != HookMode::observe_only) {
@@ -172,7 +174,9 @@ int __cdecl Hook_GameRenderFrame(const double delta_seconds, const int external_
         CaptureActiveCameraSnapshot();
     }
     runtime.ClearHookError(HookId::game_render_frame);
-    return g_original_game_render_frame(delta_seconds, external_camera);
+    const int result = g_original_game_render_frame(delta_seconds, external_camera);
+    RefreshCeguiWidescreenRuntimeLayout();
+    return result;
 }
 
 }  // namespace

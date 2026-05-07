@@ -15,6 +15,7 @@
 #include <windows.h>
 
 #include "cegui_bindings.h"
+#include "cegui_renderer_hooks.h"
 #include "hook_logging.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
@@ -101,7 +102,11 @@ bool TryBuildActiveCenteredUiPlan(CeguiWidescreenPlan* out) {
         return false;
     }
 
-    const auto plan = BuildCeguiWidescreenPlan(config[0], config[1]);
+    auto plan = BuildCeguiWidescreenPlan(config[0], config[1]);
+    CeguiWidescreenPlan active_plan{};
+    if (TryGetActiveCeguiWidescreenPlan(&active_plan)) {
+        plan = active_plan;
+    }
     if (!plan.apply || plan.use_original_variant) {
         return false;
     }

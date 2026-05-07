@@ -30,7 +30,7 @@
 - `CEGUI_Renderer_Constructor_2 @ 0x413580`
   - mode: `replace_with_fallback`
   - patch span: `8`
-  - reason: 对共享 renderer ctor 路径上的宽屏分辨率补上“按高度等比缩放 + 左右 pillarbox + 居中”的 UI 渲染语义，避免 16:9 直接横向拉伸 UI
+  - reason: 对共享 renderer ctor 路径上的宽屏分辨率补上“按高度等比缩放 + 左右 pillarbox + 居中”的 UI 渲染语义，避免 4:3 UI 在 16:9 下直接横向拉伸；如果 CEGUI Root 的 `UnifiedAreaRect` 已是宽屏逻辑画布，则不再追加 4:3 居中偏移，并同步 renderer 对象 render rect / 关闭越界窗口父裁剪以避免最终裁剪仍停在 800 宽
 - `LoadFontFile @ 0x4BD3B0`
   - mode: `replace_with_fallback`
   - patch span: `7`

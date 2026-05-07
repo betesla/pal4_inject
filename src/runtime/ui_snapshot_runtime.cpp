@@ -9,6 +9,7 @@
 #include <windows.h>
 
 #include "cegui_bindings.h"
+#include "cegui_renderer_hooks.h"
 #include "input_hooks.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
@@ -88,7 +89,11 @@ void ConvertLogicalToRawClientPoint(
         return;
     }
 
-    const auto plan = BuildCeguiWidescreenPlan(config[0], config[1]);
+    auto plan = BuildCeguiWidescreenPlan(config[0], config[1]);
+    CeguiWidescreenPlan active_plan{};
+    if (TryGetActiveCeguiWidescreenPlan(&active_plan)) {
+        plan = active_plan;
+    }
     if (!plan.apply || plan.use_original_variant || plan.uniform_scale <= 0.0F) {
         return;
     }
