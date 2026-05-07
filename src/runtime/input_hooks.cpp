@@ -24,6 +24,7 @@
 #include "pal4inject/ida_addresses.h"
 #include "pal4inject/input_logic.h"
 #include "runtime_state.h"
+#include "save_thumbnail_hooks.h"
 #include "vr_hooks.h"
 #include "window_focus_hooks.h"
 
@@ -832,6 +833,9 @@ void* GetReplacementForHook(const HookId id) {
         if (void* replacement = GetVrReplacementForHook(id)) {
             return replacement;
         }
+        if (void* replacement = GetSaveThumbnailReplacementForHook(id)) {
+            return replacement;
+        }
         return GetCameraReplacementForHook(id);
     }
 }
@@ -862,6 +866,7 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
         SetD3d9QualityOriginalTrampoline(id, trampoline);
         SetBattleUiLayoutOriginalTrampoline(id, trampoline);
         SetVrOriginalTrampoline(id, trampoline);
+        SetSaveThumbnailOriginalTrampoline(id, trampoline);
         SetCameraOriginalTrampoline(id, trampoline);
         break;
     }

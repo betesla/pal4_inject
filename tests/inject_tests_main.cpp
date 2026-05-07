@@ -69,7 +69,7 @@ void TestResolveRuntimeAddress() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 15);
+    assert(inventory.size() == 16);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -79,6 +79,7 @@ void TestHookInventory() {
     bool found_combat_console_set_image_position = false;
     bool found_combat_console_set_image_position_2 = false;
     bool found_ui_show_combat_result = false;
+    bool found_numbered_list_item_render = false;
     bool found_camera_update_matrix = false;
     bool found_game_render_frame = false;
     bool found_d3d9_present = false;
@@ -142,6 +143,13 @@ void TestHookInventory() {
             assert(hook.ida_ea == pal4::inject::ida::kUiShowCombatResult);
             assert(!hook.bootstrap_required);
         }
+        if (hook.id == HookId::numbered_list_item_render) {
+            found_numbered_list_item_render = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kNumberedListItemRender);
+            assert(!hook.bootstrap_required);
+        }
         if (hook.id == HookId::camera_update_matrix) {
             found_camera_update_matrix = true;
             assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
@@ -175,6 +183,7 @@ void TestHookInventory() {
     assert(found_combat_console_set_image_position);
     assert(found_combat_console_set_image_position_2);
     assert(found_ui_show_combat_result);
+    assert(found_numbered_list_item_render);
     assert(found_camera_update_matrix);
     assert(found_game_render_frame);
     assert(found_d3d9_present);

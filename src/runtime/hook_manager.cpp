@@ -265,6 +265,7 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::combat_console_set_image_position:
         case HookId::combat_console_set_image_position_2:
         case HookId::ui_show_combat_result:
+        case HookId::numbered_list_item_render:
         case HookId::camera_update_matrix:
         case HookId::game_render_frame:
         case HookId::d3d9_set_present_parameters:

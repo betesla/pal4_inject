@@ -168,6 +168,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
   - `giTalk` 脚本执行入口
   - `CEGUI_Renderer_Constructor_2` widescreen pillarbox patch
   - `SetupMinimapTexture` widescreen layout patch
+  - `numberedListItem::render` save thumbnail redraw patch
   - `Camera_UpdateMatrix` second-angle guard
   - `D3D9SetPresentParameters` multisample override seam
 - `PAL4_Main_WndProc` 和 `HandlePlayerInputEvents` 目前只保留 inventory，不默认安装。
@@ -206,6 +207,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - 如果 CEGUI Root 的 `UnifiedAreaRect` 已经是宽屏逻辑画布（例如约 `1067x600`），则不会再追加 4:3 居中偏移
   - PAL4 renderer 对象内部的 render rect 也会同步到同一套逻辑画布，避免 CEGUI 窗口树已变宽但最终仍按 `800x600` 裁剪
   - 对越过父窗口边界的宽屏 UI 节点，只关闭 `ClippedByParent`；不修改 CEGUI 窗口尺寸，避免普通 4:3 UI 返回时被污染
+- 旧存档列表的缩略图由 `numberedListItem::render` 先绘制截图、再绘制存档行背景；替换后的 renderer 会额外在原函数之后补绘一次已有截图，避免宽屏渲染队列顺序下背景遮住缩略图。
 - 游戏内常驻 HUD 会额外补一层“贴边”修正，尽量接近原版 `1280x800` 的宽屏摆法：
   - `minimap.xml` 可见部件改为靠左下
   - `portrait.xml` 可见部件改为靠右上

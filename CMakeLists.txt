@@ -142,6 +142,7 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/memory_debug_runtime.cpp
     src/runtime/minimap_hooks.cpp
     src/runtime/runtime_preferences.cpp
+    src/runtime/save_thumbnail_hooks.cpp
     src/runtime/runtime_state.cpp
     src/runtime/shadow_quality_hooks.cpp
     src/runtime/ui_snapshot_runtime.cpp

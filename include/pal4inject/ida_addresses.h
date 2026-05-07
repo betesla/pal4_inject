@@ -31,6 +31,7 @@ inline constexpr std::uint32_t kUiShowCombatHint = 0x54A1F0;
 inline constexpr std::uint32_t kCombatConsoleSetImageAndPosition2 = kUiShowCombatHint;
 inline constexpr std::uint32_t kUiShowCombatHint2 = 0x54A960;
 inline constexpr std::uint32_t kUiShowCombatResult = kUiShowCombatHint2;
+inline constexpr std::uint32_t kNumberedListItemRender = 0x4B2480;
 inline constexpr std::uint32_t kCameraUpdateMatrix = 0x5EA190;
 inline constexpr std::uint32_t kGameRenderFrame = pal4::ida::kGameRenderFrame;
 inline constexpr std::uint32_t kD3d9SetPresentParameters = 0x75F710;

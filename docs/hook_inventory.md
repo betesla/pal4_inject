@@ -35,6 +35,10 @@
   - mode: `replace_with_fallback`
   - patch span: `7`
   - reason: 只在已知 dynamic UI 字体 `system / systemBold / dialog_simsun` 创建成功后，按中央有效 UI 区域尺寸重发 `setAutoScalingEnabled(true) / setNativeResolution(800,600) / notifyScreenResolution(...)`
+- `numberedListItem::render @ 0x4B2480`
+  - mode: `replace_with_fallback`
+  - patch span: `7`
+  - reason: 旧存档列表项会先 cache 存档截图、再 cache 行背景；在替换后的宽屏 renderer 队列下，行背景可能遮住缩略图，因此保留原函数并在返回后用同一个 `this + 0x1FC` image 追加一次缩略图 cache
   - note:
     - 当前把它当作“实验性、可选 bootstrap hook”放在稳定链之后安装
     - 原因是这条 seam 的 prologue 更容易受编译器生成的 SEH 立即数字节影响

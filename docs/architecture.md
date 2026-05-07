@@ -111,6 +111,9 @@
       - `ui_texture_filter=nearest` 写入 `state 9 = 1`
       - `ui_texture_filter=linear` 写入 `state 9 = 2`
       - “渲染与画面”页的 `Nearest / 像素采样` 勾选框可即时切换并持久化
+  - `save_thumbnail_hooks.cpp`
+    - `numberedListItem::render @ 0x4B2480` seam
+    - 存档列表项原函数先 cache 存档截图、再 cache 行背景；在宽屏 renderer 替换路径下，补绘一次 `this + 0x1FC` 的已有截图 image，确保缩略图排在行背景之后
   - `battle_ui_layout_hooks.cpp`
     - `SetProperties_4C2550` 的战斗调用点筛选与 `x` 偏移补偿
     - `ui_showCombatHint / ui_showCombatHint2` 浮动提示窗居中修正
@@ -221,6 +224,7 @@
   - minimap 贴图区域额外通过 `SetupMinimapTexture` hook 按同一套 wide plan 重算 `x / y / width / height`
   - 战斗内程序控制的浮动数字、状态图标和胜利图会在命中的 `SetProperties_4C2550` 调用点上补一层 `logical_horizontal_padding`
   - `ui_showCombatHint / ui_showCombatHint2` 这两类浮动提示窗会在原始 `setPosition + 居中` 后整体右移到中央 4:3 UI 框
+  - 旧 `loadWindow` 存档列表的每行截图不参与宽屏画布判断；它通过 `numberedListItem::render` 的窄 hook 在原列表项渲染后按原始 4:3 item rect 补绘，避免宽屏渲染队列把截图压到背景下面。
   - gameplay HUD 不再完全跟随居中的 4:3 框：
     - `minimap.xml` 关键窗口改靠左下
     - `portrait.xml` 关键窗口改靠右上
