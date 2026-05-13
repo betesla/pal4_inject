@@ -18,6 +18,7 @@
 #include "cegui_bindings.h"
 #include "hook_logging.h"
 #include "pal4inject/cegui_font_experiment.h"
+#include "runtime_state.h"
 
 namespace pal4::inject {
 namespace {
@@ -93,6 +94,16 @@ constexpr std::array<std::uint8_t, 7> kSetVertScalingExpectedPrefix{
     0x51, 0x56, 0x8B, 0xF1, 0xD9, 0x46, 0x08};
 constexpr std::size_t kSetVertScalingPatchSpan = kSetVertScalingExpectedPrefix.size();
 constexpr char kOiramlookModuleName[] = "OIRAMLOOK.dll";
+constexpr char kOiramlookBaseMultiLineEditboxCalcLineSpaceSymbol[] =
+    "?calcLineSpace@BaseMultiLineEditbox@CEGUI@@IBEMPBVFont@2@M@Z";
+constexpr std::array<std::uint8_t, 23> kOiramlookBaseMultiLineEditboxCalcLineSpaceExpectedBytes{
+    0x8B, 0x44, 0x24, 0x04,
+    0xD9, 0x44, 0x24, 0x08,
+    0xD8, 0x88, 0xD0, 0x00, 0x00, 0x00,
+    0xD8, 0x81, 0xE4, 0x04, 0x00, 0x00,
+    0xC2, 0x08, 0x00};
+constexpr std::size_t kOiramlookBaseMultiLineEditboxCalcLineSpacePatchSpan =
+    kOiramlookBaseMultiLineEditboxCalcLineSpaceExpectedBytes.size();
 constexpr char kTextGlyphGetHeightSymbol[] =
     "?getHeight@TextGlyph@RichText@CEGUI@@UBEMXZ";
 constexpr std::array<std::uint8_t, 13> kTextGlyphGetHeightExpectedBytes{
@@ -113,6 +124,7 @@ constexpr std::size_t kMaxLoggedSetVertScalingObservations = 16;
 constexpr std::size_t kMaxLoggedSystemDrawTextCalls = 24;
 constexpr std::size_t kMaxLoggedOlButtonRectAdjustments = 16;
 constexpr std::size_t kMaxLoggedOlButtonRectProbes = 24;
+constexpr std::size_t kMaxLoggedOiramlookCalcLineSpaceCalls = 48;
 constexpr std::size_t kImageRectTopIndex = 1;
 constexpr std::size_t kImageRectBottomIndex = 2;
 constexpr std::size_t kImageRawOffsetYIndex = 6;
@@ -121,6 +133,7 @@ constexpr std::size_t kImageScaledOffsetYIndex = 10;
 
 std::mutex g_mutex;
 std::mutex g_text_glyph_height_hook_mutex;
+std::mutex g_oiramlook_calc_line_space_hook_mutex;
 std::atomic<unsigned int> g_logged_get_char_at_pixel_calls{0};
 std::atomic<unsigned int> g_logged_text_glyph_height_calls{0};
 std::atomic<unsigned int> g_logged_text_glyph_cache_calls{0};
@@ -129,6 +142,7 @@ std::atomic<unsigned int> g_logged_set_vert_scaling_observations{0};
 std::atomic<unsigned int> g_logged_system_draw_text_calls{0};
 std::atomic<unsigned int> g_logged_olbutton_rect_adjustments{0};
 std::atomic<unsigned int> g_logged_olbutton_rect_probes{0};
+std::atomic<unsigned int> g_logged_oiramlook_calc_line_space_calls{0};
 FontDrawTextFn g_original_font_draw_text = nullptr;
 FontGetTextExtentFn g_original_font_get_text_extent = nullptr;
 FontGetCharAtPixelFn g_original_font_get_char_at_pixel = nullptr;
@@ -146,6 +160,7 @@ bool g_define_image_hook_installed = false;
 bool g_set_vert_scaling_hook_installed = false;
 bool g_text_glyph_get_height_hook_installed = false;
 bool g_text_glyph_cache_glyph_hook_installed = false;
+bool g_oiramlook_calc_line_space_hook_installed = false;
 std::unordered_map<void*, DynamicFontOversamplePlan> g_oversampled_fonts;
 thread_local void* g_compensated_draw_text_font = nullptr;
 thread_local unsigned int g_compensated_draw_text_depth = 0;
@@ -257,6 +272,12 @@ void __fastcall HookedImageSetVertScaling(
 float __fastcall HookedTextGlyphGetHeight(
     void* glyph,
     void*);
+
+float __fastcall HookedOiramlookBaseMultiLineEditboxCalcLineSpace(
+    void* editbox,
+    void*,
+    const void* font,
+    float scale);
 
 void __fastcall HookedTextGlyphCacheGlyph(
     void* glyph,
@@ -922,6 +943,51 @@ bool InstallKnownSafeTextGlyphCacheGlyphHook(std::string* error) {
     return true;
 }
 
+bool InstallKnownSafeOiramlookCalcLineSpaceProbe(std::string* error) {
+    std::scoped_lock lock(g_oiramlook_calc_line_space_hook_mutex);
+    if (g_oiramlook_calc_line_space_hook_installed) {
+        return true;
+    }
+
+    const HMODULE module = GetModuleHandleA(kOiramlookModuleName);
+    if (!module) {
+        if (error) {
+            *error = "OIRAMLOOK.dll is not loaded";
+        }
+        return false;
+    }
+
+    auto* target = reinterpret_cast<std::uint8_t*>(
+        GetProcAddress(module, kOiramlookBaseMultiLineEditboxCalcLineSpaceSymbol));
+    if (!target) {
+        if (error) {
+            *error = "GetProcAddress failed for BaseMultiLineEditbox::calcLineSpace";
+        }
+        return false;
+    }
+
+    if (std::memcmp(
+            target,
+            kOiramlookBaseMultiLineEditboxCalcLineSpaceExpectedBytes.data(),
+            kOiramlookBaseMultiLineEditboxCalcLineSpaceExpectedBytes.size()) != 0) {
+        if (error) {
+            *error = "unexpected BaseMultiLineEditbox::calcLineSpace body";
+        }
+        return false;
+    }
+
+    if (!WriteRelativeJump(
+            target,
+            reinterpret_cast<void*>(&HookedOiramlookBaseMultiLineEditboxCalcLineSpace),
+            kOiramlookBaseMultiLineEditboxCalcLineSpacePatchSpan,
+            error)) {
+        return false;
+    }
+
+    g_oiramlook_calc_line_space_hook_installed = true;
+    return true;
+}
+
 std::string TryReadFontName(void* font) {
     if (!font) {
         return {};
@@ -939,6 +1005,32 @@ std::string TryReadFontName(void* font) {
         return {};
     }
     return std::string(name);
+}
+
+void MaybeLogOiramlookCalcLineSpaceCall(
+    const void* editbox,
+    const void* font,
+    const float scale,
+    const float line_spacing,
+    const float line_space_extent,
+    const float result) {
+    const unsigned int index = g_logged_oiramlook_calc_line_space_calls.fetch_add(1);
+    if (index >= kMaxLoggedOiramlookCalcLineSpaceCalls) {
+        return;
+    }
+
+    std::ostringstream detail;
+    detail
+        << "hook=oiramlook_calc_line_space"
+        << " editbox=0x" << std::hex << reinterpret_cast<std::uintptr_t>(editbox)
+        << " font=0x" << reinterpret_cast<std::uintptr_t>(font)
+        << std::dec
+        << " font_name=" << TryReadFontName(const_cast<void*>(font))
+        << " scale=" << scale
+        << " font_line_spacing=" << line_spacing
+        << " line_space_extent=" << line_space_extent
+        << " result=" << result;
+    GetRuntimeState().AppendEventLog(detail.str());
 }
 
 void MaybeLogGetCharAtPixelCall(
@@ -1145,6 +1237,9 @@ void ApplyPlannedVerticalMetricAdjustments(
     }
 
     auto adjusted_metrics = original_metrics;
+    // RichTextFrame stores DocLine.height from Font::lineSpacing and then adds
+    // LineSpaceExtent.  Preserve-mode fonts must therefore keep the original
+    // logical metrics; using regenerated oversampled metrics widens every row.
     adjusted_metrics.line_spacing *= plan.line_spacing_scale;
     adjusted_metrics.baseline *= plan.baseline_scale;
     if (adjusted_metrics.line_spacing <= 0.0F) {
@@ -1385,6 +1480,27 @@ void MaybeLogOiramlookOlButtonRectProbe(
         << " rect=" << rect[0] << "," << rect[1] << "," << rect[2] << ","
         << rect[3];
     AppendHookEventLog(HookId::load_font_file, detail.str());
+}
+
+float __fastcall HookedOiramlookBaseMultiLineEditboxCalcLineSpace(
+    void* editbox,
+    void*,
+    const void* font,
+    const float scale) {
+    const float line_spacing =
+        font ? static_cast<const float*>(font)[kLineSpacingIndex] : 0.0F;
+    const float line_space_extent =
+        editbox ? static_cast<const float*>(editbox)[313] : 0.0F;
+    const float result = (scale * line_spacing) + line_space_extent;
+
+    MaybeLogOiramlookCalcLineSpaceCall(
+        editbox,
+        font,
+        scale,
+        line_spacing,
+        line_space_extent,
+        result);
+    return result;
 }
 
 float __fastcall HookedTextGlyphGetHeight(void* glyph, void*) {
@@ -1807,6 +1923,12 @@ bool ApplyDynamicFontOversampleExperiment(
         rich_text_height_hook_installed =
             EnsureDialogRichTextGlyphHeightCompensationHook(&rich_text_height_detail);
     }
+    bool oiramlook_calc_line_space_probe_installed = false;
+    std::string oiramlook_calc_line_space_detail;
+    if (font_name == "system") {
+        oiramlook_calc_line_space_probe_installed =
+            InstallKnownSafeOiramlookCalcLineSpaceProbe(&oiramlook_calc_line_space_detail);
+    }
 
     const FontVerticalMetrics original_vertical_metrics =
         CaptureFontVerticalMetrics(font);
@@ -1816,7 +1938,10 @@ bool ApplyDynamicFontOversampleExperiment(
         plan.observe_glyph_image_offsets);
     bindings.font_create_font_from_ft_face(font, plan.oversampled_point_size, 0, 0);
     if (plan.preserve_original_vertical_metrics) {
-        ApplyPlannedVerticalMetricAdjustments(font, original_vertical_metrics, plan);
+        ApplyPlannedVerticalMetricAdjustments(
+            font,
+            original_vertical_metrics,
+            plan);
     } else {
         ScaleFontVerticalMetrics(font, plan);
     }
@@ -1841,6 +1966,10 @@ bool ApplyDynamicFontOversampleExperiment(
             (plan.preserve_original_vertical_metrics
                 ? std::string("0")
                 : std::string("1")) +
+            " vertical_metrics_logical=" +
+            (plan.preserve_original_vertical_metrics
+                ? std::string("1")
+                : std::string("0")) +
             " char_at_pixel_scaled=1" +
             " define_image_hook=" +
             (define_image_hook_installed ? std::string("1") : std::string("0")) +
@@ -1855,7 +1984,13 @@ bool ApplyDynamicFontOversampleExperiment(
             (rich_text_height_hook_installed ? std::string("1") : std::string("0")) +
             (rich_text_height_detail.empty()
                 ? std::string()
-                : std::string(" rich_text_height_detail=\"") + rich_text_height_detail + "\"");
+                : std::string(" rich_text_height_detail=\"") + rich_text_height_detail + "\"") +
+            " oiramlook_calc_line_space_probe=" +
+            (oiramlook_calc_line_space_probe_installed ? std::string("1") : std::string("0")) +
+            (oiramlook_calc_line_space_detail.empty()
+                ? std::string()
+                : std::string(" oiramlook_calc_line_space_detail=\"") +
+                    oiramlook_calc_line_space_detail + "\"");
     }
     return true;
 }

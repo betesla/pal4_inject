@@ -45,7 +45,9 @@ DynamicFontOversamplePlan BuildDynamicFontOversamplePlan(
     if (canonical_font_name == "system") {
         // `system` is used heavily by long-form help text.  A milder oversample
         // keeps punctuation advances closer to the original 13pt layout while
-        // still improving glyph sampling quality.
+        // still improving glyph sampling quality.  Runtime metric repair keeps
+        // the original logical row step so RichTextFrame can add the existing
+        // LineSpaceExtent without widening system UI paragraphs.
         plan.apply = true;
         plan.oversampled_point_size = 20;
         plan.draw_scale =
@@ -54,7 +56,7 @@ DynamicFontOversamplePlan BuildDynamicFontOversamplePlan(
         plan.extent_scale = plan.draw_scale;
         plan.glyph_offset_y = 0.0F;
         plan.observe_glyph_image_offsets = true;
-        plan.line_spacing_scale = 0.92F;
+        plan.line_spacing_scale = 1.0F;
         plan.baseline_scale = 1.0F;
         plan.preserve_original_vertical_metrics = true;
         return plan;

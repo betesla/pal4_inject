@@ -76,7 +76,7 @@ cmake -S . -B build -A Win32 -DPAL4_INJECT_SYNC_TEST_DEPLOY=OFF
   - 启动器底部提供 `启动游戏 / 停止游戏 / 重启游戏 / 检查更新 / 最小化` 按钮；其中“最小化”用于收起窗口，右上角关闭按钮会直接退出启动器
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
   - 作者、版本、更新入口、鸣谢和使用声明统一收拢到“声明”页，避免把这些说明散在主窗口顶栏
-  - 当前内置版本为 `v0.1.4`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
+  - 当前内置版本为 `v0.1.5`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
 
 示例：
 
@@ -111,7 +111,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\PAL4_inject.exe `
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1
 ```
 
-脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.1.4` 会生成 tag/release 版本 `v0.1.4`，产物为 `PAL4_inject_v0.1.4_win32.zip`。如只想本地打包、不发布 GitHub Release：
+脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.1.5` 会生成 tag/release 版本 `v0.1.5`，产物为 `PAL4_inject_v0.1.5_win32.zip`。如只想本地打包、不发布 GitHub Release：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubRelease -SkipGiteeRelease
@@ -120,6 +120,23 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
 如果 `dist\PAL4.exe` 已存在，脚本会在刷新 `dist` 时保留它，并把它一同打入发布 zip；不要把 `PAL4.exe` 提交进 git。
 
 发布前脚本会要求没有未提交的源码改动；如本地不存在同名 tag，会自动在当前提交创建 tag，并推送当前分支和 tag。Gitee 发布需要设置 `GITEE_TOKEN` 或 `GITEE_ACCESS_TOKEN`，也可以传 `-GiteeAccessToken <token>`；如只发布 GitHub，可加 `-SkipGiteeRelease`。
+
+## IDA 导出脚本
+仓库自带一个可复用的 IDA Hex-Rays 批量导出脚本：
+
+```powershell
+scripts\export_ida_pseudocode.py
+```
+
+用途：
+- 把当前 IDA 数据库里的所有函数导出成单个 `.c` 风格伪代码文件
+- 适合对 `CEGUIBase.dll`、`OIRAMLOOK.dll` 这类大模块先做一份本地全文索引，方便后续检索与对照
+
+在 IDA 中使用：
+- `File -> Script file... -> scripts/export_ida_pseudocode.py`
+- 如需自定义输出路径，可通过 `idc.ARGV[1]` 传入
+- 不传输出路径时，默认写到当前输入文件旁边：
+  - `<input_name>_all_functions.c`
 
 ## 当前范围
 - launcher 采用 suspended 启动 + `LoadLibraryW` 远程线程注入。
@@ -212,8 +229,9 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - `minimap.xml` 可见部件改为靠左下
   - `portrait.xml` 可见部件改为靠右上
 - 小地图纹理区域也会同步按同一套宽屏 plan 重定位：
-  - 不再继续按“居中 4:3 UI 框”的偏移去摆放小地图图片
-  - 改成和左下角 HUD 框体对齐，避免图像仍停在屏幕中部
+  - `SetupMinimapTexture` 参数是该函数自己的屏幕纹理区域，不走普通 CEGUI render queue
+  - 因此这里输出物理像素 rect，并和左下角 HUD 框体对齐，避免图像仍停在屏幕中部
+- 战斗 HUD 头像使用 `gy0` imageset 中的 `zhandou*` 贴图；该 imageset 需要关闭 `AutoScaled`，避免在宽屏下先按 `width / 800` 横向预缩放、再被 renderer 按高度统一缩放而变宽。
 
 ## Crash Capture
 - runtime 常规日志：

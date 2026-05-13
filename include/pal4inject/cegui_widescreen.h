@@ -47,6 +47,12 @@ float ComputeCenteredUiLogicalX(
 float ProjectWidescreenLogicalXToPhysicalPixels(
     const CeguiWidescreenPlan& plan,
     float logical_x) noexcept;
+float ProjectPhysicalPixelsToWidescreenLogicalX(
+    const CeguiWidescreenPlan& plan,
+    float physical_x) noexcept;
+float ProjectPhysicalPixelsToWidescreenLogicalY(
+    const CeguiWidescreenPlan& plan,
+    float physical_y) noexcept;
 bool ApplyCeguiWidescreenMouseTransform(
     const CeguiWidescreenPlan& plan,
     float raw_x,

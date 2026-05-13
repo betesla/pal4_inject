@@ -45,13 +45,13 @@
     - 已在当前 PAL4 二进制中确认起始字节：
       - `6A FF 68 99 37 82 00 64 A1 00 00 00 00 50 64 89`
 - `SetupMinimapTexture @ 0x40DE10`
-  - mode: `observe_only`
+  - mode: `replace_with_fallback`
   - patch span: `8`
-  - reason: 小地图纹理区域原本仍按整屏宽度缩放与定位；宽屏下需要和左下角 HUD 锚点保持一致，避免内容仍停在居中的 UI 框附近
+  - reason: 小地图纹理区域需要和左下角 HUD 锚点保持一致；hook 输出保持 `SetupMinimapTexture` 自己使用的物理像素 rect，避免把非 CEGUI 队列坐标当作逻辑坐标
 - `SetProperties_4C2550 @ 0x4C2550`
   - mode: `replace_with_fallback`
   - patch span: `8`
-  - reason: 只在战斗相关调用点上改写 `x` 写入值，覆盖伤害数字、状态图标和 `zhangdoushengli` 胜利图，不去碰其它共享调用方
+  - reason: 只观察/筛选战斗相关调用点，覆盖伤害数字、状态图标和 `zhangdoushengli` 胜利图；这些对象最终仍走 CEGUI renderer，默认保持原坐标，不去碰其它共享调用方
 - `ui_showCombatHint @ 0x54A1F0`
   - mode: `replace_with_fallback`
   - patch span: `7`

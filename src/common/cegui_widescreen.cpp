@@ -65,6 +65,24 @@ float ProjectWidescreenLogicalXToPhysicalPixels(
     return logical_x * plan.uniform_scale + horizontal_bias;
 }
 
+float ProjectPhysicalPixelsToWidescreenLogicalX(
+    const CeguiWidescreenPlan& plan,
+    const float physical_x) noexcept {
+    if (!plan.apply || plan.use_original_variant || plan.uniform_scale <= 0.0F) {
+        return physical_x;
+    }
+    return (physical_x - plan.horizontal_bias_pixels) / plan.uniform_scale;
+}
+
+float ProjectPhysicalPixelsToWidescreenLogicalY(
+    const CeguiWidescreenPlan& plan,
+    const float physical_y) noexcept {
+    if (!plan.apply || plan.use_original_variant || plan.uniform_scale <= 0.0F) {
+        return physical_y;
+    }
+    return physical_y / plan.uniform_scale;
+}
+
 CeguiWidescreenPlan BuildCeguiWidescreenPlan(const int width, const int height) noexcept {
     return BuildCeguiWidescreenPlanForLogicalSize(
         width,
@@ -142,8 +160,8 @@ bool ApplyCeguiWidescreenMouseTransform(
         return false;
     }
 
-    *out_x = (raw_x - plan.horizontal_bias_pixels) / plan.uniform_scale;
-    *out_y = raw_y / plan.uniform_scale;
+    *out_x = ProjectPhysicalPixelsToWidescreenLogicalX(plan, raw_x);
+    *out_y = ProjectPhysicalPixelsToWidescreenLogicalY(plan, raw_y);
     return true;
 }
 

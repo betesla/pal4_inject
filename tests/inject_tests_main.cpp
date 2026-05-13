@@ -426,7 +426,7 @@ void TestDynamicFontOversamplePlan() {
     assert(system_plan.extent_scale == 0.65F);
     assert(system_plan.glyph_offset_y == 0.0F);
     assert(system_plan.observe_glyph_image_offsets);
-    assert(system_plan.line_spacing_scale == 0.92F);
+    assert(system_plan.line_spacing_scale == 1.0F);
     assert(system_plan.baseline_scale == 1.0F);
     assert(system_plan.preserve_original_vertical_metrics);
 
@@ -1139,6 +1139,11 @@ void TestCeguiWidescreenPlanMath() {
             plan_1920_1080,
             minimap_logical_x);
     assert(minimap_screen_x > -0.001F && minimap_screen_x < 0.001F);
+    const float minimap_roundtrip_x =
+        pal4::inject::ProjectPhysicalPixelsToWidescreenLogicalX(
+            plan_1920_1080,
+            minimap_screen_x);
+    assert(minimap_roundtrip_x < -133.3F && minimap_roundtrip_x > -133.4F);
 
     const float portrait_logical_x = pal4::inject::ComputeWidescreenHudLogicalX(
         plan_1920_1080,

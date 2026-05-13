@@ -115,7 +115,9 @@
     - `numberedListItem::render @ 0x4B2480` seam
     - 存档列表项原函数先 cache 存档截图、再 cache 行背景；在宽屏 renderer 替换路径下，补绘一次 `this + 0x1FC` 的已有截图 image，确保缩略图排在行背景之后
   - `battle_ui_layout_hooks.cpp`
-    - `SetProperties_4C2550` 的战斗调用点筛选与 `x` 偏移补偿
+    - `SetProperties_4C2550` 的战斗调用点筛选与坐标空间归一
+    - 由 `actorManager_getActorScreenPosition` 生成的战斗图标坐标保持原值，避免在 CEGUI renderer 前被反向缩放
+    - 战斗 HUD 头像拉伸不在这条 hook 链上；实际修复点是资源侧 `gy0.imageset` 的 `AutoScaled=false`
     - `ui_showCombatHint / ui_showCombatHint2` 浮动提示窗居中修正
   - `hud_layout_fixups.cpp`
     - gameplay HUD edge-anchor fixups for `minimap.xml` / `portrait.xml`
@@ -133,7 +135,8 @@
       - half-res 中间纹理
       - blur pass 次数
   - `minimap_hooks.cpp`
-    - `SetupMinimapTexture` widescreen remap so minimap image follows the centered UI frame
+    - `SetupMinimapTexture` widescreen remap so minimap image follows the left-bottom HUD frame
+    - 输出保持 `SetupMinimapTexture` 需要的物理像素 rect；它不进入普通 CEGUI render queue
   - `input_hooks.cpp`
     - `ProcessUIEvent` 替换与 observe-only wrapper
   - `camera_hooks.cpp`
@@ -221,8 +224,10 @@
   - 同时同步 PAL4 renderer 对象 `0xF4/0xF8/0xFC/0x100` 的 render rect 字段；IDA 显示 `CEGUI_Renderer_Constructor_2` 会把这里初始化为 `0,600,0,800`，若不改这份对象状态，CEGUI 裁剪链仍可能保留 800 宽
   - 对 `MainWindow/Root` 这类宽屏节点，只在运行时关闭越界窗口的 `ClippedByParent`，不再扩写 `setWindowSize / setWidth / setHeight`，避免在宽屏菜单和普通 4:3 UI 之间切换时留下错误窗口宽度
   - 不直接改 `CEGUIBase.dll` 的全局 vtable，也不假设 renderer 对象有 `1280x800` 变体那么大的内存布局
-  - minimap 贴图区域额外通过 `SetupMinimapTexture` hook 按同一套 wide plan 重算 `x / y / width / height`
-  - 战斗内程序控制的浮动数字、状态图标和胜利图会在命中的 `SetProperties_4C2550` 调用点上补一层 `logical_horizontal_padding`
+  - minimap 贴图区域额外通过 `SetupMinimapTexture` hook 按同一套 wide plan 重算物理像素 `x / y / width / height`
+  - 战斗内程序控制的浮动数字和头像等坐标来源，会在命中的 `SetProperties_4C2550` 调用点上保持原值，让最终 CEGUI renderer 统一处理缩放
+  - 战斗胜利图、评级图这类硬编码 UI 坐标保持逻辑坐标，不提前乘 `uniform_scale`
+  - `CombatRoleState.xml` 的战斗 HUD 头像来自 `gy0:zhandou*`；`gy0.imageset` 在宽屏资源包里必须关闭 `AutoScaled`，否则 CEGUI 会先按 `width / 800` 横向预缩放，再叠加 renderer 的按高缩放，导致头像横向拉伸。
   - `ui_showCombatHint / ui_showCombatHint2` 这两类浮动提示窗会在原始 `setPosition + 居中` 后整体右移到中央 4:3 UI 框
   - 旧 `loadWindow` 存档列表的每行截图不参与宽屏画布判断；它通过 `numberedListItem::render` 的窄 hook 在原列表项渲染后按原始 4:3 item rect 补绘，避免宽屏渲染队列把截图压到背景下面。
   - gameplay HUD 不再完全跟随居中的 4:3 框：

@@ -35,29 +35,29 @@ struct SetPropertiesCallsiteRule {
     std::string_view debug_name;
     enum class TransformMode : std::uint8_t {
         none = 0,
-        translate_only = 1,
-        scale_x_only = 2,
-        project_full = 3,
-    } transform_mode = TransformMode::translate_only;
-    float output_x_offset_pixels = 0.0F;
-    float output_y_offset_pixels = 0.0F;
+        physical_to_logical = 1,
+        left_edge_logical = 2,
+        right_edge_logical = 3,
+    } transform_mode = TransformMode::none;
+    float output_x_offset_logical = 0.0F;
+    float output_y_offset_logical = 0.0F;
 };
 
 constexpr auto kSetPropertiesCallsiteRules = std::to_array<SetPropertiesCallsiteRule>({
-    SetPropertiesCallsiteRule{0x426AF8, "player_hp_delta", SetPropertiesCallsiteRule::TransformMode::scale_x_only},
-    SetPropertiesCallsiteRule{0x540098, "combat_console_image_1", SetPropertiesCallsiteRule::TransformMode::scale_x_only},
-    SetPropertiesCallsiteRule{0x5402EE, "combat_console_image_2", SetPropertiesCallsiteRule::TransformMode::scale_x_only},
-    SetPropertiesCallsiteRule{0x54092E, "combat_console_image_3", SetPropertiesCallsiteRule::TransformMode::scale_x_only},
-    SetPropertiesCallsiteRule{0x5405BF, "combat_message_hp_gain", SetPropertiesCallsiteRule::TransformMode::scale_x_only},
-    SetPropertiesCallsiteRule{0x5406EE, "combat_message_hp_loss", SetPropertiesCallsiteRule::TransformMode::scale_x_only},
-    SetPropertiesCallsiteRule{0x540827, "combat_message_mp_gain", SetPropertiesCallsiteRule::TransformMode::scale_x_only},
-    SetPropertiesCallsiteRule{0x548447, "combat_win_banner", SetPropertiesCallsiteRule::TransformMode::project_full},
-    SetPropertiesCallsiteRule{0x548626, "combat_rank_tedeng", SetPropertiesCallsiteRule::TransformMode::project_full},
-    SetPropertiesCallsiteRule{0x5486C3, "combat_rank_yideng", SetPropertiesCallsiteRule::TransformMode::project_full},
-    SetPropertiesCallsiteRule{0x548760, "combat_rank_erdeng", SetPropertiesCallsiteRule::TransformMode::project_full},
-    SetPropertiesCallsiteRule{0x5487FD, "combat_rank_sandeng", SetPropertiesCallsiteRule::TransformMode::project_full},
-    SetPropertiesCallsiteRule{0x54D716, "combat_dialog_victory_icon", SetPropertiesCallsiteRule::TransformMode::project_full},
-    SetPropertiesCallsiteRule{0x57ADBD, "combat_fail_banner", SetPropertiesCallsiteRule::TransformMode::translate_only, -80.0F, 0.0F},
+    SetPropertiesCallsiteRule{0x426AF8, "player_hp_delta"},
+    SetPropertiesCallsiteRule{0x540098, "combat_console_image_1"},
+    SetPropertiesCallsiteRule{0x5402EE, "combat_console_image_2"},
+    SetPropertiesCallsiteRule{0x54092E, "combat_console_image_3"},
+    SetPropertiesCallsiteRule{0x5405BF, "combat_message_hp_gain"},
+    SetPropertiesCallsiteRule{0x5406EE, "combat_message_hp_loss"},
+    SetPropertiesCallsiteRule{0x540827, "combat_message_mp_gain"},
+    SetPropertiesCallsiteRule{0x548447, "combat_win_banner"},
+    SetPropertiesCallsiteRule{0x548626, "combat_rank_tedeng"},
+    SetPropertiesCallsiteRule{0x5486C3, "combat_rank_yideng"},
+    SetPropertiesCallsiteRule{0x548760, "combat_rank_erdeng"},
+    SetPropertiesCallsiteRule{0x5487FD, "combat_rank_sandeng"},
+    SetPropertiesCallsiteRule{0x54D716, "combat_dialog_victory_icon"},
+    SetPropertiesCallsiteRule{0x57ADBD, "combat_fail_banner", SetPropertiesCallsiteRule::TransformMode::none, -80.0F, 0.0F},
 });
 
 SetProperties4C2550Fn g_original_combat_console_set_image_position = nullptr;
@@ -194,12 +194,12 @@ const char* ToString(const SetPropertiesCallsiteRule::TransformMode mode) noexce
     switch (mode) {
     case SetPropertiesCallsiteRule::TransformMode::none:
         return "none";
-    case SetPropertiesCallsiteRule::TransformMode::translate_only:
-        return "translate";
-    case SetPropertiesCallsiteRule::TransformMode::scale_x_only:
-        return "scale_x";
-    case SetPropertiesCallsiteRule::TransformMode::project_full:
-        return "project";
+    case SetPropertiesCallsiteRule::TransformMode::physical_to_logical:
+        return "physical_to_logical";
+    case SetPropertiesCallsiteRule::TransformMode::left_edge_logical:
+        return "left_edge_logical";
+    case SetPropertiesCallsiteRule::TransformMode::right_edge_logical:
+        return "right_edge_logical";
     default:
         return "unknown";
     }
@@ -289,21 +289,25 @@ int __fastcall Hook_SetProperties4C2550(
             switch (callsite_rule->transform_mode) {
             case SetPropertiesCallsiteRule::TransformMode::none:
                 break;
-            case SetPropertiesCallsiteRule::TransformMode::translate_only:
-                adjusted_x = original_x + plan.horizontal_bias_pixels;
+            case SetPropertiesCallsiteRule::TransformMode::physical_to_logical:
+                adjusted_x = ProjectPhysicalPixelsToWidescreenLogicalX(plan, original_x);
+                adjusted_y = ProjectPhysicalPixelsToWidescreenLogicalY(plan, original_y);
                 break;
-            case SetPropertiesCallsiteRule::TransformMode::scale_x_only:
-                // Floating combat numbers are rendered inside an already centered UI
-                // hierarchy, so they need width scaling but not an extra center bias.
-                adjusted_x = original_x * plan.uniform_scale;
+            case SetPropertiesCallsiteRule::TransformMode::left_edge_logical:
+                adjusted_x = ComputeWidescreenHudLogicalX(
+                    plan,
+                    original_x,
+                    WidescreenHudAnchor::left_edge);
                 break;
-            case SetPropertiesCallsiteRule::TransformMode::project_full:
-                adjusted_x = ProjectWidescreenLogicalXToPhysicalPixels(plan, original_x);
-                adjusted_y = original_y * plan.uniform_scale;
+            case SetPropertiesCallsiteRule::TransformMode::right_edge_logical:
+                adjusted_x = ComputeWidescreenHudLogicalX(
+                    plan,
+                    original_x,
+                    WidescreenHudAnchor::right_edge);
                 break;
             }
-            adjusted_x += callsite_rule->output_x_offset_pixels;
-            adjusted_y += callsite_rule->output_y_offset_pixels;
+            adjusted_x += callsite_rule->output_x_offset_logical;
+            adjusted_y += callsite_rule->output_y_offset_logical;
             LogBattleUiAdjustment(
                 HookId::combat_console_set_image_position,
                 callsite_rule->debug_name,

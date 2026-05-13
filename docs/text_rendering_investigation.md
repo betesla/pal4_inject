@@ -662,8 +662,8 @@
   - `system` 在重建 `system_auto_glyph_images` 时，会额外记录 `hook=imageset_define_image_observe`
   - 同一批 glyph 会继续记录 `hook=image_set_vert_scaling_observe`
   - 第二条日志里的 `final_offset_y` 就等价于当时 `Image::getOffsetY()` 会返回的值，因为 `getOffsetY()` 只是直接读 `Image + 0x28`
-  - 当前实测 `system` glyph 的 `final_offset_y` 与 `defineImage(...)` 输入基本一致，只存在像素对齐带来的约 `+1` 取整差值，说明 glyph image 偏移链本身没有明显异常
-  - 因此下一步调查要转向 `system` 文本消费方自己的 `drawText rect / formatting / 控件布局`
+- 当前实测 `system` glyph 的 `final_offset_y` 与 `defineImage(...)` 输入基本一致，只存在像素对齐带来的约 `+1` 取整差值，说明 glyph image 偏移链本身没有明显异常
+- 因此下一步调查要转向 `system` 文本消费方自己的 `drawText rect / formatting / 控件布局`
   - 进一步追到 `OIRAMLOOK.dll` 后，已确认偏上的按钮标题来自：
     - `CEGUI::OLButton::drawNormal @ 0x10017398`
     - `CEGUI::OLButton::drawHover @ 0x100173A0`
@@ -676,16 +676,37 @@
   - `CEGUI::OLButton::drawSelected @ 0x10017b20`，其 `drawText` return caller 为 `OIRAMLOOK.dll+0x17ca2`
 - 因此 `OLButton` 标题下移的 caller 白名单需要一并覆盖这两条“已选中/禁用态”路径，否则会出现“不点按钮时稍微下移，点了后仍旧靠上”的现象
 - 运行时实际匹配时，优先直接使用已验证可靠的 `caller=OIRAMLOOK.dll+0x...` 描述串，而不是重新做一次模块/RVA 拆分；这样更贴近 live log 里的真实观测值，也更容易和截图、日志一一对照
+- 2026-05-08 在铁匠铺配方说明界面再次确认：`SmithWindow/EditPrescriptionInfo` 的实际文本只有
+  `剑锋犀利，有青光流溢，冰冷而又带几分雅致。（男用）\n需要赤铁石×3，木炭×2`
+  并不含额外空行
+- 这说明截图里 `（男用）` 被单独挤成第二行时，剩余问题主要还是 `system` 自身的多行行距偏宽，而不是数据里多插了回车
+- 后续继续查到 `SmithWindow/EditPrescriptionInfo` 的布局 XML 后，确认这类说明框自己还额外带了 `LineSpaceExtent=10.000000`
+- 继续对照 `CEGUIBase.dll / OIRAMLOOK.dll` 的批量导出后，已经确认两边多行控件的真实行推进公式一致：
+  - `effective line step = Font::lineSpacing + LineSpaceExtent`
+  - `CEGUI::MultiLineEditbox::calcLineSpace(...)` 与 `CEGUI::BaseMultiLineEditbox::calcLineSpace(...)` 都直接返回这条公式
+- 因此此前给 `SmithWindow/...` 单独覆盖 `LineSpaceExtent -> 0` 属于错误修复方向：
+  - 它会把显式分行的条目也一起压得过窄
+  - 也不能解释帮助等其它 `system` 多行控件仍然偏宽
+- 当前根因判断修正为：
+  - 系统 UI 的 `LineSpaceExtent=8~10` 本来就是布局的一部分，不应被全局缩放或白名单归零
+  - 高清重建后应该让 `Font::lineSpacing` 回到原逻辑字号语义
+  - 2026-05-12 实机继续验证后修正：对 `system / systemBold` 的 preserve 模式应保留原始 logical `lineSpacing / baseline`，而不是使用“重建后的 raw lineSpacing * draw_scale”
+  - 原因是 `OIRAMLOOK::RichTextFrame` 会把 `DocLine.height` 与控件原本的 `LineSpaceExtent` 相加；若 `DocLine.height` 来自 20pt 重建字体折回后的较大指标，系统说明框和帮助多行文本都会继续偏宽
+- 当前默认修复已经回到字体层：
+  - 删除 `SmithWindow/...` 的 runtime `LineSpaceExtent` 白名单覆盖
+  - 保留原始控件 `LineSpaceExtent`
+  - 在 `createFontFromFT_Face(高清字号)` 后，对 `system / systemBold` 回写原始 logical vertical metrics，只允许显式 `line_spacing_scale / baseline_scale` 做小幅修正
 - 因此下一轮人工验证时，应该优先看：
-  1. 对白框正文是否比之前更接近“同字号但更实”
-  2. 是否出现行距、换行、裁剪等新副作用
-  3. 是否需要继续把缩放补偿扩展到其它 `Font::*draw*` 路径
+  1. 铁匠铺说明框自动换行与显式分行是否同时恢复到更自然的间距
+  2. 帮助说明/多行 editbox 是否随同恢复，而不再需要窗口白名单
+  3. `system` 按钮/页签标题位置是否继续保持当前 `OLButton` 专项修复后的状态
 
 ### TODO
 - [x] 为 `system_auto_glyph_images` 增加只观测、不改值的运行时日志，记录 `defineImage(...)` 传入的 `offsetY`
 - [x] 对比 `Image::setVertScaling()` 后的最终 `Image::getOffsetY()`，确认问题是否出在 glyph image 的缩放后偏移
 - [ ] 如果 `offsetY` 本身正常，则继续追 `system` 文本所在控件的消费方布局，而不是再调 font metrics
 - [ ] 用开启高清化后的“仙剑探秘”实机界面再验证一次 `hook=oiramlook_olbutton_rect_adjust` 是否命中，并确认 `2.0` 的 `rect.y` 下移是否足够
+- [ ] 继续观察 `system` 在铁匠铺/帮助说明/多行 editbox 中的行距，确认字体层修复已经覆盖此前的 `SmithWindow` 与帮助界面问题
 - [ ] 只有在观测证据充分后，才重新引入更窄的 `offsetY` 修正实验；默认产物保持当前稳定链路
 
 ## 2026-04-22 Failed attempt: inline hook at `appendCharacter`
