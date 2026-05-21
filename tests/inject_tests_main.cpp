@@ -641,12 +641,16 @@ void TestInputLogic() {
     assert(pal4::inject::NormalizeProcessUiEventKeyDown(17) == 200);
     assert(pal4::inject::NormalizeProcessUiEventKeyDown(30) == 203);
     assert(pal4::inject::NormalizeProcessUiEventKeyDown(57) == 28);
-    assert(pal4::inject::ShouldSuppressMappedUiKey(1));
+    assert(!pal4::inject::ShouldSuppressMappedUiKey(1));
     assert(!pal4::inject::ShouldSuppressMappedUiKey(57));
 
     const auto key_down = pal4::inject::BuildUiInjectedPlan(WM_KEYDOWN, 17, 0);
     assert(key_down.action == UiInjectedAction::key_down);
     assert(key_down.code == 200);
+
+    const auto escape_down = pal4::inject::BuildUiInjectedPlan(WM_KEYDOWN, 1, 0);
+    assert(escape_down.action == UiInjectedAction::key_down);
+    assert(escape_down.code == 1);
 
     const auto key_up = pal4::inject::BuildUiInjectedPlan(WM_KEYUP, 32, 0);
     assert(key_up.action == UiInjectedAction::key_up);
