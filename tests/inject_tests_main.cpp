@@ -831,6 +831,7 @@ void TestCeguiWidescreenPlanMath() {
     assert(plan_1280_800.uniform_scale > 1.3333F && plan_1280_800.uniform_scale < 1.3334F);
     assert(plan_1280_800.horizontal_bias_pixels > 106.66F && plan_1280_800.horizontal_bias_pixels < 106.67F);
     assert(plan_1280_800.logical_horizontal_padding > 79.99F && plan_1280_800.logical_horizontal_padding < 80.01F);
+    assert(!pal4::inject::ShouldDrawOriginalUiPillarboxMask(plan_1280_800));
 
     const auto plan_1920_1080 = pal4::inject::BuildCeguiWidescreenPlan(1920, 1080);
     assert(plan_1920_1080.apply);
@@ -838,6 +839,7 @@ void TestCeguiWidescreenPlanMath() {
     assert(plan_1920_1080.uniform_scale == 1.8F);
     assert(plan_1920_1080.horizontal_bias_pixels == 240.0F);
     assert(plan_1920_1080.logical_horizontal_padding > 133.33F && plan_1920_1080.logical_horizontal_padding < 133.34F);
+    assert(pal4::inject::ShouldDrawOriginalUiPillarboxMask(plan_1920_1080));
     const float centered_ui_x =
         pal4::inject::ComputeCenteredUiLogicalX(plan_1920_1080, 102.0F);
     assert(centered_ui_x > 235.33F && centered_ui_x < 235.34F);

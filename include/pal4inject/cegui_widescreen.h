@@ -48,5 +48,6 @@ bool ApplyCeguiWidescreenMouseTransform(
     float raw_y,
     float* out_x,
     float* out_y) noexcept;
+bool ShouldDrawOriginalUiPillarboxMask(const CeguiWidescreenPlan& plan) noexcept;
 
 }  // namespace pal4::inject

@@ -81,6 +81,7 @@
   - `cegui_renderer_hooks.cpp`
     - shared `CEGUI_Renderer_Constructor_2` widescreen pillarbox patch
     - object-local synthetic vtable for centered wide-aspect rendering
+    - 原版 4:3 UI 走居中缩放时，只在白名单界面先绘制左右黑色 pillarbox 底板，再提交 CEGUI 队列；白名单覆盖主菜单族窗口和底部工具栏打开的角色/属性/装备/仙术/锻造/任务/系统设置窗口，避免战斗 UI 等 4:3 内容被额外黑块遮挡
   - `battle_ui_layout_hooks.cpp`
     - `SetProperties_4C2550` 的战斗调用点筛选与 `x` 偏移补偿
     - `ui_showCombatHint / ui_showCombatHint2` 浮动提示窗居中修正
@@ -168,6 +169,7 @@
 - wide-aspect UI
   - 对共享 renderer ctor 路径上的宽屏分辨率，注入 runtime 会改成“按高度等比缩放 + 左右 pillarbox + 居中”
   - 通过 object-local synthetic vtable 只改当前 renderer 对象的 `doRender` / `getRenderRect`
+  - 黑边绘制是 renderer 层的前置纯色 quad，不改资源 XML，也不启用后续宽屏 Root 画布推断逻辑
   - 不直接改 `CEGUIBase.dll` 的全局 vtable，也不假设 renderer 对象有 `1280x800` 变体那么大的内存布局
   - minimap 贴图区域额外通过 `SetupMinimapTexture` hook 按同一套 wide plan 重算 `x / y / width / height`
   - 战斗内程序控制的浮动数字、状态图标和胜利图会在命中的 `SetProperties_4C2550` 调用点上补一层 `logical_horizontal_padding`

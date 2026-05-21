@@ -11,6 +11,7 @@ constexpr float kAspect43 = 4.0F / 3.0F;
 constexpr float kMinimapLeftMargin = 2.0F;
 constexpr float kMinimapBottomMargin = 28.0F;
 constexpr float kMinimapSize = 173.0F;
+constexpr float kPillarboxEpsilonPixels = 1.0F;
 
 }  // namespace
 
@@ -133,6 +134,13 @@ bool ApplyCeguiWidescreenMouseTransform(
     *out_x = (raw_x - plan.horizontal_bias_pixels) / plan.uniform_scale;
     *out_y = raw_y / plan.uniform_scale;
     return true;
+}
+
+bool ShouldDrawOriginalUiPillarboxMask(const CeguiWidescreenPlan& plan) noexcept {
+    return plan.apply &&
+        !plan.use_original_variant &&
+        plan.uniform_scale > 0.0F &&
+        plan.horizontal_bias_pixels > kPillarboxEpsilonPixels;
 }
 
 }  // namespace pal4::inject

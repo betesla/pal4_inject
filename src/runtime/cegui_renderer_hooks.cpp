@@ -6,6 +6,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -13,7 +14,9 @@
 #endif
 #include <windows.h>
 
+#include "cegui_bindings.h"
 #include "hook_logging.h"
+#include "input_hooks.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
 #include "hud_layout_fixups.h"
@@ -55,6 +58,7 @@ constexpr std::ptrdiff_t kRendererVertexBufferOffset = 0xCC;
 constexpr std::ptrdiff_t kRendererVertexCountOffset = 0x108;
 constexpr std::ptrdiff_t kRendererScaleXOffset = 0x110;
 constexpr std::ptrdiff_t kRendererScaleYOffset = 0x114;
+constexpr std::uint32_t kOpaqueBlackColor = 0xFF000000;
 
 CeguiRendererConstructor2Fn g_original_cegui_renderer_constructor_2 = nullptr;
 CeguiSystemInitializeFn g_original_cegui_system_initialize = nullptr;
@@ -75,6 +79,246 @@ std::string FormatPointer(const void* value) {
 
 float AlignToHalfPixel(const float value) noexcept {
     return std::floor(value + 0.5F) - 0.5F;
+}
+
+struct PillarboxUiMarkers {
+    bool main_menu_family_root = false;
+    bool toolbar_overlay_root = false;
+    bool btn_system_setting = false;
+    bool setting_window_0 = false;
+    bool setting_window_1 = false;
+};
+
+bool WindowNameMatches(
+    const std::string_view actual,
+    const std::string_view expected_leaf) noexcept {
+    if (actual == expected_leaf) {
+        return true;
+    }
+    return actual.size() > expected_leaf.size() &&
+        actual[actual.size() - expected_leaf.size() - 1] == '/' &&
+        actual.ends_with(expected_leaf);
+}
+
+constexpr std::array<std::string_view, 10> kMainMenuFamilyRootNames = {
+    "MainWindow/Root",
+    "loadWindow/Root",
+    "CastWindow/Root",
+    "IntroductionWindow/Root",
+    "HelpWindow/Root",
+    "gameInfo/Root",
+    "moviePreviewWindow/Root",
+    "PalTestWindow/Root",
+    "PictureViewWindow/Root",
+    "picturePreviewWindow/Root",
+};
+
+bool IsMainMenuFamilyRootName(const std::string_view name) noexcept {
+    for (const std::string_view candidate : kMainMenuFamilyRootNames) {
+        if (WindowNameMatches(name, candidate)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+constexpr std::array<std::string_view, 7> kToolbarOverlayRootNames = {
+    "roleStateWindow/Root",
+    "PropertyWindow/Root",
+    "EquipmentWindow/Root",
+    "magicWindow/Root",
+    "SmithWindow/Root",
+    "MissionWindow/Root",
+    "SystemSetting/Root",
+};
+
+bool IsToolbarOverlayRootName(const std::string_view name) noexcept {
+    for (const std::string_view candidate : kToolbarOverlayRootNames) {
+        if (WindowNameMatches(name, candidate)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void CollectVisiblePillarboxUiMarkers(
+    const CeguiBindings& bindings,
+    void* const window,
+    const unsigned int depth,
+    PillarboxUiMarkers* const markers) {
+    constexpr unsigned int kMaxUiTreeDepth = 64;
+    if (!window ||
+        !markers ||
+        depth > kMaxUiTreeDepth ||
+        !bindings.window_is_visible ||
+        !bindings.window_get_name ||
+        !bindings.cegui_string_c_str ||
+        !bindings.window_get_child_count ||
+        !bindings.window_get_child_at_index) {
+        return;
+    }
+
+    const bool locally_visible = bindings.window_is_visible(window, true);
+    const OpaqueCeguiString* const name_string = bindings.window_get_name(window);
+    const char* const name_chars = name_string ? bindings.cegui_string_c_str(name_string) : nullptr;
+    const std::string_view name = name_chars ? std::string_view(name_chars) : std::string_view();
+    if (locally_visible) {
+        if (IsMainMenuFamilyRootName(name)) {
+            markers->main_menu_family_root = true;
+        } else if (IsToolbarOverlayRootName(name)) {
+            markers->toolbar_overlay_root = true;
+        } else if (WindowNameMatches(name, "BtnSystemSetting")) {
+            markers->btn_system_setting = true;
+        } else if (WindowNameMatches(name, "SettingWindow0")) {
+            markers->setting_window_0 = true;
+        } else if (WindowNameMatches(name, "SettingWindow1")) {
+            markers->setting_window_1 = true;
+        }
+    }
+
+    const unsigned int child_count = bindings.window_get_child_count(window);
+    for (unsigned int index = 0; index < child_count; ++index) {
+        CollectVisiblePillarboxUiMarkers(
+            bindings,
+            bindings.window_get_child_at_index(window, index),
+            depth + 1,
+            markers);
+    }
+}
+
+bool HasVisiblePillarboxWhitelistedUi() {
+    CeguiBindings bindings{};
+    std::string error;
+    if (!TryGetCeguiBindings(&bindings, &error) ||
+        !bindings.get_system_singleton_ptr ||
+        !bindings.get_gui_sheet) {
+        return false;
+    }
+
+    void* const system = bindings.get_system_singleton_ptr();
+    void* const gui_sheet = system ? bindings.get_gui_sheet(system) : nullptr;
+    PillarboxUiMarkers markers{};
+    CollectVisiblePillarboxUiMarkers(bindings, gui_sheet, 0, &markers);
+
+    const bool main_menu_context =
+        markers.main_menu_family_root || ReadCurrentPalivEntry() == 0;
+    const bool toolbar_overlay_visible = markers.toolbar_overlay_root;
+    const bool system_setting_visible =
+        markers.btn_system_setting && (markers.setting_window_0 || markers.setting_window_1);
+    return main_menu_context || toolbar_overlay_visible || system_setting_visible;
+}
+
+void WriteUiVertex(
+    unsigned char* const target,
+    const float x,
+    const float y,
+    const float z,
+    const float reciprocal_camera_scale,
+    const std::uint32_t color,
+    const float u,
+    const float v) {
+    *reinterpret_cast<float*>(target) = x;
+    *reinterpret_cast<float*>(target + 4) = y;
+    *reinterpret_cast<float*>(target + 8) = z;
+    *reinterpret_cast<float*>(target + 12) = reciprocal_camera_scale;
+    *reinterpret_cast<std::uint32_t*>(target + 16) = color;
+    *reinterpret_cast<float*>(target + 20) = u;
+    *reinterpret_cast<float*>(target + 24) = v;
+}
+
+void AppendSolidQuad(
+    void* const renderer,
+    const int vertex_buffer,
+    const float left,
+    const float top,
+    const float right,
+    const float bottom,
+    const float z,
+    const float reciprocal_camera_scale,
+    const std::uint32_t color) {
+    auto* const bytes = static_cast<unsigned char*>(renderer);
+    const int vertex_index =
+        *reinterpret_cast<int*>(bytes + kRendererVertexCountOffset);
+    WriteUiVertex(
+        reinterpret_cast<unsigned char*>(vertex_buffer + 28 * vertex_index),
+        left,
+        top,
+        z,
+        reciprocal_camera_scale,
+        color,
+        0.0F,
+        0.0F);
+    WriteUiVertex(
+        reinterpret_cast<unsigned char*>(vertex_buffer + 28 * (vertex_index + 1)),
+        left,
+        bottom,
+        z,
+        reciprocal_camera_scale,
+        color,
+        0.0F,
+        1.0F);
+    WriteUiVertex(
+        reinterpret_cast<unsigned char*>(vertex_buffer + 28 * (vertex_index + 2)),
+        right,
+        bottom,
+        z,
+        reciprocal_camera_scale,
+        color,
+        1.0F,
+        1.0F);
+    WriteUiVertex(
+        reinterpret_cast<unsigned char*>(vertex_buffer + 28 * (vertex_index + 3)),
+        right,
+        top,
+        z,
+        reciprocal_camera_scale,
+        color,
+        1.0F,
+        0.0F);
+    *reinterpret_cast<int*>(bytes + kRendererVertexCountOffset) = vertex_index + 4;
+}
+
+void DrawOriginalUiPillarboxMasks(
+    void* const renderer,
+    const PatchedRendererState& patched,
+    const int vertex_buffer,
+    const float reciprocal_camera_scale) {
+    if (!ShouldDrawOriginalUiPillarboxMask(patched.plan)) {
+        return;
+    }
+    if (!HasVisiblePillarboxWhitelistedUi()) {
+        return;
+    }
+
+    const float left_width = patched.plan.horizontal_bias_pixels;
+    const float right_start =
+        static_cast<float>(patched.plan.width) - patched.plan.horizontal_bias_pixels;
+    if (left_width <= 0.0F || right_start >= static_cast<float>(patched.plan.width)) {
+        return;
+    }
+
+    g_render_state_set_texture(1, 0);
+    AppendSolidQuad(
+        renderer,
+        vertex_buffer,
+        0.0F,
+        0.0F,
+        AlignToHalfPixel(left_width),
+        static_cast<float>(patched.plan.height),
+        0.0F,
+        reciprocal_camera_scale,
+        kOpaqueBlackColor);
+    AppendSolidQuad(
+        renderer,
+        vertex_buffer,
+        AlignToHalfPixel(right_start),
+        0.0F,
+        static_cast<float>(patched.plan.width),
+        static_cast<float>(patched.plan.height),
+        0.0F,
+        reciprocal_camera_scale,
+        kOpaqueBlackColor);
+    g_render_geometry_and_reset_counter(renderer);
 }
 
 std::uintptr_t MainModuleBase() {
@@ -202,6 +446,13 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
     const float reciprocal_camera_scale =
         1.0F / *reinterpret_cast<const float*>(
             *reinterpret_cast<const int*>(active_camera_internal) + 128);
+
+    DrawOriginalUiPillarboxMasks(
+        self,
+        *patched,
+        vertex_buffer,
+        reciprocal_camera_scale);
+    current_texture = 0;
 
     if (quad != quad_end) {
         auto* quad_fields = quad + 41;

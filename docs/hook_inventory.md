@@ -31,6 +31,7 @@
   - mode: `replace_with_fallback`
   - patch span: `8`
   - reason: 对共享 renderer ctor 路径上的宽屏分辨率补上“按高度等比缩放 + 左右 pillarbox + 居中”的 UI 渲染语义，避免 16:9 直接横向拉伸 UI
+  - black bars: 在原版 4:3 UI 白名单界面渲染队列前追加左右纯黑 quad；不移动或拉伸资源，不引入宽屏 UI Root 支持
 - `LoadFontFile @ 0x4BD3B0`
   - mode: `replace_with_fallback`
   - patch span: `7`
