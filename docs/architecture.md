@@ -42,6 +42,8 @@
     - second-angle 归一化与绝对安全区夹紧
   - `cegui_font_resync.cpp`
     - 已知 dynamic UI 字体识别与目标字体分辨率计算
+  - `aspect_ratio_layout.cpp`
+    - 通用内容矩形 `aspect-fit` 计算，供 UI / 视频等 4:3 居中呈现复用
   - `input_logic.cpp`
     - 可测试的 `ProcessUIEvent` 纯消息翻译逻辑
   - `protocol.cpp`
@@ -88,6 +90,9 @@
   - `hud_layout_fixups.cpp`
     - gameplay HUD edge-anchor fixups for `minimap.xml` / `portrait.xml`
     - runtime restore/apply path when widescreen renderer mode changes
+  - `bink_video_hooks.cpp`
+    - `BinkPlayer_UpdateAndRender` seam
+    - 按源视频比例把 Bink 画面居中缩放到当前分辨率，避免最终呈现阶段再被横向拉满
   - `d3d9_quality_hooks.cpp`
     - `D3D9SetPresentParameters` seam
     - 通过原始多重采样探测路径接入 `MSAA` 请求值
@@ -137,6 +142,7 @@
   - `ui_showCombatHint2`
   - `Camera_UpdateMatrix`
   - `D3D9SetPresentParameters`
+  - `BinkPlayer_UpdateAndRender`
   - `PAL4_Main_WndProc`
 - 只做 inventory、不默认安装：
   - `HandlePlayerInputEvents`
@@ -174,6 +180,7 @@
   - minimap 贴图区域额外通过 `SetupMinimapTexture` hook 按同一套 wide plan 重算 `x / y / width / height`
   - 战斗内程序控制的浮动数字、状态图标和胜利图会在命中的 `SetProperties_4C2550` 调用点上补一层 `logical_horizontal_padding`
   - `ui_showCombatHint / ui_showCombatHint2` 这两类浮动提示窗会在原始 `setPosition + 居中` 后整体右移到中央 4:3 UI 框
+  - Bink 过场视频不再在最终呈现阶段直接按整屏矩形绘制；runtime 会按实际视频宽高计算居中的 `aspect-fit` 目标矩形
   - gameplay HUD 不再完全跟随居中的 4:3 框：
     - `minimap.xml` 关键窗口改靠左下
     - `portrait.xml` 关键窗口改靠右上

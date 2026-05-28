@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(pal4_inject VERSION 0.1.4 LANGUAGES CXX)
+project(pal4_inject VERSION 0.1.7 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,6 +34,7 @@ add_custom_target(pal4_inject_build_info ALL
 )
 
 add_library(pal4_inject_common STATIC
+    src/common/aspect_ratio_layout.cpp
     src/common/camera_pitch_guard.cpp
     src/common/camera_unlock_patch.cpp
     src/common/cegui_font_resync.cpp
@@ -64,6 +65,7 @@ add_dependencies(pal4_inject_common pal4_inject_build_info)
 
 add_library(pal4_inject_runtime_core STATIC
     src/runtime/battle_ui_layout_hooks.cpp
+    src/runtime/bink_video_hooks.cpp
     src/runtime/bootstrap.cpp
     src/runtime/cegui_font_hooks.cpp
     src/runtime/d3d9_quality_hooks.cpp

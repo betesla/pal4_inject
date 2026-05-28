@@ -55,6 +55,7 @@ enum class HookId : std::uint8_t {
     combat_console_set_image_position,
     combat_console_set_image_position_2,
     ui_show_combat_result,
+    bink_player_update_and_render,
 };
 
 struct HookDescriptor {

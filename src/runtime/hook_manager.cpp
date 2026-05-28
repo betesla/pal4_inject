@@ -185,6 +185,10 @@ bool CopyRelocatingX86Bytes(
             const std::size_t len = modrm_length(code + prefix_len, remaining - prefix_len, 1, 1);
             return len == 0 ? 0 : len + prefix_len;
         }
+        case 0x80: {
+            const std::size_t len = modrm_length(code + prefix_len, remaining - prefix_len, 1, 1);
+            return len == 0 ? 0 : len + prefix_len;
+        }
         case 0xE8:
         case 0xE9:
             return remaining >= prefix_len + 5 ? prefix_len + 5 : 0;
@@ -270,6 +274,7 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::ui_show_combat_result:
         case HookId::camera_update_matrix:
         case HookId::d3d9_set_present_parameters:
+        case HookId::bink_player_update_and_render:
         case HookId::pal4_main_wndproc:
             registration.install_on_bootstrap = true;
             registration.descriptor.replacement = GetReplacementForHook(descriptor.id);

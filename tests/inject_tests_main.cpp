@@ -21,6 +21,7 @@
 #include <windows.h>
 
 #include "pal4inject/hook_inventory.h"
+#include "pal4inject/aspect_ratio_layout.h"
 #include "pal4inject/ida_addresses.h"
 #include "pal4inject/dpi_awareness.h"
 #include "pal4inject/inject_control_panel.h"
@@ -67,7 +68,7 @@ void TestResolveRuntimeAddress() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 18);
+    assert(inventory.size() == 19);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -80,6 +81,7 @@ void TestHookInventory() {
     bool found_ui_show_combat_result = false;
     bool found_camera_update_matrix = false;
     bool found_d3d9_present = false;
+    bool found_bink_player_update_and_render = false;
     bool found_reserved_wndproc = false;
     for (const auto& hook : inventory) {
         assert(!hook.expected_prologue.empty());
@@ -159,6 +161,13 @@ void TestHookInventory() {
             assert(hook.patch_span == 10);
             assert(hook.ida_ea == pal4::inject::ida::kD3d9SetPresentParameters);
         }
+        if (hook.id == HookId::bink_player_update_and_render) {
+            found_bink_player_update_and_render = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kBinkPlayerUpdateAndRender);
+            assert(hook.bootstrap_required);
+        }
         if (hook.id == HookId::pal4_main_wndproc) {
             found_reserved_wndproc = true;
             assert(hook.patch_span == 8);
@@ -177,7 +186,27 @@ void TestHookInventory() {
     assert(found_ui_show_combat_result);
     assert(found_camera_update_matrix);
     assert(found_d3d9_present);
+    assert(found_bink_player_update_and_render);
     assert(found_reserved_wndproc);
+}
+
+void TestAspectRatioLayoutMath() {
+    const auto widescreen = pal4::inject::ComputeAspectFitRect(1920, 1080, 640, 480);
+    assert(widescreen.valid);
+    assert(widescreen.x == 240);
+    assert(widescreen.y == 0);
+    assert(widescreen.width == 1440);
+    assert(widescreen.height == 1080);
+
+    const auto taller_container = pal4::inject::ComputeAspectFitRect(1280, 1024, 640, 480);
+    assert(taller_container.valid);
+    assert(taller_container.x == 0);
+    assert(taller_container.y == 32);
+    assert(taller_container.width == 1280);
+    assert(taller_container.height == 960);
+
+    const auto invalid = pal4::inject::ComputeAspectFitRect(0, 1080, 640, 480);
+    assert(!invalid.valid);
 }
 
 void TestDpiAwarenessStrings() {
@@ -511,7 +540,7 @@ void TestMemoryRuntimeHelpers() {
 
 void TestInjectControlPanelModel() {
     const auto rows = pal4::inject::BuildInjectControlPanelRows();
-    assert(rows.size() == 18);
+    assert(rows.size() == 19);
 
     const auto find_row =
         [&rows](const HookId id) -> const pal4::inject::InjectControlPanelRow* {
@@ -529,6 +558,12 @@ void TestInjectControlPanelModel() {
     assert(process_ui_row->group_label == std::wstring_view(L"\u754c\u9762\u4e0e\u8f93\u5165"));
     assert(process_ui_row->label == std::wstring_view(L"\u754c\u9762\u4e8b\u4ef6\u66ff\u6362"));
     assert(process_ui_row->allow_mode_change);
+
+    const auto* bink_row = find_row(HookId::bink_player_update_and_render);
+    assert(bink_row);
+    assert(bink_row->page == pal4::inject::InjectControlPanelPage::render_visual);
+    assert(bink_row->group_label == std::wstring_view(L"\u6e32\u67d3\u4e0e\u753b\u9762"));
+    assert(bink_row->allow_mode_change);
 
     const auto* wndproc_row = find_row(HookId::pal4_main_wndproc);
     assert(wndproc_row);
@@ -1564,6 +1599,7 @@ int main() {
     TestCeguiWidescreenPlanMath();
     TestCeguiDynamicFontResyncMath();
     TestCrashCaptureHelpers();
+    TestAspectRatioLayoutMath();
     MaybeRunIntegrationSmoke();
     std::cout << "pal4_inject_tests: ok\n";
     return 0;

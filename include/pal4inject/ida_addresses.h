@@ -30,6 +30,10 @@ inline constexpr std::uint32_t kCameraUpdateMatrix = 0x5EA190;
 inline constexpr std::uint32_t kD3d9SetPresentParameters = 0x75F710;
 inline constexpr std::uint32_t kPal4MainWndProc = 0x40A170;
 inline constexpr std::uint32_t kHandlePlayerInputEvents = 0x4283B0;
+inline constexpr std::uint32_t kBinkPlayerUpdateAndRender = 0x65D170;
+inline constexpr std::uint32_t kBinkUpdateVideo = 0x65CA40;
+inline constexpr std::uint32_t kBinkPlayerCloseVideo = 0x65D0A0;
+inline constexpr std::uint32_t kDrawTexturedRectangle = 0x419A60;
 
 inline constexpr std::uint32_t kMapVirtualKeyToUiKey = 0x412130;
 inline constexpr std::uint32_t kEnableMouseCapture = 0x4120D0;

@@ -65,6 +65,10 @@
   - mode: `replace_with_fallback`
   - patch span: `10`
   - reason: 复用原始 D3D9 多重采样探测逻辑，在设备创建 / reset 前写入记忆下来的 `MSAA` 请求值
+- `BinkPlayer_UpdateAndRender @ 0x65D170`
+  - mode: `replace_with_fallback`
+  - patch span: `7`
+  - reason: PAL4 原始链路在这一层把 Bink 纹理直接按整屏矩形提交，宽屏下会把 4:3 视频拉伸；当前 hook 改为按源视频宽高计算居中的 `aspect-fit` 目标矩形
 - `PAL4_Main_WndProc @ 0x40A170`
   - mode: `replace_with_fallback`
   - patch span: `8`

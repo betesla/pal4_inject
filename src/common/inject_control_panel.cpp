@@ -23,6 +23,7 @@ InjectControlPanelPage BuildPage(const HookId id) {
     case HookId::combat_console_set_image_position:
     case HookId::combat_console_set_image_position_2:
     case HookId::ui_show_combat_result:
+    case HookId::bink_player_update_and_render:
     case HookId::d3d9_set_present_parameters:
         return InjectControlPanelPage::render_visual;
     case HookId::camera_update_matrix:
@@ -51,6 +52,7 @@ std::wstring_view BuildGroupLabel(const HookId id) {
     case HookId::combat_console_set_image_position:
     case HookId::combat_console_set_image_position_2:
     case HookId::ui_show_combat_result:
+    case HookId::bink_player_update_and_render:
     case HookId::d3d9_set_present_parameters:
         return L"\u6e32\u67d3\u4e0e\u753b\u9762";
     case HookId::camera_update_matrix:
@@ -89,6 +91,8 @@ std::wstring_view BuildDisplayLabel(const HookId id) {
         return L"\u6218\u6597\u63d0\u793a\u7a97\u5c45\u4e2d A";
     case HookId::ui_show_combat_result:
         return L"\u6218\u6597\u63d0\u793a\u7a97\u5c45\u4e2d B";
+    case HookId::bink_player_update_and_render:
+        return L"Bink \u89c6\u9891 4:3 \u5c45\u4e2d";
     case HookId::camera_update_matrix:
         return L"\u76f8\u673a\u4fef\u4ef0\u4fdd\u62a4";
     case HookId::d3d9_set_present_parameters:
@@ -121,6 +125,7 @@ std::vector<InjectControlPanelRow> BuildInjectControlPanelRows() {
         {HookId::combat_console_set_image_position, BuildPage(HookId::combat_console_set_image_position), BuildGroupLabel(HookId::combat_console_set_image_position), BuildDisplayLabel(HookId::combat_console_set_image_position), true},
         {HookId::combat_console_set_image_position_2, BuildPage(HookId::combat_console_set_image_position_2), BuildGroupLabel(HookId::combat_console_set_image_position_2), BuildDisplayLabel(HookId::combat_console_set_image_position_2), true},
         {HookId::ui_show_combat_result, BuildPage(HookId::ui_show_combat_result), BuildGroupLabel(HookId::ui_show_combat_result), BuildDisplayLabel(HookId::ui_show_combat_result), true},
+        {HookId::bink_player_update_and_render, BuildPage(HookId::bink_player_update_and_render), BuildGroupLabel(HookId::bink_player_update_and_render), BuildDisplayLabel(HookId::bink_player_update_and_render), true},
         {HookId::d3d9_set_present_parameters, BuildPage(HookId::d3d9_set_present_parameters), BuildGroupLabel(HookId::d3d9_set_present_parameters), BuildDisplayLabel(HookId::d3d9_set_present_parameters), true},
         {HookId::camera_update_matrix, BuildPage(HookId::camera_update_matrix), BuildGroupLabel(HookId::camera_update_matrix), BuildDisplayLabel(HookId::camera_update_matrix), true},
     };
