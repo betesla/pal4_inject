@@ -89,6 +89,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubRelease -SkipGiteeRelease
 ```
 
+如需显式附带发布说明，可传入：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -ReleaseNotesPath .\docs\release_notes_v0.1.7.md
+```
+
 如果 `dist\PAL4.exe` 已存在，脚本会在刷新 `dist` 时保留它，并把它一同打入发布 zip；不要把 `PAL4.exe` 提交进 git。
 
 发布前脚本会要求没有未提交的源码改动；如本地不存在同名 tag，会自动在当前提交创建 tag，并推送当前分支和 tag。Gitee 发布需要设置 `GITEE_TOKEN` 或 `GITEE_ACCESS_TOKEN`，也可以传 `-GiteeAccessToken <token>`；如只发布 GitHub，可加 `-SkipGiteeRelease`。

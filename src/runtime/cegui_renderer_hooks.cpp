@@ -83,6 +83,7 @@ float AlignToHalfPixel(const float value) noexcept {
 
 struct PillarboxUiMarkers {
     bool main_menu_family_root = false;
+    bool sys_toolbar_root = false;
     bool toolbar_overlay_root = false;
     bool btn_system_setting = false;
     bool setting_window_0 = false;
@@ -120,6 +121,10 @@ bool IsMainMenuFamilyRootName(const std::string_view name) noexcept {
         }
     }
     return false;
+}
+
+bool IsInGameToolbarBaseRootName(const std::string_view name) noexcept {
+    return WindowNameMatches(name, "sysToolBar/Root");
 }
 
 constexpr std::array<std::string_view, 7> kToolbarOverlayRootNames = {
@@ -165,6 +170,8 @@ void CollectVisiblePillarboxUiMarkers(
     if (locally_visible) {
         if (IsMainMenuFamilyRootName(name)) {
             markers->main_menu_family_root = true;
+        } else if (IsInGameToolbarBaseRootName(name)) {
+            markers->sys_toolbar_root = true;
         } else if (IsToolbarOverlayRootName(name)) {
             markers->toolbar_overlay_root = true;
         } else if (WindowNameMatches(name, "BtnSystemSetting")) {
@@ -202,10 +209,14 @@ bool HasVisiblePillarboxWhitelistedUi() {
 
     const bool main_menu_context =
         markers.main_menu_family_root || ReadCurrentPalivEntry() == 0;
+    const bool in_game_toolbar_context = markers.sys_toolbar_root;
     const bool toolbar_overlay_visible = markers.toolbar_overlay_root;
     const bool system_setting_visible =
         markers.btn_system_setting && (markers.setting_window_0 || markers.setting_window_1);
-    return main_menu_context || toolbar_overlay_visible || system_setting_visible;
+    return main_menu_context ||
+        in_game_toolbar_context ||
+        toolbar_overlay_visible ||
+        system_setting_visible;
 }
 
 void WriteUiVertex(
