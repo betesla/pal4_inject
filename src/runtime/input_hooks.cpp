@@ -38,7 +38,6 @@ using GiTalkFn = char (__cdecl*)(void*, void*);
 using MapVirtualKeyToUiKeyFn = int (__thiscall*)(void*, unsigned int);
 using EnableMouseCaptureFn = void (__thiscall*)(unsigned char*);
 using DisableMouseCaptureFn = void (__thiscall*)(unsigned char*);
-using TransformMouseCoordinatesFn = float* (__thiscall*)(float*, float*, float*);
 using UiFrameManagerGetInstanceFn = void* (__cdecl*)();
 using PalGameIvGetInstanceFn = void* (__cdecl*)();
 
@@ -390,9 +389,7 @@ ProcessUiDispatchResult DispatchInjectedUiPlan(
     case UiInjectedAction::mouse_move: {
         const auto enable_mouse_capture = ResolveRuntimeFunction<EnableMouseCaptureFn>(
             ida::kEnableMouseCapture);
-        const auto transform_mouse_coordinates = ResolveRuntimeFunction<TransformMouseCoordinatesFn>(
-            ida::kTransformMouseCoordinates);
-        if (!enable_mouse_capture || !transform_mouse_coordinates || !bindings.inject_mouse_position) {
+        if (!enable_mouse_capture || !bindings.inject_mouse_position) {
             return FallbackOrRejectProcessUiEvent(
                 mode,
                 self,
@@ -409,18 +406,20 @@ ProcessUiDispatchResult DispatchInjectedUiPlan(
             static_cast<float>(HIWORD(lparam)),
         };
         float transformed[2]{};
-        transform_mouse_coordinates(static_cast<float*>(self), transformed, raw_coords);
+        bool have_transformed = false;
         if (const int* config = ReadGameConfigPointer()) {
-            const auto widescreen_plan = BuildCeguiWidescreenPlan(config[0], config[1]);
-            if (GetRuntimeState().GetHookMode(HookId::cegui_renderer_constructor_2) != HookMode::observe_only &&
-                GetRuntimeState().GetHookMode(HookId::cegui_renderer_constructor_2) != HookMode::mirror_compare) {
-                ApplyCeguiWidescreenMouseTransform(
-                    widescreen_plan,
-                    raw_coords[0],
-                    raw_coords[1],
-                    &transformed[0],
-                    &transformed[1]);
-            }
+            const auto viewport_plan = BuildActiveUiViewportPlan(config[0], config[1]);
+            GetRuntimeState().SetActiveUiProfile(viewport_plan.profile);
+            have_transformed = PhysicalToUiLogical(
+                viewport_plan,
+                raw_coords[0],
+                raw_coords[1],
+                &transformed[0],
+                &transformed[1]);
+        }
+        if (!have_transformed) {
+            transformed[0] = raw_coords[0];
+            transformed[1] = raw_coords[1];
         }
         result.handled = bindings.inject_mouse_position(system, transformed[0], transformed[1]);
         return result;

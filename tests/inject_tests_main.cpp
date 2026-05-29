@@ -32,10 +32,12 @@
 #include "pal4inject/camera_pitch_guard.h"
 #include "pal4inject/cegui_font_resync.h"
 #include "pal4inject/cegui_widescreen.h"
+#include "pal4inject/ui_coordinate_space.h"
 #include "pal4inject/camera_unlock_patch.h"
 #include "pal4inject/crash_capture.h"
 #include "pal4inject/memory_debug.h"
 #include "pal4inject/protocol.h"
+#include "pal4inject/runtime_paths.h"
 #include "pal4inject/script_mode_override.h"
 #include "pal4inject/ui_snapshot.h"
 #include "memory_debug_runtime.h"
@@ -66,9 +68,22 @@ void TestResolveRuntimeAddress() {
     assert(resolved == kModuleBase + (pal4::inject::ida::kProcessUiEvent - pal4::inject::ida::kLaunchExeBase));
 }
 
+void TestPackagedRuntimeLayoutPaths() {
+    const std::filesystem::path install_dir = R"(I:\Games\original)";
+    assert(
+        pal4::inject::PackagedPayloadDirectory(install_dir) ==
+        install_dir / "pal4_inject");
+    assert(
+        pal4::inject::PackagedRuntimeDllPath(install_dir) ==
+        install_dir / "pal4_inject" / "runtime.dll");
+    assert(
+        pal4::inject::PackagedCliPath(install_dir) ==
+        install_dir / "pal4_inject" / "cli.exe");
+}
+
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 19);
+    assert(inventory.size() == 20);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -79,6 +94,7 @@ void TestHookInventory() {
     bool found_combat_console_set_image_position = false;
     bool found_combat_console_set_image_position_2 = false;
     bool found_ui_show_combat_result = false;
+    bool found_render_text_and_image = false;
     bool found_camera_update_matrix = false;
     bool found_d3d9_present = false;
     bool found_bink_player_update_and_render = false;
@@ -149,6 +165,13 @@ void TestHookInventory() {
             assert(hook.ida_ea == pal4::inject::ida::kUiShowCombatResult);
             assert(!hook.bootstrap_required);
         }
+        if (hook.id == HookId::render_text_and_image) {
+            found_render_text_and_image = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 13);
+            assert(hook.ida_ea == pal4::inject::ida::kRenderTextAndImage);
+            assert(!hook.bootstrap_required);
+        }
         if (hook.id == HookId::camera_update_matrix) {
             found_camera_update_matrix = true;
             assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
@@ -184,6 +207,7 @@ void TestHookInventory() {
     assert(found_combat_console_set_image_position);
     assert(found_combat_console_set_image_position_2);
     assert(found_ui_show_combat_result);
+    assert(found_render_text_and_image);
     assert(found_camera_update_matrix);
     assert(found_d3d9_present);
     assert(found_bink_player_update_and_render);
@@ -540,7 +564,7 @@ void TestMemoryRuntimeHelpers() {
 
 void TestInjectControlPanelModel() {
     const auto rows = pal4::inject::BuildInjectControlPanelRows();
-    assert(rows.size() == 19);
+    assert(rows.size() == 20);
 
     const auto find_row =
         [&rows](const HookId id) -> const pal4::inject::InjectControlPanelRow* {
@@ -587,6 +611,10 @@ void TestInjectControlPanelModel() {
     assert(combat_number_row);
     assert(!combat_number_row->label.empty());
     assert(combat_number_row->allow_mode_change);
+    const auto* render_text_row = find_row(HookId::render_text_and_image);
+    assert(render_text_row);
+    assert(render_text_row->page == pal4::inject::InjectControlPanelPage::render_visual);
+    assert(render_text_row->allow_mode_change);
 
     const auto* combat_result_row = find_row(HookId::ui_show_combat_result);
     assert(combat_result_row);
@@ -751,6 +779,7 @@ void TestRuntimeEventLog() {
     const auto snapshot = state.BuildSnapshot(0);
     assert(snapshot.crash_handler_ready);
     assert(snapshot.msaa_level == pal4::inject::MsaaLevel::x2);
+    assert(snapshot.active_ui_profile == pal4::inject::UiProfile::centered_800x600);
     assert(snapshot.last_crash_summary == "summary");
     assert(snapshot.last_crash_report_path == "report.txt");
     assert(snapshot.last_crash_dump_path == "dump.dmp");
@@ -854,6 +883,8 @@ void TestCameraPitchGuardMath() {
 }
 
 void TestCeguiWidescreenPlanMath() {
+    assert(std::string(pal4::inject::ToString(pal4::inject::UiProfile::centered_800x600)) == "centered_800x600");
+    assert(std::string(pal4::inject::ToString(pal4::inject::UiProfile::widescreen_1067x600)) == "widescreen_1067x600");
     assert(!pal4::inject::IsWideAspectResolution(800, 600));
     assert(!pal4::inject::IsWideAspectResolution(1024, 768));
     assert(pal4::inject::IsWideAspectResolution(1920, 1080));
@@ -874,11 +905,12 @@ void TestCeguiWidescreenPlanMath() {
     assert(plan_1920_1080.uniform_scale == 1.8F);
     assert(plan_1920_1080.horizontal_bias_pixels == 240.0F);
     assert(plan_1920_1080.logical_horizontal_padding > 133.33F && plan_1920_1080.logical_horizontal_padding < 133.34F);
+    assert(plan_1920_1080.render_rect_left > -133.34F && plan_1920_1080.render_rect_left < -133.33F);
+    assert(plan_1920_1080.render_rect_right > 933.33F && plan_1920_1080.render_rect_right < 933.34F);
     assert(pal4::inject::ShouldDrawOriginalUiPillarboxMask(plan_1920_1080));
     const float centered_ui_x =
         pal4::inject::ComputeCenteredUiLogicalX(plan_1920_1080, 102.0F);
     assert(centered_ui_x > 235.33F && centered_ui_x < 235.34F);
-
     const float minimap_logical_x = pal4::inject::ComputeWidescreenHudLogicalX(
         plan_1920_1080,
         0.0F,
@@ -939,6 +971,106 @@ void TestCeguiWidescreenPlanMath() {
 
     const auto minimap_1280_800 = pal4::inject::BuildWidescreenMinimapPlacement(1280, 800);
     assert(!minimap_1280_800.apply);
+
+    const auto active_plan_1920_1080 =
+        pal4::inject::BuildUiViewportPlan(
+            1920,
+            1080,
+            pal4::inject::UiProfile::centered_800x600);
+    float physical_x = 0.0F;
+    float physical_y = 0.0F;
+    assert(pal4::inject::UiLogicalToPhysical(
+        active_plan_1920_1080,
+        0.0F,
+        0.0F,
+        &physical_x,
+        &physical_y));
+    assert(physical_x == 240.0F);
+    assert(physical_y == 0.0F);
+    float logical_x = 0.0F;
+    float logical_y = 0.0F;
+    assert(pal4::inject::PhysicalToUiLogical(
+        active_plan_1920_1080,
+        240.0F,
+        0.0F,
+        &logical_x,
+        &logical_y));
+    assert(logical_x > -0.001F && logical_x < 0.001F);
+    assert(logical_y > -0.001F && logical_y < 0.001F);
+    assert(pal4::inject::FullscreenLogicalToPhysical(
+        active_plan_1920_1080,
+        133.33334F,
+        0.0F,
+        &physical_x,
+        &physical_y));
+    assert(physical_x > 239.99F && physical_x < 240.01F);
+    assert(physical_y > -0.001F && physical_y < 0.001F);
+    const auto active_plan_1280_720 =
+        pal4::inject::BuildUiViewportPlan(
+            1280,
+            720,
+            pal4::inject::UiProfile::centered_800x600);
+    assert(active_plan_1280_720.uniform_scale == 1.2F);
+    assert(pal4::inject::BattleOverlayLogicalToPhysical(
+        active_plan_1280_720,
+        100.0F,
+        50.0F,
+        &physical_x,
+        &physical_y));
+    assert(physical_x > 179.99F && physical_x < 180.01F);
+    assert(physical_y > 89.99F && physical_y < 90.01F);
+
+    assert(pal4::inject::BattleOverlayLogicalToPhysical(
+        active_plan_1920_1080,
+        100.0F,
+        50.0F,
+        &physical_x,
+        &physical_y));
+    assert(physical_x > 179.99F && physical_x < 180.01F);
+    assert(physical_y > 89.99F && physical_y < 90.01F);
+
+    const auto active_plan_3840_2160 =
+        pal4::inject::BuildUiViewportPlan(
+            3840,
+            2160,
+            pal4::inject::UiProfile::centered_800x600);
+    assert(active_plan_3840_2160.uniform_scale == 3.6F);
+    assert(pal4::inject::BattleOverlayLogicalToPhysical(
+        active_plan_3840_2160,
+        100.0F,
+        50.0F,
+        &physical_x,
+        &physical_y));
+    assert(physical_x > 179.99F && physical_x < 180.01F);
+    assert(physical_y > 89.99F && physical_y < 90.01F);
+
+    const auto widescreen_plan =
+        pal4::inject::BuildUiViewportPlan(
+            1920,
+            1080,
+            pal4::inject::UiProfile::widescreen_1067x600);
+    assert(widescreen_plan.logical_width == 1067.0F);
+    assert(widescreen_plan.logical_height == 600.0F);
+    assert(widescreen_plan.physical_width > 1919.0F);
+    assert(widescreen_plan.physical_width <= 1920.0F);
+    assert(widescreen_plan.physical_height > 1079.0F);
+    assert(widescreen_plan.physical_height <= 1080.0F);
+    assert(pal4::inject::UiLogicalToPhysical(
+        widescreen_plan,
+        533.5F,
+        300.0F,
+        &physical_x,
+        &physical_y));
+    assert(physical_x > 959.0F && physical_x < 961.0F);
+    assert(physical_y > 539.0F && physical_y < 541.0F);
+    assert(pal4::inject::PhysicalToUiLogical(
+        widescreen_plan,
+        physical_x,
+        physical_y,
+        &logical_x,
+        &logical_y));
+    assert(logical_x > 533.49F && logical_x < 533.51F);
+    assert(logical_y > 299.99F && logical_y < 300.01F);
 }
 
 void TestCeguiDynamicFontResyncMath() {
@@ -1579,6 +1711,7 @@ void MaybeRunIntegrationSmoke() {
 int main() {
     ConfigureNonInteractiveCrashDialogs();
     TestResolveRuntimeAddress();
+    TestPackagedRuntimeLayoutPaths();
     TestHookInventory();
     TestDpiAwarenessStrings();
     TestMsaaLevelStrings();

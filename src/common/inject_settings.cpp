@@ -13,6 +13,7 @@ namespace pal4::inject {
 namespace {
 
 constexpr int kSettingsVersion = 1;
+constexpr int kMaxSupportedSettingsVersion = 2;
 
 std::string TrimAscii(const std::string_view text) {
     std::size_t begin = 0;
@@ -156,7 +157,8 @@ bool ParseInjectPersistedSettings(
         }
     }
 
-    if (version != 0 && version != kSettingsVersion) {
+    if (version != 0 &&
+        (version < kSettingsVersion || version > kMaxSupportedSettingsVersion)) {
         if (error) {
             *error = "unsupported settings version: " + std::to_string(version);
         }

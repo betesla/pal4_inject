@@ -30,6 +30,18 @@ HMODULE CurrentModuleHandle() {
 
 }  // namespace
 
+std::filesystem::path PackagedPayloadDirectory(const std::filesystem::path& install_dir) {
+    return install_dir / "pal4_inject";
+}
+
+std::filesystem::path PackagedRuntimeDllPath(const std::filesystem::path& install_dir) {
+    return PackagedPayloadDirectory(install_dir) / "runtime.dll";
+}
+
+std::filesystem::path PackagedCliPath(const std::filesystem::path& install_dir) {
+    return PackagedPayloadDirectory(install_dir) / "cli.exe";
+}
+
 std::filesystem::path InjectModuleDirectory() {
     char buffer[MAX_PATH]{};
     const DWORD len = GetModuleFileNameA(CurrentModuleHandle(), buffer, MAX_PATH);

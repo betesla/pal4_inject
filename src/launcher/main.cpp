@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "pal4inject/launcher.h"
+#include "pal4inject/runtime_paths.h"
 #include "pal4inject_build_info.h"
 
 #include <commctrl.h>
@@ -27,12 +28,7 @@ std::filesystem::path CurrentExecutableDirectory() {
 }
 
 std::filesystem::path DefaultRuntimeDllPath() {
-    const auto exe_dir = CurrentExecutableDirectory();
-    const auto packaged_dll = exe_dir / "pal4_inject" / "runtime.dll";
-    if (std::filesystem::exists(packaged_dll)) {
-        return packaged_dll;
-    }
-    return exe_dir / "runtime.dll";
+    return pal4::inject::PackagedRuntimeDllPath(CurrentExecutableDirectory());
 }
 
 void PrintUsage() {
@@ -1253,7 +1249,7 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* options) {
     GuiLaunchState state{};
     const auto install_dir = CurrentExecutableDirectory();
     state.game_exe = install_dir / "PAL4.exe";
-    state.runtime_dll = install_dir / "pal4_inject" / "runtime.dll";
+    state.runtime_dll = pal4::inject::PackagedRuntimeDllPath(install_dir);
     state.config_path = install_dir / "config.cfg";
     state.config = LoadGameConfig(state.config_path);
     state.common_resolutions = BuildCommonResolutions();

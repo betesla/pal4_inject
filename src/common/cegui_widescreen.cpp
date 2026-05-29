@@ -5,26 +5,12 @@
 namespace pal4::inject {
 namespace {
 
-constexpr float kLogicalUiWidth = 800.0F;
-constexpr float kLogicalUiHeight = 600.0F;
-constexpr float kAspect43 = 4.0F / 3.0F;
 constexpr float kMinimapLeftMargin = 2.0F;
 constexpr float kMinimapBottomMargin = 28.0F;
 constexpr float kMinimapSize = 173.0F;
 constexpr float kPillarboxEpsilonPixels = 1.0F;
 
 }  // namespace
-
-bool IsWideAspectResolution(const int width, const int height) noexcept {
-    if (width <= 0 || height <= 0) {
-        return false;
-    }
-    return static_cast<float>(width) / static_cast<float>(height) > kAspect43;
-}
-
-bool UsesOriginalWideRendererVariant(const int width, const int height) noexcept {
-    return width == 1280 && height == 800;
-}
 
 float ComputeWidescreenHudLogicalX(
     const CeguiWidescreenPlan& plan,
@@ -67,29 +53,7 @@ float ProjectWidescreenLogicalXToPhysicalPixels(
 }
 
 CeguiWidescreenPlan BuildCeguiWidescreenPlan(const int width, const int height) noexcept {
-    CeguiWidescreenPlan plan{};
-    plan.width = width;
-    plan.height = height;
-    plan.logical_width = kLogicalUiWidth;
-    plan.logical_height = kLogicalUiHeight;
-    plan.use_original_variant = UsesOriginalWideRendererVariant(width, height);
-
-    if (!IsWideAspectResolution(width, height)) {
-        return plan;
-    }
-
-    plan.apply = true;
-    plan.uniform_scale = static_cast<float>(height) / kLogicalUiHeight;
-    const float scaled_width = kLogicalUiWidth * plan.uniform_scale;
-    if (static_cast<float>(width) > scaled_width) {
-        plan.horizontal_bias_pixels =
-            (static_cast<float>(width) - scaled_width) * 0.5F;
-        if (plan.uniform_scale > 0.0F) {
-            plan.logical_horizontal_padding =
-                plan.horizontal_bias_pixels / plan.uniform_scale;
-        }
-    }
-    return plan;
+    return BuildUiViewportPlan(width, height, UiProfile::centered_800x600);
 }
 
 WidescreenMinimapPlacement BuildWidescreenMinimapPlacement(
@@ -130,16 +94,14 @@ bool ApplyCeguiWidescreenMouseTransform(
     if (!plan.apply || plan.use_original_variant || plan.uniform_scale <= 0.0F) {
         return false;
     }
-
-    *out_x = (raw_x - plan.horizontal_bias_pixels) / plan.uniform_scale;
-    *out_y = raw_y / plan.uniform_scale;
-    return true;
+    return PhysicalToUiLogical(plan, raw_x, raw_y, out_x, out_y);
 }
 
 bool ShouldDrawOriginalUiPillarboxMask(const CeguiWidescreenPlan& plan) noexcept {
     return plan.apply &&
         !plan.use_original_variant &&
         plan.uniform_scale > 0.0F &&
+        plan.draw_pillarbox &&
         plan.horizontal_bias_pixels > kPillarboxEpsilonPixels;
 }
 

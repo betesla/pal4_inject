@@ -48,7 +48,12 @@
 - `SetProperties_4C2550 @ 0x4C2550`
   - mode: `replace_with_fallback`
   - patch span: `8`
-  - reason: 只在战斗相关调用点上改写 `x` 写入值，覆盖伤害数字、状态图标和 `zhangdoushengli` 胜利图，不去碰其它共享调用方
+  - reason: 纯透传兼容 hook；不再作为宽屏坐标改写入口
+  - note: `player_hp_delta / combat_message_* / combat_console_image_* / 胜利图标` 这批对象的统一投影已下移到共享 render sink
+- `RenderTextAndImage @ 0x4C26A0`
+  - mode: `replace_with_fallback`
+  - patch span: `13`
+  - reason: 战斗数字、战斗图标、胜利图标等程序控制元素绕过普通 CEGUI 窗口树 renderer；当前只在共享 sink 上把 battle overlay 的旧 fullscreen logical 坐标固定投到 1080p battle overlay target，不再额外加 centered UI origin
 - `ui_showCombatHint @ 0x54A1F0`
   - mode: `replace_with_fallback`
   - patch span: `7`
@@ -83,7 +88,6 @@
 - `MapVirtualKeyToUIKey @ 0x412130`
 - `EnableMouseCapture @ 0x4120D0`
 - `DisableMouseCapture @ 0x4120E0`
-- `TransformMouseCoordinates @ 0x412320`
 - `PALGameIV_GetInstance @ 0x5B5AF0`
 - `UIFrameManager_GetInstance @ 0x4BB650`
 

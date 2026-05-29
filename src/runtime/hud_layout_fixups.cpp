@@ -40,7 +40,7 @@ struct HudWindowFixupRule {
 constexpr auto kHudWindowFixupRules = std::to_array<HudWindowFixupRule>({
     {
         "minimap_root",
-        "minimap/zhujiemian",
+        "minimap/Root",
         "",
         0.0F,
         WidescreenHudAnchor::left_edge,
@@ -189,7 +189,7 @@ void RefreshWidescreenHudLayoutFixups() {
         return;
     }
 
-    const auto plan = BuildCeguiWidescreenPlan(config[0], config[1]);
+    const auto plan = BuildActiveUiViewportPlan(config[0], config[1]);
     const bool enabled =
         plan.apply &&
         !plan.use_original_variant &&

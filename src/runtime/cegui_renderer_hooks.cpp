@@ -207,14 +207,11 @@ bool HasVisiblePillarboxWhitelistedUi() {
     PillarboxUiMarkers markers{};
     CollectVisiblePillarboxUiMarkers(bindings, gui_sheet, 0, &markers);
 
-    const bool main_menu_context =
-        markers.main_menu_family_root || ReadCurrentPalivEntry() == 0;
-    const bool in_game_toolbar_context = markers.sys_toolbar_root;
+    const bool main_menu_context = markers.main_menu_family_root;
     const bool toolbar_overlay_visible = markers.toolbar_overlay_root;
     const bool system_setting_visible =
         markers.btn_system_setting && (markers.setting_window_0 || markers.setting_window_1);
     return main_menu_context ||
-        in_game_toolbar_context ||
         toolbar_overlay_visible ||
         system_setting_visible;
 }
@@ -302,8 +299,7 @@ void DrawOriginalUiPillarboxMasks(
     }
 
     const float left_width = patched.plan.horizontal_bias_pixels;
-    const float right_start =
-        static_cast<float>(patched.plan.width) - patched.plan.horizontal_bias_pixels;
+    const float right_start = patched.plan.physical_origin_x + patched.plan.physical_width;
     if (left_width <= 0.0F || right_start >= static_cast<float>(patched.plan.width)) {
         return;
     }
@@ -418,8 +414,8 @@ void ApplyRendererStateToObject(
     const bool enabled) {
     auto* bytes = static_cast<unsigned char*>(renderer);
     if (enabled) {
-        *reinterpret_cast<float*>(bytes + kRendererScaleXOffset) = state.plan.uniform_scale;
-        *reinterpret_cast<float*>(bytes + kRendererScaleYOffset) = state.plan.uniform_scale;
+        *reinterpret_cast<float*>(bytes + kRendererScaleXOffset) = state.plan.scale_x;
+        *reinterpret_cast<float*>(bytes + kRendererScaleYOffset) = state.plan.scale_y;
         *reinterpret_cast<void***>(renderer) =
             reinterpret_cast<void**>(state.synthetic_vtable.data());
     } else {
@@ -484,12 +480,13 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
                 *reinterpret_cast<const float*>(bytes + kRendererScaleXOffset);
             const float scale_y =
                 *reinterpret_cast<const float*>(bytes + kRendererScaleYOffset);
-            const float bias_x = patched->plan.horizontal_bias_pixels;
+            const float bias_x = patched->plan.physical_origin_x;
+            const float bias_y = patched->plan.physical_origin_y;
 
             *reinterpret_cast<float*>(target) = AlignToHalfPixel(
                 *reinterpret_cast<const float*>(quad_fields - 29) * scale_x + bias_x);
             *reinterpret_cast<float*>(target + 4) = AlignToHalfPixel(
-                *reinterpret_cast<const float*>(quad_fields - 37) * scale_y);
+                *reinterpret_cast<const float*>(quad_fields - 37) * scale_y + bias_y);
             *reinterpret_cast<float*>(target + 8) =
                 *reinterpret_cast<const float*>(quad_fields - 21);
             const std::uint16_t color0 =
@@ -511,7 +508,7 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
             *reinterpret_cast<float*>(target_1) = AlignToHalfPixel(
                 *reinterpret_cast<const float*>(quad_fields - 29) * scale_x + bias_x);
             *reinterpret_cast<float*>(target_1 + 4) = AlignToHalfPixel(
-                *reinterpret_cast<const float*>(quad_fields - 33) * scale_y);
+                *reinterpret_cast<const float*>(quad_fields - 33) * scale_y + bias_y);
             *reinterpret_cast<float*>(target_1 + 8) =
                 *reinterpret_cast<const float*>(quad_fields - 21);
             const std::uint16_t color1 =
@@ -533,7 +530,7 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
             *reinterpret_cast<float*>(target_2) = AlignToHalfPixel(
                 *reinterpret_cast<const float*>(quad_fields - 25) * scale_x + bias_x);
             *reinterpret_cast<float*>(target_2 + 4) = AlignToHalfPixel(
-                *reinterpret_cast<const float*>(quad_fields - 33) * scale_y);
+                *reinterpret_cast<const float*>(quad_fields - 33) * scale_y + bias_y);
             *reinterpret_cast<float*>(target_2 + 8) =
                 *reinterpret_cast<const float*>(quad_fields - 21);
             const std::uint16_t color2 =
@@ -555,7 +552,7 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
             *reinterpret_cast<float*>(target_3) = AlignToHalfPixel(
                 *reinterpret_cast<const float*>(quad_fields - 25) * scale_x + bias_x);
             *reinterpret_cast<float*>(target_3 + 4) = AlignToHalfPixel(
-                *reinterpret_cast<const float*>(quad_fields - 37) * scale_y);
+                *reinterpret_cast<const float*>(quad_fields - 37) * scale_y + bias_y);
             *reinterpret_cast<float*>(target_3 + 8) =
                 *reinterpret_cast<const float*>(quad_fields - 21);
             const std::uint16_t color3 =
@@ -638,10 +635,10 @@ bool InstallPatchedRenderer(
         reinterpret_cast<std::uintptr_t>(&Hook_CeguiRendererDoRenderWide);
     state->synthetic_vtable[kGetRenderRectSlot] =
         reinterpret_cast<std::uintptr_t>(&Hook_CeguiRendererGetRenderRectWide);
-    state->render_rect.top = 0.0F;
-    state->render_rect.bottom = plan.logical_height;
-    state->render_rect.left = -plan.logical_horizontal_padding;
-    state->render_rect.right = plan.logical_width + plan.logical_horizontal_padding;
+    state->render_rect.top = plan.render_rect_top;
+    state->render_rect.bottom = plan.render_rect_bottom;
+    state->render_rect.left = plan.render_rect_left;
+    state->render_rect.right = plan.render_rect_right;
 
     ApplyRendererStateToObject(renderer, *state, true);
 
@@ -657,6 +654,7 @@ void LogWidescreenPatchApplied(
     out
         << "hook=cegui_renderer_ctor_2"
         << " renderer=" << FormatPointer(renderer)
+        << " profile=" << ToString(plan.profile)
         << " width=" << plan.width
         << " height=" << plan.height
         << " uniform_scale=" << plan.uniform_scale
@@ -673,6 +671,7 @@ void LogWidescreenPatchSkipped(
     out
         << "hook=cegui_renderer_ctor_2"
         << " renderer=" << FormatPointer(renderer)
+        << " profile=" << ToString(plan.profile)
         << " width=" << plan.width
         << " height=" << plan.height
         << " skipped=" << reason;
@@ -698,7 +697,8 @@ void* __fastcall Hook_CeguiRendererConstructor2(void* self, void*) {
         return renderer;
     }
 
-    const auto plan = BuildCeguiWidescreenPlan(config[0], config[1]);
+    const auto plan = BuildActiveUiViewportPlan(config[0], config[1]);
+    state.SetActiveUiProfile(plan.profile);
     const HookMode mode = state.GetHookMode(HookId::cegui_renderer_constructor_2);
     if (mode == HookMode::observe_only || mode == HookMode::mirror_compare) {
         LogWidescreenPatchSkipped(renderer, plan, "mode_passthrough");

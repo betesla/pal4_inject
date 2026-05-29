@@ -14,9 +14,9 @@
 #include <windows.h>
 
 #include "pal4inject/launcher.h"
-#include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/memory_debug.h"
 #include "pal4inject/protocol.h"
+#include "pal4inject/ui_coordinate_space.h"
 #include "pal4inject/ui_snapshot.h"
 
 namespace {
@@ -511,6 +511,17 @@ bool TryGetTargetClientSize(
     return true;
 }
 
+pal4::inject::UiProfile ParseUiProfileField(const ProtocolResponse& response) {
+    const auto it = response.fields.find("active_ui_profile");
+    if (it == response.fields.end()) {
+        return pal4::inject::GetDefaultUiProfile();
+    }
+    if (it->second == "widescreen_1067x600") {
+        return pal4::inject::UiProfile::widescreen_1067x600;
+    }
+    return pal4::inject::UiProfile::centered_800x600;
+}
+
 int HandleClick(
     const CliOptions& options,
     const std::vector<std::string>& args,
@@ -610,13 +621,25 @@ int HandleClickLogicalPoint(
         TryGetTargetClientSize(options, &projection_width, &projection_height);
     }
 
+    ProtocolCommand state_command{};
+    state_command.kind = ProtocolCommandKind::read_ui_state;
+    ProtocolResponse state_response{};
+    if (!ExpectOkResponse(options, state_command, &state_response, error)) {
+        return 1;
+    }
+    const auto profile = ParseUiProfileField(state_response);
     const auto plan =
-        pal4::inject::BuildCeguiWidescreenPlan(projection_width, projection_height);
+        pal4::inject::BuildUiViewportPlan(projection_width, projection_height, profile);
     float physical_x = logical_x;
     float physical_y = logical_y;
-    if (plan.apply && !plan.use_original_variant) {
-        physical_x = pal4::inject::ProjectWidescreenLogicalXToPhysicalPixels(plan, logical_x);
-        physical_y = logical_y * plan.uniform_scale;
+    if (!pal4::inject::UiLogicalToPhysical(
+            plan,
+            logical_x,
+            logical_y,
+            &physical_x,
+            &physical_y)) {
+        *error = "failed to convert logical coordinates to physical client coordinates";
+        return 1;
     }
 
     const auto click_x = static_cast<std::uint32_t>(std::lround(physical_x));
@@ -630,8 +653,9 @@ int HandleClickLogicalPoint(
         << " clicked=" << click_x << "," << click_y
         << " logical_client=" << logical_width << "x" << logical_height
         << " projected_client=" << projection_width << "x" << projection_height
+        << " ui_profile=" << pal4::inject::ToString(profile)
         << " scale=" << plan.uniform_scale
-        << " bias=" << plan.horizontal_bias_pixels
+        << " origin=" << plan.physical_origin_x << "," << plan.physical_origin_y
         << " bypass_os_queue=" << (bypass_os_queue ? 1 : 0)
         << "\n";
     return 0;

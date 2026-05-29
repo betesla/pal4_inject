@@ -88,15 +88,22 @@ void ConvertLogicalToRawClientPoint(
         return;
     }
 
-    const auto plan = BuildCeguiWidescreenPlan(config[0], config[1]);
-    if (!plan.apply || plan.use_original_variant || plan.uniform_scale <= 0.0F) {
+    const auto plan = BuildActiveUiViewportPlan(config[0], config[1]);
+    if (plan.scale_x <= 0.0F || plan.scale_y <= 0.0F) {
         return;
     }
-
-    *out_x = static_cast<std::int32_t>(std::lround(
-        ProjectWidescreenLogicalXToPhysicalPixels(plan, static_cast<float>(logical_x))));
-    *out_y = static_cast<std::int32_t>(std::lround(
-        static_cast<float>(logical_y) * plan.uniform_scale));
+    float physical_x = static_cast<float>(logical_x);
+    float physical_y = static_cast<float>(logical_y);
+    if (!UiLogicalToPhysical(
+            plan,
+            static_cast<float>(logical_x),
+            static_cast<float>(logical_y),
+            &physical_x,
+            &physical_y)) {
+        return;
+    }
+    *out_x = static_cast<std::int32_t>(std::lround(physical_x));
+    *out_y = static_cast<std::int32_t>(std::lround(physical_y));
 }
 
 std::string ClassifyWindowType(
