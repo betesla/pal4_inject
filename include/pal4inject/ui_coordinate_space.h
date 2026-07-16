@@ -67,6 +67,12 @@ bool BattleOverlayLogicalToPhysical(
     float logical_y,
     float* out_x,
     float* out_y) noexcept;
+bool CombatResultOverlayLogicalToUiLogical(
+    const UiViewportPlan& plan,
+    float logical_x,
+    float logical_y,
+    float* out_x,
+    float* out_y) noexcept;
 bool ProjectedScreenToUiLogical(
     const UiViewportPlan& plan,
     float projected_x,

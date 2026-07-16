@@ -133,6 +133,7 @@ pal4_inject_add_dev_publish(
 
 add_executable(pal4_injector_launcher
     src/launcher/main.cpp
+    src/launcher/launcher_resources.rc
 )
 target_link_libraries(pal4_injector_launcher PRIVATE pal4_inject_common)
 target_link_libraries(pal4_injector_launcher PRIVATE gdi32 comctl32 wininet)

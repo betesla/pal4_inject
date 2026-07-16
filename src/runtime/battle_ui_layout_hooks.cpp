@@ -20,10 +20,11 @@ using SetProperties4C2550Fn = int (__thiscall*)(void*, int, int);
 using UiShowCombatHintFn = int (__fastcall*)(void*, void*, const char*, int, int, int, int);
 using RenderTextAndImageFn = void (__thiscall*)(void*, int);
 
-constexpr std::ptrdiff_t kCombatHintWindowOffset = 0x24;
 constexpr std::ptrdiff_t kRenderObjectPositionXOffset = 0x1C;
 constexpr std::ptrdiff_t kRenderObjectPositionYOffset = 0x20;
+constexpr std::uint32_t kCombatResultDefaultImageVtable = 0x844450;
 constexpr std::uint32_t kCombatWorldTextVtable = 0x842698;
+constexpr std::uint32_t kCombatFailIconVtable = 0x844460;
 constexpr std::uint32_t kCombatWorldImageVtable = 0x844470;
 
 SetProperties4C2550Fn g_original_combat_console_set_image_position = nullptr;
@@ -92,6 +93,10 @@ bool IsTransformableUiCoordinate(const float value) noexcept {
     return std::isfinite(value) && std::fabs(value) <= 5000.0F;
 }
 
+bool IsApprox(const float lhs, const float rhs) noexcept {
+    return std::fabs(lhs - rhs) < 0.01F;
+}
+
 float* FloatField(void* const object, const std::ptrdiff_t offset) {
     if (!object) {
         return nullptr;
@@ -99,14 +104,34 @@ float* FloatField(void* const object, const std::ptrdiff_t offset) {
     return reinterpret_cast<float*>(static_cast<unsigned char*>(object) + offset);
 }
 
-bool IsBattleWorldOverlayObject(void* const object) {
+enum class RenderTextAndImageSpace {
+    none = 0,
+    legacy_battle_overlay,
+    active_ui_logical,
+};
+
+RenderTextAndImageSpace ClassifyRenderTextAndImageObject(void* const object) {
     if (!object) {
-        return false;
+        return RenderTextAndImageSpace::none;
     }
 
     const auto vtable = *reinterpret_cast<std::uintptr_t*>(object);
-    return vtable == ResolveRuntimeAddress(kCombatWorldTextVtable) ||
-        vtable == ResolveRuntimeAddress(kCombatWorldImageVtable);
+    if (vtable == ResolveRuntimeAddress(kCombatWorldTextVtable) ||
+        vtable == ResolveRuntimeAddress(kCombatWorldImageVtable)) {
+        return RenderTextAndImageSpace::legacy_battle_overlay;
+    }
+    if (vtable == ResolveRuntimeAddress(kCombatFailIconVtable)) {
+        return RenderTextAndImageSpace::active_ui_logical;
+    }
+
+    if (vtable == ResolveRuntimeAddress(kCombatResultDefaultImageVtable)) {
+        const float* const x = FloatField(object, kRenderObjectPositionXOffset);
+        const float* const y = FloatField(object, kRenderObjectPositionYOffset);
+        if (x && y && IsApprox(*x, 400.0F) && IsApprox(*y, 280.0F)) {
+            return RenderTextAndImageSpace::active_ui_logical;
+        }
+    }
+    return RenderTextAndImageSpace::none;
 }
 
 struct RenderTextAndImagePatchState {
@@ -124,7 +149,8 @@ bool ApplyRenderTextAndImageViewportTransform(
     if (!object || !patch_state) {
         return false;
     }
-    if (!IsBattleWorldOverlayObject(object)) {
+    const auto space = ClassifyRenderTextAndImageObject(object);
+    if (space == RenderTextAndImageSpace::none) {
         return false;
     }
 
@@ -143,12 +169,20 @@ bool ApplyRenderTextAndImageViewportTransform(
         return false;
     }
 
-    const bool transformed = BattleOverlayLogicalToPhysical(
-            plan,
-            *x,
-            *y,
-            &patch_state->patched_x,
-            &patch_state->patched_y);
+    const bool transformed =
+        space == RenderTextAndImageSpace::legacy_battle_overlay
+            ? BattleOverlayLogicalToPhysical(
+                plan,
+                *x,
+                *y,
+                &patch_state->patched_x,
+                &patch_state->patched_y)
+            : CombatResultOverlayLogicalToUiLogical(
+                plan,
+                *x,
+                *y,
+                &patch_state->patched_x,
+                &patch_state->patched_y);
     if (!transformed) {
         return false;
     }

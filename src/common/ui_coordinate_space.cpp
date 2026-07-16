@@ -165,6 +165,24 @@ bool BattleOverlayLogicalToPhysical(
     return true;
 }
 
+bool CombatResultOverlayLogicalToUiLogical(
+    const UiViewportPlan& plan,
+    const float logical_x,
+    const float logical_y,
+    float* const out_x,
+    float* const out_y) noexcept {
+    if (!out_x || !out_y) {
+        return false;
+    }
+
+    // These self-rendered combat result images are still drawn by the CEGUI
+    // renderer, so keep them in active UI logical space. They only need the
+    // legacy 800x600 coordinate to be recentered into the active logical rect.
+    *out_x = logical_x + plan.logical_horizontal_padding;
+    *out_y = logical_y + plan.logical_vertical_padding;
+    return true;
+}
+
 bool ProjectedScreenToUiLogical(
     const UiViewportPlan& plan,
     const float projected_x,

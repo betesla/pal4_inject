@@ -1044,6 +1044,23 @@ void TestCeguiWidescreenPlanMath() {
     assert(physical_x > 179.99F && physical_x < 180.01F);
     assert(physical_y > 89.99F && physical_y < 90.01F);
 
+    assert(pal4::inject::CombatResultOverlayLogicalToUiLogical(
+        active_plan_1920_1080,
+        400.0F,
+        280.0F,
+        &logical_x,
+        &logical_y));
+    assert(logical_x > 533.32F && logical_x < 533.34F);
+    assert(logical_y > 279.99F && logical_y < 280.01F);
+    assert(pal4::inject::CombatResultOverlayLogicalToUiLogical(
+        active_plan_3840_2160,
+        400.0F,
+        280.0F,
+        &logical_x,
+        &logical_y));
+    assert(logical_x > 533.32F && logical_x < 533.34F);
+    assert(logical_y > 279.99F && logical_y < 280.01F);
+
     const auto widescreen_plan =
         pal4::inject::BuildUiViewportPlan(
             1920,

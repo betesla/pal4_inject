@@ -1,0 +1,3 @@
+[submodule "pal4_script_parser"]
+	path = pal4_script_parser
+	url = https://github.com/betesla/pal4_script.git

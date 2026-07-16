@@ -74,6 +74,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\PAL4_inject.exe `
 - `runtime.dll`
 - `cli.exe`
 - `PAL4_inject.exe`
+  - 启动器 EXE 内嵌 `assets/icons/xianjian_syringe_energy.ico` 作为程序图标
 - `pal4_inject_tests.exe`
 
 ## 发布脚本
