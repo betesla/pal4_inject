@@ -18,10 +18,16 @@
 - `tests`
   - 单元测试与可选的原始 EXE 集成测试
 - `docs`
-  - 架构、Hook inventory 与控制面板说明文档
+  - 架构、Hook inventory 与 launcher 配置说明文档
 
 ## 构建
 必须使用 Win32/x86 生成器。
+
+首次拉取后先初始化固定版本的 Dear ImGui 子模块：
+
+```powershell
+git submodule update --init third_party/imgui
+```
 
 ```powershell
 cmake -S I:\PAL4\projects\pal4_re\inject -B I:\PAL4\projects\pal4_re\inject\build -A Win32
@@ -36,18 +42,19 @@ cmake --build I:\PAL4\projects\pal4_re\inject\build --config Debug
 - 新增脚本模式切换：
   - `--script-mode cs`
   - `--script-mode csb`
-  - 不传参数直接双击 `PAL4_inject.exe` 时，会弹出中文 GUI 选择 `CS` 或 `CSB`，默认使用 `CSB`
+  - 不传参数直接双击 `PAL4_inject.exe` 时，会打开 ImGui 中文 launcher，默认使用 `CSB`
 - 发布启动入口：
   - 发布使用时，把 `dist` 目录里的文件复制到 PAL4 游戏安装目录
   - `PAL4_inject.exe` 放在游戏目录根部，和 `PAL4.exe` 同级
   - `PAL4_inject.exe` 是 GUI 程序，双击启动时不会弹出 CMD 黑窗口
   - 注入相关文件放在游戏目录下的 `pal4_inject` 子目录，便于后续覆盖更新
   - 注入配置、runtime log、crash report / dump 等运行产物也统一放在 `pal4_inject` 子目录
-  - 双击 `PAL4_inject.exe` 后由 GUI 选择 `CS` 或 `CSB`
-  - GUI 会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、全屏/窗口化、宽屏和垂直同步
-  - 分辨率列表分为“常用分辨率”和“主显示器支持”两个页签
-  - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
-  - GUI 右上角显示当前版本和作者信息，点击 `B站 @北风7P` 可打开作者主页
+  - launcher 使用 Dear ImGui Win32 + DirectX 9 后端，兼容 Windows 7 且不依赖额外 shader compiler DLL
+  - “游戏设置”读写游戏目录下的 `config.cfg`，可设置脚本模式、分辨率、全屏、宽屏和垂直同步
+  - “注入功能”读写 `pal4_inject\inject_settings.ini`，可设置 MSAA 与各项修复开关
+  - “高级调试”提供 HookMode 和逐项日志开关；期望值在启动前保存，实际应用结果仍以 runtime 日志和 CLI 为准
+  - 旧版 `inject_panel_settings.ini` 会被兼容读取，下次启动时迁移到新文件名
+  - launcher 提供“检查更新”按钮；优先读取 Gitee 最新 Release，并以 GitHub 作为兜底
   - 当前内置版本为 `v0.1.4`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
 
 示例：
@@ -96,14 +103,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
 ## 当前范围
 - launcher 采用 suspended 启动 + `LoadLibraryW` 远程线程注入。
 - runtime DLL 通过 named event + named pipe 暴露 ready 信号、agent/control CLI 和测试控制面。
-- runtime DLL 还会拉起一个原生 Win32 注入控制面板：
-  - 默认隐藏，按 `Ctrl+J` 显示 / 隐藏
-  - 默认会先跟随游戏窗口定位；用户手动拖动后就不再强制吸附
-  - 顶部单独暴露 `MSAA` 画质项
-  - 每个 hook 一行，带快速开关、`HookMode` 下拉框和状态栏
-  - 面板配置会记忆到游戏目录下的 `pal4_inject\inject_panel_settings.ini`，下次启动自动恢复
-  - `Ctrl+J` 显示 / 隐藏面板
-  - 作为游戏窗口的 owned popup 存在，避免点回游戏时像独立外部工具窗一样被压下去
+- runtime DLL 不再创建游戏内控制窗口；配置统一在 launcher 中完成，运行时诊断保留在日志、named pipe 和 CLI 中。
 - Hook 框架内置 x86 inline detour，不依赖第三方 Hook 库。
 - `cli.exe` 会复用同一条 named pipe，提供：
   - `snapshot / click / fill / type / press`
@@ -129,7 +129,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
   - `SetupMinimapTexture` widescreen layout patch
   - `Camera_UpdateMatrix` second-angle guard
   - `D3D9SetPresentParameters` multisample override seam
-- `PAL4_Main_WndProc` 和 `HandlePlayerInputEvents` 目前只保留 inventory，不默认安装。
+- `PAL4_Main_WndProc` 面板焦点保护 hook 已随游戏内面板移除；`HandlePlayerInputEvents` 仍只保留 inventory，不默认安装。
 
 ## Agent / Debug CLI
 - 连接方式：
@@ -182,27 +182,12 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - `last_crash_dump_path`
   - `last_crash_summary`
 
-## Inject Control Panel
-- 详细中文说明见：
-  - [docs/control_panel_guide.md](I:/PAL4/projects/pal4_inject/docs/control_panel_guide.md)
-- 注入后会创建 `PAL4 Inject Control` 小面板，但默认隐藏；按 `Ctrl+J` 显示 / 隐藏。
-- 面板会先显示一个独立的 `Render MSAA` 选项：
-  - 当前支持 `off / 2x / 4x / 8x`
-  - 改动会记忆，但真正生效要等下一次 D3D9 reset 或下一次启动
-- hook 列表区会显示：
-  - 更短的可读名称
-  - `On` 快速开关
-  - 当前 mode 下拉框
-  - installed / active / call count / error 状态
-- 对已安装且允许切换的 hook，可以直接从面板开关或改 mode。
-- 当前会立刻响应切换的重点功能包括：
-  - `ProcessUIEvent`
-  - `HandleUIMessageAndProcess`
-  - `SimulateKeyPressAndRelease`
-  - `giTalk`
-  - `CEGUI_Renderer_Constructor_2` widescreen pillarbox
-  - `Camera_UpdateMatrix` pitch guard
-  - `D3D9SetPresentParameters` multisample override
+## Launcher 配置
+
+- 详细中文说明见 [docs/launcher_guide.md](I:/PAL4/projects/pal4_inject/docs/launcher_guide.md)。
+- 普通玩家使用“游戏设置”和“注入功能”即可。
+- HookMode、逐项日志等开发选项集中在“高级调试”。
+- 游戏运行期间如需观察 installed / call count / error 等实际状态，使用 `cli.exe state`、`cli.exe event-log` 或 runtime 日志。
 
 ## 测试
 - `pal4_inject_tests.exe`

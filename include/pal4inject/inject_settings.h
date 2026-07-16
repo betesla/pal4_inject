@@ -22,6 +22,7 @@ struct InjectPersistedSettings {
 };
 
 std::filesystem::path DefaultInjectSettingsPath();
+std::filesystem::path LegacyInjectPanelSettingsPath();
 std::string FormatInjectPersistedSettings(const InjectPersistedSettings& settings);
 bool ParseInjectPersistedSettings(
     std::string_view text,

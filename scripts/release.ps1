@@ -425,6 +425,7 @@ $gameExePath = Join-Path $distPath $gameExeName
 $preservedGameExe = $null
 
 if (-not $SkipBuild) {
+    Invoke-Checked -FilePath "git" -Arguments @("submodule", "update", "--init", "third_party/imgui") -WorkingDirectory $repoRoot
     Invoke-Checked -FilePath "cmake" -Arguments @("-S", ".", "-B", $BuildDir, "-A", $GeneratorPlatform) -WorkingDirectory $repoRoot
     Invoke-Checked -FilePath "cmake" -Arguments @("--build", $BuildDir, "--config", $Configuration) -WorkingDirectory $repoRoot
 }

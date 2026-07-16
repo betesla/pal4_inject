@@ -270,7 +270,6 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::ui_show_combat_result:
         case HookId::camera_update_matrix:
         case HookId::d3d9_set_present_parameters:
-        case HookId::pal4_main_wndproc:
             registration.install_on_bootstrap = true;
             registration.descriptor.replacement = GetReplacementForHook(descriptor.id);
             if (!registration.descriptor.replacement) {

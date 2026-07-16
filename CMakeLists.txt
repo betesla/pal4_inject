@@ -15,6 +15,26 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
     message(FATAL_ERROR "pal4_inject requires a 32-bit / Win32 generator.")
 endif()
 
+set(PAL4_INJECT_IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
+if(NOT EXISTS "${PAL4_INJECT_IMGUI_DIR}/imgui.cpp")
+    message(FATAL_ERROR
+        "Dear ImGui is missing. Run: git submodule update --init third_party/imgui")
+endif()
+
+add_library(pal4_inject_imgui STATIC
+    ${PAL4_INJECT_IMGUI_DIR}/imgui.cpp
+    ${PAL4_INJECT_IMGUI_DIR}/imgui_draw.cpp
+    ${PAL4_INJECT_IMGUI_DIR}/imgui_tables.cpp
+    ${PAL4_INJECT_IMGUI_DIR}/imgui_widgets.cpp
+    ${PAL4_INJECT_IMGUI_DIR}/backends/imgui_impl_dx9.cpp
+    ${PAL4_INJECT_IMGUI_DIR}/backends/imgui_impl_win32.cpp
+)
+target_include_directories(pal4_inject_imgui PUBLIC
+    ${PAL4_INJECT_IMGUI_DIR}
+    ${PAL4_INJECT_IMGUI_DIR}/backends
+)
+target_link_libraries(pal4_inject_imgui PUBLIC d3d9 dwmapi gdi32)
+
 set(PAL4_INJECT_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(PAL4_INJECT_PAL4_RE_ROOT ${PAL4_INJECT_REPO_ROOT})
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pal4_re/rebuild/include")
@@ -41,7 +61,7 @@ add_library(pal4_inject_common STATIC
     src/common/crash_capture.cpp
     src/common/dpi_awareness.cpp
     src/common/hook_inventory.cpp
-    src/common/inject_control_panel.cpp
+    src/common/inject_feature_catalog.cpp
     src/common/inject_settings.cpp
     src/common/input_logic.cpp
     src/common/input_queue.cpp
@@ -75,7 +95,6 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/hud_layout_fixups.cpp
     src/runtime/hook_logging.cpp
     src/runtime/hook_manager.cpp
-    src/runtime/inject_control_window.cpp
     src/runtime/input_hooks.cpp
     src/runtime/ipc_server.cpp
     src/runtime/memory_debug_runtime.cpp
@@ -83,7 +102,6 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/runtime_preferences.cpp
     src/runtime/runtime_state.cpp
     src/runtime/ui_snapshot_runtime.cpp
-    src/runtime/window_focus_hooks.cpp
 )
 target_include_directories(pal4_inject_runtime_core
     PUBLIC
@@ -105,10 +123,15 @@ set_target_properties(pal4_runtime_x86 PROPERTIES
 )
 
 add_executable(pal4_injector_launcher
+    src/launcher/imgui_host.cpp
+    src/launcher/launcher_ui.cpp
     src/launcher/main.cpp
 )
-target_link_libraries(pal4_injector_launcher PRIVATE pal4_inject_common)
-target_link_libraries(pal4_injector_launcher PRIVATE gdi32 comctl32 wininet)
+target_include_directories(pal4_injector_launcher PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/launcher
+)
+target_link_libraries(pal4_injector_launcher PRIVATE pal4_inject_common pal4_inject_imgui)
+target_link_libraries(pal4_injector_launcher PRIVATE gdi32 wininet)
 set_target_properties(pal4_injector_launcher PROPERTIES
     OUTPUT_NAME "PAL4_inject"
     WIN32_EXECUTABLE TRUE
@@ -139,6 +162,7 @@ if(PAL4_INJECT_BUILD_TESTS)
 endif()
 
 foreach(target
+    pal4_inject_imgui
     pal4_inject_common
     pal4_inject_runtime_core
     pal4_runtime_x86

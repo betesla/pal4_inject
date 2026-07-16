@@ -21,7 +21,6 @@
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
 #include "pal4inject/input_logic.h"
-#include "window_focus_hooks.h"
 #include "runtime_state.h"
 
 namespace pal4::inject {
@@ -801,9 +800,6 @@ void* GetReplacementForHook(const HookId id) {
         if (void* replacement = GetMinimapReplacementForHook(id)) {
             return replacement;
         }
-        if (void* replacement = GetWindowFocusReplacementForHook(id)) {
-            return replacement;
-        }
         if (void* replacement = GetD3d9QualityReplacementForHook(id)) {
             return replacement;
         }
@@ -844,7 +840,6 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
         SetCeguiRendererOriginalTrampoline(id, trampoline);
         SetCeguiFontOriginalTrampoline(id, trampoline);
         SetMinimapOriginalTrampoline(id, trampoline);
-        SetWindowFocusOriginalTrampoline(id, trampoline);
         SetD3d9QualityOriginalTrampoline(id, trampoline);
         SetBattleUiLayoutOriginalTrampoline(id, trampoline);
         SetCameraOriginalTrampoline(id, trampoline);

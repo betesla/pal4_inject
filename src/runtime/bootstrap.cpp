@@ -11,7 +11,6 @@
 #include "camera_unlock.h"
 #include "crash_handler.h"
 #include "hook_manager.h"
-#include "inject_control_window.h"
 #include "pal4inject_build_info.h"
 #include "pal4inject/dpi_awareness.h"
 #include "ipc_server.h"
@@ -174,14 +173,6 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
         AppendBootstrapLog("start_ipc_server ok");
     }
 
-    const bool control_window_ok = StartInjectControlWindow(&error);
-    if (!control_window_ok) {
-        state.SetLastError(error);
-        AppendBootstrapLog(std::string("start_inject_control_window failed: ") + error);
-    } else {
-        AppendBootstrapLog("start_inject_control_window ok");
-    }
-
     bool hooks_ok = false;
     if (init_ok) {
         hooks_ok = GetHookManager().InstallBootstrapHooks(&error);
@@ -209,7 +200,6 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
         crash_capture_ok &&
         init_ok &&
         pipe_ok &&
-        control_window_ok &&
         hooks_ok &&
         camera_patch_ok);
     AppendBootstrapLog(state.BootstrapReady() ? "bootstrap_ready=1" : "bootstrap_ready=0");

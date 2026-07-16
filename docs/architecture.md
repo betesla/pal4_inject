@@ -58,10 +58,10 @@
     - 继承脚本模式环境变量解析
   - `crash_capture.cpp`
     - 异常码筛选、crash summary 格式化、artifact 命名
-  - `inject_control_panel.cpp`
-    - 控制面板行模型与 mode 列表
+  - `inject_feature_catalog.cpp`
+    - launcher 与测试共享的功能分组、说明和 mode 列表
   - `inject_settings.cpp`
-    - 本地用户目录下的面板 / 画质设置持久化
+    - `inject_settings.ini` 的 Hook / MSAA 设置持久化，并兼容读取旧面板配置
 - `src/runtime`
   - `runtime_state.cpp`
     - bootstrap / pipe / hook call count / last UI event / last error / font sync / crash artifacts
@@ -98,14 +98,9 @@
     - `Camera_UpdateMatrix` absolute pitch guard
   - `crash_handler.cpp`
     - VEH / unhandled exception handler、crash report、minidump
-  - `inject_control_window.cpp`
-    - 原生 Win32 控制面板、`MSAA` 选项、hook 快速开关和 mode 下拉框、`Ctrl+F10` 隐藏/显示
-    - 每条 hook 独立的 `日志` 勾选框，可只打开某一项的运行时诊断输出
-    - 初始吸附游戏窗口；手动拖动后停止自动跟随
-    - 作为游戏窗口 owned popup 存在，减少焦点切回游戏时的外部窗体干扰
   - `runtime_preferences.cpp`
-    - 把 panel 改动统一转成 runtime side effect
-    - 保存 / 加载 remembered hook mode 与 `MSAA` 设置
+    - 启动时加载 launcher 写入的 Hook mode、逐项日志和 `MSAA` 期望值
+    - 继续支持 IPC 发起的少量运行时配置变更
   - `memory_debug_runtime.cpp`
     - `IDA EA / runtime VA` 解析
     - `VirtualQuery` region 探测
@@ -136,7 +131,6 @@
   - `ui_showCombatHint2`
   - `Camera_UpdateMatrix`
   - `D3D9SetPresentParameters`
-  - `PAL4_Main_WndProc`
 - 只做 inventory、不默认安装：
   - `HandlePlayerInputEvents`
 - `ProcessUIEvent` 当前是 `replace_with_fallback`
@@ -176,10 +170,11 @@
     - `minimap.xml` 关键窗口改靠左下
     - `portrait.xml` 关键窗口改靠右上
     - 与 `SetupMinimapTexture` 的左下角纹理重排保持一致
-- inject control panel
-  - 不依赖 PAL4 自己的 CEGUI widget 体系
-  - 采用单独的原生 Win32 tool window，避免在 PAL4 UI 资源未完全稳定前把新的调试面板绑死在游戏 CEGUI 上
-  - 当前通过 `RuntimeState::SetHookMode` 直接控制 hook mode
+- launcher configuration
+  - Dear ImGui 使用 Win32 + DirectX 9 后端，界面不进入游戏进程
+  - 普通功能开关、MSAA、HookMode 与逐项日志在启动前写入 `inject_settings.ini`
+  - runtime 在安装 Hook 前加载配置；installed / applied / call count / error 仍通过日志与 IPC 报告
+  - 移除游戏内窗口后，同时删除了只为面板焦点切换服务的 `PAL4_Main_WndProc` hook
 - crash capture
   - 不尝试拦截并吞掉异常
   - 只负责在进程终止前写出 crash report / minidump

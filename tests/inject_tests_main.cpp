@@ -1,3 +1,6 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <chrono>
 #include <cstring>
@@ -23,7 +26,7 @@
 #include "pal4inject/hook_inventory.h"
 #include "pal4inject/ida_addresses.h"
 #include "pal4inject/dpi_awareness.h"
-#include "pal4inject/inject_control_panel.h"
+#include "pal4inject/inject_feature_catalog.h"
 #include "pal4inject/inject_settings.h"
 #include "pal4inject/input_logic.h"
 #include "pal4inject/input_queue.h"
@@ -67,7 +70,7 @@ void TestResolveRuntimeAddress() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 18);
+    assert(inventory.size() == 17);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -80,7 +83,6 @@ void TestHookInventory() {
     bool found_ui_show_combat_result = false;
     bool found_camera_update_matrix = false;
     bool found_d3d9_present = false;
-    bool found_reserved_wndproc = false;
     for (const auto& hook : inventory) {
         assert(!hook.expected_prologue.empty());
         assert(hook.patch_span >= 5);
@@ -159,11 +161,6 @@ void TestHookInventory() {
             assert(hook.patch_span == 10);
             assert(hook.ida_ea == pal4::inject::ida::kD3d9SetPresentParameters);
         }
-        if (hook.id == HookId::pal4_main_wndproc) {
-            found_reserved_wndproc = true;
-            assert(hook.patch_span == 8);
-            assert(hook.bootstrap_order < 900);
-        }
     }
     assert(found_process_ui_event);
     assert(found_handle_ui_message);
@@ -177,7 +174,6 @@ void TestHookInventory() {
     assert(found_ui_show_combat_result);
     assert(found_camera_update_matrix);
     assert(found_d3d9_present);
-    assert(found_reserved_wndproc);
 }
 
 void TestDpiAwarenessStrings() {
@@ -509,12 +505,12 @@ void TestMemoryRuntimeHelpers() {
     VirtualFree(executable_page, 0, MEM_RELEASE);
 }
 
-void TestInjectControlPanelModel() {
-    const auto rows = pal4::inject::BuildInjectControlPanelRows();
-    assert(rows.size() == 18);
+void TestInjectFeatureCatalog() {
+    const auto rows = pal4::inject::BuildInjectFeatureCatalog();
+    assert(rows.size() == 16);
 
     const auto find_row =
-        [&rows](const HookId id) -> const pal4::inject::InjectControlPanelRow* {
+        [&rows](const HookId id) -> const pal4::inject::InjectFeatureDescriptor* {
             for (const auto& row : rows) {
                 if (row.id == id) {
                     return &row;
@@ -525,28 +521,26 @@ void TestInjectControlPanelModel() {
 
     const auto* process_ui_row = find_row(HookId::process_ui_event);
     assert(process_ui_row);
-    assert(process_ui_row->page == pal4::inject::InjectControlPanelPage::input_ui);
-    assert(process_ui_row->group_label == std::wstring_view(L"\u754c\u9762\u4e0e\u8f93\u5165"));
-    assert(process_ui_row->label == std::wstring_view(L"\u754c\u9762\u4e8b\u4ef6\u66ff\u6362"));
+    assert(process_ui_row->category == pal4::inject::InjectFeatureCategory::input_ui);
+    assert(process_ui_row->group_label == std::string_view("输入与界面"));
+    assert(process_ui_row->label == std::string_view("界面事件替换"));
     assert(process_ui_row->allow_mode_change);
 
     const auto* wndproc_row = find_row(HookId::pal4_main_wndproc);
-    assert(wndproc_row);
-    assert(wndproc_row->allow_mode_change);
+    assert(!wndproc_row);
 
     const auto* handle_player_input_row = find_row(HookId::handle_player_input_events);
-    assert(handle_player_input_row);
-    assert(!handle_player_input_row->allow_mode_change);
+    assert(!handle_player_input_row);
 
     const auto* gi_talk_row = find_row(HookId::gi_talk);
     assert(gi_talk_row);
-    assert(gi_talk_row->page == pal4::inject::InjectControlPanelPage::script_text);
-    assert(gi_talk_row->group_label == std::wstring_view(L"\u811a\u672c\u4e0e\u6587\u672c"));
+    assert(gi_talk_row->category == pal4::inject::InjectFeatureCategory::script_text);
+    assert(gi_talk_row->group_label == std::string_view("脚本与文本"));
 
     const auto* renderer_row = find_row(HookId::cegui_renderer_constructor_2);
     assert(renderer_row);
-    assert(renderer_row->page == pal4::inject::InjectControlPanelPage::render_visual);
-    assert(renderer_row->group_label == std::wstring_view(L"\u6e32\u67d3\u4e0e\u753b\u9762"));
+    assert(renderer_row->category == pal4::inject::InjectFeatureCategory::render_visual);
+    assert(renderer_row->group_label == std::string_view("渲染与画面"));
 
     const auto* combat_number_row = find_row(HookId::combat_console_set_image_position);
     assert(combat_number_row);
@@ -555,28 +549,26 @@ void TestInjectControlPanelModel() {
 
     const auto* combat_result_row = find_row(HookId::ui_show_combat_result);
     assert(combat_result_row);
-    assert(combat_result_row->group_label == std::wstring_view(L"\u6e32\u67d3\u4e0e\u753b\u9762"));
+    assert(combat_result_row->group_label == std::string_view("渲染与画面"));
 
     const auto* camera_row = find_row(HookId::camera_update_matrix);
     assert(camera_row);
-    assert(camera_row->page == pal4::inject::InjectControlPanelPage::camera);
-    assert(camera_row->group_label == std::wstring_view(L"\u76f8\u673a"));
+    assert(camera_row->category == pal4::inject::InjectFeatureCategory::camera);
+    assert(camera_row->group_label == std::string_view("相机"));
 
-    const auto modes = pal4::inject::BuildInjectControlPanelModes();
+    const auto modes = pal4::inject::BuildInjectFeatureModes();
     assert(modes.size() == 4);
     assert(modes[0] == pal4::inject::HookMode::observe_only);
     assert(modes[3] == pal4::inject::HookMode::replace_strict);
-    assert(pal4::inject::BuildInjectControlPanelPageLabel(pal4::inject::InjectControlPanelPage::overview) ==
-           std::wstring_view(L"\u6982\u89c8"));
-    assert(pal4::inject::BuildInjectControlPanelPageLabel(pal4::inject::InjectControlPanelPage::render_visual) ==
-           std::wstring_view(L"\u6e32\u67d3\u4e0e\u753b\u9762"));
-    assert(pal4::inject::BuildInjectControlPanelModeLabel(pal4::inject::HookMode::observe_only) ==
-           std::wstring_view(L"\u4ec5\u89c2\u5bdf"));
-    assert(pal4::inject::BuildInjectControlPanelModeLabel(pal4::inject::HookMode::replace_strict) ==
-           std::wstring_view(L"\u5f3a\u5236\u66ff\u6362"));
-    assert(pal4::inject::FindInjectControlPanelModeIndex(pal4::inject::HookMode::mirror_compare) == 1);
-    assert(pal4::inject::InjectControlPanelModeFromIndex(2) == pal4::inject::HookMode::replace_with_fallback);
-    assert(pal4::inject::InjectControlPanelModeFromIndex(99) == pal4::inject::HookMode::observe_only);
+    assert(pal4::inject::InjectFeatureCategoryLabel(pal4::inject::InjectFeatureCategory::render_visual) ==
+           std::string_view("渲染与画面"));
+    assert(pal4::inject::InjectFeatureModeLabel(pal4::inject::HookMode::observe_only) ==
+           std::string_view("仅观察"));
+    assert(pal4::inject::InjectFeatureModeLabel(pal4::inject::HookMode::replace_strict) ==
+           std::string_view("强制替换"));
+    assert(pal4::inject::FindInjectFeatureModeIndex(pal4::inject::HookMode::mirror_compare) == 1);
+    assert(pal4::inject::InjectFeatureModeFromIndex(2) == pal4::inject::HookMode::replace_with_fallback);
+    assert(pal4::inject::InjectFeatureModeFromIndex(99) == pal4::inject::HookMode::observe_only);
 }
 
 void TestInjectSettingsRoundTrip() {
@@ -1543,7 +1535,7 @@ int main() {
     TestMsaaLevelStrings();
     TestScriptModeStrings();
     TestInheritedScriptModeOverride();
-    TestInjectControlPanelModel();
+    TestInjectFeatureCatalog();
     TestInjectSettingsRoundTrip();
     TestProtocolRoundTrip();
     TestUiSnapshotSerialization();

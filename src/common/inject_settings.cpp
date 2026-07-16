@@ -32,6 +32,12 @@ std::string TrimAscii(const std::string_view text) {
 
 std::filesystem::path DefaultInjectSettingsPath() {
     auto root = InjectDataDirectory();
+    root /= "inject_settings.ini";
+    return root;
+}
+
+std::filesystem::path LegacyInjectPanelSettingsPath() {
+    auto root = InjectDataDirectory();
     root /= "inject_panel_settings.ini";
     return root;
 }

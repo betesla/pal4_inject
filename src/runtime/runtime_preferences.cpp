@@ -66,7 +66,7 @@ void ApplyHookModePreference(
     }
     if (update_last_ui_event) {
         state.SetLastUiEvent(
-            std::string("inject_control:") + ToString(id) + "=" + ToString(mode));
+            std::string("runtime_preferences:") + ToString(id) + "=" + ToString(mode));
     }
     if (persist) {
         std::string error;
@@ -96,7 +96,7 @@ void ApplyMsaaPreference(
 
     if (update_last_ui_event) {
         state.SetLastUiEvent(
-            std::string("inject_control:msaa=") + ToString(level));
+            std::string("runtime_preferences:msaa=") + ToString(level));
     }
     if (persist) {
         if (!SavePersistedRuntimePreferences(&error)) {
@@ -114,7 +114,7 @@ void ApplyHookLogPreference(
     state.SetHookLogEnabled(id, enabled);
     if (update_last_ui_event) {
         state.SetLastUiEvent(
-            std::string("inject_control:log:") + ToString(id) + "=" + (enabled ? "on" : "off"));
+            std::string("runtime_preferences:log:") + ToString(id) + "=" + (enabled ? "on" : "off"));
     }
     if (persist) {
         std::string error;
@@ -126,7 +126,12 @@ void ApplyHookLogPreference(
 
 bool LoadPersistedRuntimePreferences(std::string* error) {
     InjectPersistedSettings settings{};
-    if (!LoadInjectPersistedSettings(RuntimePreferencesPath(), &settings, error)) {
+    auto settings_path = RuntimePreferencesPath();
+    const auto legacy_path = LegacyInjectPanelSettingsPath();
+    if (!std::filesystem::exists(settings_path) && std::filesystem::exists(legacy_path)) {
+        settings_path = legacy_path;
+    }
+    if (!LoadInjectPersistedSettings(settings_path, &settings, error)) {
         return false;
     }
 

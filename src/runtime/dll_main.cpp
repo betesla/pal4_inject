@@ -5,7 +5,6 @@
 
 #include "bootstrap.h"
 #include "crash_handler.h"
-#include "inject_control_window.h"
 
 namespace {
 
