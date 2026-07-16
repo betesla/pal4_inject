@@ -6,7 +6,12 @@
 - 先从最小 UI seam 入手，再逐层把输入与更高层逻辑掏到 DLL / 新模块里。
 
 ## Runtime Shape
+- 发布布局：
+  - `PAL4_inject.exe` 放在游戏根目录
+  - `runtime.dll` 与 `cli.exe` 放在 `pal4_inject\` 子目录
+  - launcher 严格从 `pal4_inject\runtime.dll` 装载，不再回退到根目录 `runtime.dll`
 - `PAL4_inject.exe`
+  - ImGui + Direct3D 9 launcher UI，在进程启动前保存游戏和 Hook 配置
   - `CreateProcessA(..., CREATE_SUSPENDED)`
   - 若指定 `--script-mode cs|csb`，在恢复主线程前写入 `g_IsCSBMode @ 0x8C27FC`
   - 同时通过继承环境变量把请求模式传给子进程，供 injected runtime 在 bootstrap 期复核
@@ -26,7 +31,6 @@
     - 安装 crash capture（VEH + unhandled exception filter）
     - 初始化 Hook inventory / runtime state
     - 启动 named pipe server
-    - 启动原生 Win32 inject control panel
     - 安装 v1 Hook
 - 应用相机 pitch 相对窗口 / vertical mouse scale 补丁（当前窗口为 `±89`）
 - 通过 `Camera_UpdateMatrix` hook 把最终 second angle 夹回安全区 `[0,89] U [271,360)`，避免越过 `90` 度后的视角翻面
@@ -42,6 +46,12 @@
     - second-angle 归一化与绝对安全区夹紧
   - `cegui_font_resync.cpp`
     - 已知 dynamic UI 字体识别与目标字体分辨率计算
+  - `ui_coordinate_space.cpp`
+    - `active UI logical space` 与 `UiProfile` 数学
+    - `centered_800x600` 默认 profile
+    - 预留 `widescreen_1067x600` profile
+  - `aspect_ratio_layout.cpp`
+    - 通用内容矩形 `aspect-fit` 计算，供 UI / 视频等 4:3 居中呈现复用
   - `input_logic.cpp`
     - 可测试的 `ProcessUIEvent` 纯消息翻译逻辑
   - `protocol.cpp`
@@ -59,9 +69,9 @@
   - `crash_capture.cpp`
     - 异常码筛选、crash summary 格式化、artifact 命名
   - `inject_feature_catalog.cpp`
-    - launcher 与测试共享的功能分组、说明和 mode 列表
+    - launcher 与配置共用的功能分组、标签与 mode 列表
   - `inject_settings.cpp`
-    - `inject_settings.ini` 的 Hook / MSAA 设置持久化，并兼容读取旧面板配置
+    - 游戏目录下的 Hook / 画质设置持久化，并兼容读取旧文件名
 - `src/runtime`
   - `runtime_state.cpp`
     - bootstrap / pipe / hook call count / last UI event / last error / font sync / crash artifacts
@@ -80,13 +90,18 @@
     - `click_ui_ref / fill_ui_ref / type_text` runtime side effect
   - `cegui_renderer_hooks.cpp`
     - shared `CEGUI_Renderer_Constructor_2` widescreen pillarbox patch
-    - object-local synthetic vtable for centered wide-aspect rendering
+    - object-local synthetic vtable for `active UI logical -> physical` 投影
+    - 原版 4:3 UI 走居中缩放时，只在白名单界面先绘制左右黑色 pillarbox 底板，再提交 CEGUI 队列；白名单覆盖主菜单族窗口和底部工具栏打开的角色/属性/装备/仙术/锻造/任务/系统设置窗口，普通 gameplay HUD 不绘制黑边遮罩，避免贴边元素被盖住
   - `battle_ui_layout_hooks.cpp`
-    - `SetProperties_4C2550` 的战斗调用点筛选与 `x` 偏移补偿
+    - `SetProperties_4C2550` 保留为纯透传 hook，不再承载战斗坐标修正
+    - `RenderTextAndImage` 当前只负责 battle 自绘共享 sink 的位置投影
     - `ui_showCombatHint / ui_showCombatHint2` 浮动提示窗居中修正
   - `hud_layout_fixups.cpp`
     - gameplay HUD edge-anchor fixups for `minimap.xml` / `portrait.xml`
     - runtime restore/apply path when widescreen renderer mode changes
+  - `bink_video_hooks.cpp`
+    - `BinkPlayer_UpdateAndRender` seam
+    - 按源视频比例把 Bink 画面居中缩放到当前分辨率，避免最终呈现阶段再被横向拉满
   - `d3d9_quality_hooks.cpp`
     - `D3D9SetPresentParameters` seam
     - 通过原始多重采样探测路径接入 `MSAA` 请求值
@@ -99,8 +114,8 @@
   - `crash_handler.cpp`
     - VEH / unhandled exception handler、crash report、minidump
   - `runtime_preferences.cpp`
-    - 启动时加载 launcher 写入的 Hook mode、逐项日志和 `MSAA` 期望值
-    - 继续支持 IPC 发起的少量运行时配置变更
+    - 加载 launcher 写入的 remembered hook mode 与 `MSAA` 设置
+    - 把 IPC 调试期的 mode 变更统一转成 runtime side effect
   - `memory_debug_runtime.cpp`
     - `IDA EA / runtime VA` 解析
     - `VirtualQuery` region 探测
@@ -126,11 +141,13 @@
   - `CEGUI_Renderer_Constructor_2`
   - `LoadFontFile`
   - `SetupMinimapTexture`
-  - `SetProperties_4C2550`（战斗调用点筛选）
+  - `SetProperties_4C2550`（纯透传兼容 hook）
+  - `RenderTextAndImage`
   - `ui_showCombatHint`
   - `ui_showCombatHint2`
   - `Camera_UpdateMatrix`
   - `D3D9SetPresentParameters`
+  - `BinkPlayer_UpdateAndRender`
 - 只做 inventory、不默认安装：
   - `HandlePlayerInputEvents`
 - `ProcessUIEvent` 当前是 `replace_with_fallback`
@@ -160,21 +177,27 @@
   - 只重写显示文本参数为 `已注入` 的 GBK 字节串
   - 保留第二个音频 key 参数，避免把语音资源路径一起改坏
 - wide-aspect UI
-  - 对共享 renderer ctor 路径上的宽屏分辨率，注入 runtime 会改成“按高度等比缩放 + 左右 pillarbox + 居中”
+  - 系统任一时刻只存在一个 `active UI logical space`
+  - 当前默认 profile 是 `centered_800x600`
+  - 已预留 `widescreen_1067x600` profile 的坐标数学与调试状态字段
+  - 对共享 renderer ctor 路径上的宽屏分辨率，注入 runtime 会把 `active UI logical space` 投影到 physical client
   - 通过 object-local synthetic vtable 只改当前 renderer 对象的 `doRender` / `getRenderRect`
+  - 黑边绘制是 renderer 层的前置纯色 quad，不改资源 XML，也不启用后续宽屏 Root 画布推断逻辑
   - 不直接改 `CEGUIBase.dll` 的全局 vtable，也不假设 renderer 对象有 `1280x800` 变体那么大的内存布局
   - minimap 贴图区域额外通过 `SetupMinimapTexture` hook 按同一套 wide plan 重算 `x / y / width / height`
-  - 战斗内程序控制的浮动数字、状态图标和胜利图会在命中的 `SetProperties_4C2550` 调用点上补一层 `logical_horizontal_padding`
+  - `snapshot_ui`、`click-logical`、renderer、鼠标注入统一使用 `active UI logical space`
+  - `TransformMouseCoordinates / ConvertUIFrameCoordinates` 保持原版 screen-space 语义，不再安装全局坐标改写 hook
+  - `SetProperties_4C2550` 不再做 return-address 坐标修补；battle overlay 当前在共享 sink `RenderTextAndImage` 上单独做旧 fullscreen logical 到 battle overlay target 的位置投影，不再额外叠加 centered UI origin；该 legacy overlay 固定投到 1080p 中间目标，再交给后续呈现阶段适配最终分辨率
   - `ui_showCombatHint / ui_showCombatHint2` 这两类浮动提示窗会在原始 `setPosition + 居中` 后整体右移到中央 4:3 UI 框
+  - Bink 过场视频不再在最终呈现阶段直接按整屏矩形绘制；runtime 会按实际视频宽高计算居中的 `aspect-fit` 目标矩形
   - gameplay HUD 不再完全跟随居中的 4:3 框：
     - `minimap.xml` 关键窗口改靠左下
     - `portrait.xml` 关键窗口改靠右上
     - 与 `SetupMinimapTexture` 的左下角纹理重排保持一致
 - launcher configuration
-  - Dear ImGui 使用 Win32 + DirectX 9 后端，界面不进入游戏进程
-  - 普通功能开关、MSAA、HookMode 与逐项日志在启动前写入 `inject_settings.ini`
-  - runtime 在安装 Hook 前加载配置；installed / applied / call count / error 仍通过日志与 IPC 报告
-  - 移除游戏内窗口后，同时删除了只为面板焦点切换服务的 `PAL4_Main_WndProc` hook
+  - ImGui launcher 负责人类可读的配置界面，runtime 不创建额外游戏内窗口
+  - `inject_feature_catalog` 是 launcher 功能列表的唯一模型，避免 UI 层复制 Hook metadata
+  - `RuntimeState::SetHookMode` 仍作为 IPC 调试接口保留
 - crash capture
   - 不尝试拦截并吞掉异常
   - 只负责在进程终止前写出 crash report / minidump

@@ -157,6 +157,22 @@ function Invoke-GiteeApi {
     }
 }
 
+function Remove-GiteeRelease {
+    param(
+        [string]$ApiBase,
+        [string]$Token,
+        [object]$Release
+    )
+
+    if ($null -eq $Release -or -not $Release.id) {
+        return
+    }
+
+    Invoke-GiteeApi `
+        -Method Delete `
+        -Uri "$ApiBase/releases/$($Release.id)?access_token=$([uri]::EscapeDataString($Token))" | Out-Null
+}
+
 function Find-GiteeReleaseByTag {
     param(
         [string]$ApiBase,
@@ -196,7 +212,8 @@ function Get-ReleaseNotes {
 function Send-GiteeReleaseAsset {
     param(
         [string]$UploadUri,
-        [string]$AssetPath
+        [string]$AssetPath,
+        [string]$AccessToken
     )
 
     Add-Type -AssemblyName System.Net.Http
@@ -204,6 +221,9 @@ function Send-GiteeReleaseAsset {
     $content = New-Object System.Net.Http.MultipartFormDataContent
     $fileStream = [System.IO.File]::OpenRead($AssetPath)
     try {
+        if ($AccessToken) {
+            $content.Add((New-Object System.Net.Http.StringContent($AccessToken)), "access_token")
+        }
         $fileContent = New-Object System.Net.Http.StreamContent($fileStream)
         $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/zip")
         $content.Add($fileContent, "file", (Split-Path -Leaf $AssetPath))
@@ -259,6 +279,32 @@ function Invoke-GitReleaseChecks {
         Invoke-Checked -FilePath "git" -Arguments @("push", "origin", $branch) -WorkingDirectory $repoRoot
         Invoke-Checked -FilePath "git" -Arguments @("push", "origin", $Version) -WorkingDirectory $repoRoot
     }
+}
+
+function Invoke-GiteeGitPush {
+    param(
+        [string]$Repository,
+        [string]$Token,
+        [string]$Version,
+        [switch]$SkipGitPush
+    )
+
+    if ($SkipGitPush) {
+        return
+    }
+
+    $branch = git branch --show-current
+    if (-not $branch) {
+        throw "Git is in detached HEAD state. Check out the release branch before publishing."
+    }
+
+    $repo = Split-RepoName -Repository $Repository
+    $credentialInput = "protocol=https`nhost=gitee.com`nusername=$($repo.Owner)`npassword=$Token`n`n"
+    $credentialInput | git credential approve
+    $remote = "https://gitee.com/$Repository.git"
+
+    Invoke-Checked -FilePath "git" -Arguments @("push", $remote, "${branch}:${branch}") -WorkingDirectory $repoRoot
+    Invoke-Checked -FilePath "git" -Arguments @("push", $remote, "--force", "${Version}:${Version}") -WorkingDirectory $repoRoot
 }
 
 function Publish-GitHubRelease {
@@ -371,13 +417,18 @@ function Publish-GiteeRelease {
         prerelease = if ($Prerelease) { "true" } else { "false" }
     }
 
-    if ($null -eq $release) {
-        $payload["tag_name"] = $Version
-        $payload["target_commitish"] = "main"
-        $release = Invoke-GiteeApi -Method Post -Uri "$apiBase/releases" -Body $payload
-    } else {
-        $release = Invoke-GiteeApi -Method Patch -Uri "$apiBase/releases/$($release.id)" -Body $payload
+    if ($null -ne $release) {
+        # Gitee's release PATCH endpoint is brittle for tag-backed releases:
+        # it requires tag_name in some cases, then rejects the same tag as a duplicate.
+        # Recreate the release metadata and replace the asset instead of relying on PATCH.
+        Remove-GiteeRelease -ApiBase $apiBase -Token $token -Release $release
+        $release = $null
+        Start-Sleep -Seconds 2
     }
+
+    $payload["tag_name"] = $Version
+    $payload["target_commitish"] = "main"
+    $release = Invoke-GiteeApi -Method Post -Uri "$apiBase/releases" -Body $payload
 
     if (-not $release.id) {
         throw "Gitee release response did not include a release id."
@@ -387,7 +438,7 @@ function Publish-GiteeRelease {
     $attachFilesUri = "$apiBase/releases/$($release.id)/attach_files"
     $attachFiles = Invoke-GiteeApi `
         -Method Get `
-        -Uri "$attachFilesUri?access_token=$([uri]::EscapeDataString($token))"
+        -Uri "${attachFilesUri}?access_token=$([uri]::EscapeDataString($token))"
     foreach ($asset in $attachFiles) {
         if ($asset.name -eq $assetName -or $asset.file_name -eq $assetName) {
             Invoke-GiteeApi `
@@ -397,8 +448,9 @@ function Publish-GiteeRelease {
     }
 
     $uploaded = Send-GiteeReleaseAsset `
-        -UploadUri "$attachFilesUri?access_token=$([uri]::EscapeDataString($token))" `
-        -AssetPath $AssetPath
+        -UploadUri "${attachFilesUri}?access_token=$([uri]::EscapeDataString($token))" `
+        -AssetPath $AssetPath `
+        -AccessToken $token
     return [PSCustomObject]@{
         ReleaseUrl = "https://gitee.com/$Repository/releases/tag/$Version"
         AssetName = $assetName
@@ -425,8 +477,8 @@ $gameExePath = Join-Path $distPath $gameExeName
 $preservedGameExe = $null
 
 if (-not $SkipBuild) {
-    Invoke-Checked -FilePath "git" -Arguments @("submodule", "update", "--init", "third_party/imgui") -WorkingDirectory $repoRoot
-    Invoke-Checked -FilePath "cmake" -Arguments @("-S", ".", "-B", $BuildDir, "-A", $GeneratorPlatform) -WorkingDirectory $repoRoot
+    Invoke-Checked -FilePath "git" -Arguments @("submodule", "update", "--init", "--recursive") -WorkingDirectory $repoRoot
+    Invoke-Checked -FilePath "cmake" -Arguments @("-S", ".", "-B", $BuildDir, "-A", $GeneratorPlatform, "-DPAL4_INJECT_ENABLE_DEV_PUBLISH=OFF") -WorkingDirectory $repoRoot
     Invoke-Checked -FilePath "cmake" -Arguments @("--build", $BuildDir, "--config", $Configuration) -WorkingDirectory $repoRoot
 }
 
@@ -483,6 +535,11 @@ if (-not $SkipGitHubRelease) {
 
 if (-not $SkipGiteeRelease) {
     Invoke-GitReleaseChecks -Version $Version -SkipGitPush:$SkipGitPush
+    Invoke-GiteeGitPush `
+        -Repository $GiteeRepository `
+        -Token $resolvedGiteeToken `
+        -Version $Version `
+        -SkipGitPush:$SkipGitPush
     $notes = Get-ReleaseNotes -Version $Version -ReleaseNotesPath $ReleaseNotesPath
     $result = Publish-GiteeRelease `
         -Repository $GiteeRepository `

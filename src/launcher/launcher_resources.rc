@@ -1,0 +1,5 @@
+#include <windows.h>
+
+#define IDI_PAL4_INJECT_ICON 101
+
+IDI_PAL4_INJECT_ICON ICON "..\\..\\assets\\icons\\xianjian_syringe_energy.ico"

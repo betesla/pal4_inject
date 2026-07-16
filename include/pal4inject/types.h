@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+#include "pal4inject/ui_coordinate_space.h"
+
 namespace pal4::inject {
 
 enum class CallingConvention : std::uint8_t {
@@ -55,6 +57,8 @@ enum class HookId : std::uint8_t {
     combat_console_set_image_position,
     combat_console_set_image_position_2,
     ui_show_combat_result,
+    render_text_and_image,
+    bink_player_update_and_render,
 };
 
 struct HookDescriptor {
@@ -95,6 +99,7 @@ struct RuntimeSnapshot {
     bool crash_handler_ready = false;
     std::uintptr_t main_module_base = 0;
     MsaaLevel msaa_level = MsaaLevel::off;
+    UiProfile active_ui_profile = UiProfile::centered_800x600;
     HookStatus process_ui_event{};
     std::uint32_t current_paliv_entry = 0;
     std::uint32_t last_paliv_entry_observed = 0;

@@ -1,11 +1,14 @@
 cmake_minimum_required(VERSION 3.19)
-project(pal4_inject VERSION 0.1.4 LANGUAGES CXX)
+project(pal4_inject VERSION 0.1.8 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(PAL4_INJECT_BUILD_TESTS "Build PAL4 inject tests" ON)
+option(PAL4_INJECT_ENABLE_DEV_PUBLISH "Auto-publish build outputs into a local PAL4 install layout." OFF)
+set(PAL4_INJECT_DEV_PUBLISH_ROOT "I:/Games/original" CACHE PATH
+    "Target PAL4 install root used by dev auto-publish. Leave empty to disable.")
 
 if(NOT WIN32)
     message(FATAL_ERROR "pal4_inject requires Windows.")
@@ -44,6 +47,22 @@ endif()
 set(PAL4_INJECT_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 set(PAL4_INJECT_BUILD_INFO_HEADER ${PAL4_INJECT_GENERATED_DIR}/pal4inject_build_info.h)
 
+function(pal4_inject_add_dev_publish target destination_dir destination_name)
+    if(NOT PAL4_INJECT_ENABLE_DEV_PUBLISH)
+        return()
+    endif()
+    if(PAL4_INJECT_DEV_PUBLISH_ROOT STREQUAL "")
+        return()
+    endif()
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${destination_dir}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:${target}>"
+            "${destination_dir}/${destination_name}"
+        VERBATIM
+    )
+endfunction()
+
 add_custom_target(pal4_inject_build_info ALL
     COMMAND ${CMAKE_COMMAND}
         -DVERSION=v${PROJECT_VERSION}
@@ -54,6 +73,7 @@ add_custom_target(pal4_inject_build_info ALL
 )
 
 add_library(pal4_inject_common STATIC
+    src/common/aspect_ratio_layout.cpp
     src/common/camera_pitch_guard.cpp
     src/common/camera_unlock_patch.cpp
     src/common/cegui_font_resync.cpp
@@ -70,6 +90,7 @@ add_library(pal4_inject_common STATIC
     src/common/protocol.cpp
     src/common/runtime_paths.cpp
     src/common/script_mode_override.cpp
+    src/common/ui_coordinate_space.cpp
     src/common/ui_snapshot.cpp
     src/common/types.cpp
 )
@@ -84,6 +105,7 @@ add_dependencies(pal4_inject_common pal4_inject_build_info)
 
 add_library(pal4_inject_runtime_core STATIC
     src/runtime/battle_ui_layout_hooks.cpp
+    src/runtime/bink_video_hooks.cpp
     src/runtime/bootstrap.cpp
     src/runtime/cegui_font_hooks.cpp
     src/runtime/d3d9_quality_hooks.cpp
@@ -121,11 +143,17 @@ target_link_libraries(pal4_runtime_x86 PRIVATE pal4_inject_runtime_core)
 set_target_properties(pal4_runtime_x86 PROPERTIES
     OUTPUT_NAME "runtime"
 )
+pal4_inject_add_dev_publish(
+    pal4_runtime_x86
+    "${PAL4_INJECT_DEV_PUBLISH_ROOT}/pal4_inject"
+    "runtime.dll"
+)
 
 add_executable(pal4_injector_launcher
     src/launcher/imgui_host.cpp
     src/launcher/launcher_ui.cpp
     src/launcher/main.cpp
+    src/launcher/launcher_resources.rc
 )
 target_include_directories(pal4_injector_launcher PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/launcher
@@ -135,6 +163,11 @@ target_link_libraries(pal4_injector_launcher PRIVATE gdi32 wininet)
 set_target_properties(pal4_injector_launcher PROPERTIES
     OUTPUT_NAME "PAL4_inject"
     WIN32_EXECUTABLE TRUE
+)
+pal4_inject_add_dev_publish(
+    pal4_injector_launcher
+    "${PAL4_INJECT_DEV_PUBLISH_ROOT}"
+    "PAL4_inject.exe"
 )
 if(MSVC)
     target_link_options(pal4_injector_launcher PRIVATE /ENTRY:mainCRTStartup)
@@ -146,6 +179,11 @@ add_executable(pal4_inject_cli
 target_link_libraries(pal4_inject_cli PRIVATE pal4_inject_common)
 set_target_properties(pal4_inject_cli PROPERTIES
     OUTPUT_NAME "cli"
+)
+pal4_inject_add_dev_publish(
+    pal4_inject_cli
+    "${PAL4_INJECT_DEV_PUBLISH_ROOT}/pal4_inject"
+    "cli.exe"
 )
 
 if(PAL4_INJECT_BUILD_TESTS)

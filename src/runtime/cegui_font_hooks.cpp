@@ -269,7 +269,8 @@ int __cdecl Hook_LoadFontFile(char* file_name) {
         return result;
     }
 
-    const auto plan = BuildCeguiWidescreenPlan(config[0], config[1]);
+    const auto plan = BuildActiveUiViewportPlan(config[0], config[1]);
+    GetRuntimeState().SetActiveUiProfile(plan.profile);
     const auto target = BuildKnownDynamicFontResyncTarget(known_font_name, plan);
     if (mode == HookMode::observe_only || mode == HookMode::mirror_compare) {
         state.ClearHookError(HookId::load_font_file);

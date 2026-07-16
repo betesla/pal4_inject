@@ -1,18 +1,10 @@
 #pragma once
 
+#include "pal4inject/ui_coordinate_space.h"
+
 namespace pal4::inject {
 
-struct CeguiWidescreenPlan {
-    bool apply = false;
-    bool use_original_variant = false;
-    int width = 0;
-    int height = 0;
-    float logical_width = 800.0F;
-    float logical_height = 600.0F;
-    float uniform_scale = 1.0F;
-    float horizontal_bias_pixels = 0.0F;
-    float logical_horizontal_padding = 0.0F;
-};
+using CeguiWidescreenPlan = UiViewportPlan;
 
 struct WidescreenMinimapPlacement {
     bool apply = false;
@@ -48,5 +40,6 @@ bool ApplyCeguiWidescreenMouseTransform(
     float raw_y,
     float* out_x,
     float* out_y) noexcept;
+bool ShouldDrawOriginalUiPillarboxMask(const CeguiWidescreenPlan& plan) noexcept;
 
 }  // namespace pal4::inject

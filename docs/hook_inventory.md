@@ -31,6 +31,7 @@
   - mode: `replace_with_fallback`
   - patch span: `8`
   - reason: 对共享 renderer ctor 路径上的宽屏分辨率补上“按高度等比缩放 + 左右 pillarbox + 居中”的 UI 渲染语义，避免 16:9 直接横向拉伸 UI
+  - black bars: 在原版 4:3 UI 白名单界面渲染队列前追加左右纯黑 quad；不移动或拉伸资源，不引入宽屏 UI Root 支持
 - `LoadFontFile @ 0x4BD3B0`
   - mode: `replace_with_fallback`
   - patch span: `7`
@@ -47,7 +48,12 @@
 - `SetProperties_4C2550 @ 0x4C2550`
   - mode: `replace_with_fallback`
   - patch span: `8`
-  - reason: 只在战斗相关调用点上改写 `x` 写入值，覆盖伤害数字、状态图标和 `zhangdoushengli` 胜利图，不去碰其它共享调用方
+  - reason: 纯透传兼容 hook；不再作为宽屏坐标改写入口
+  - note: `player_hp_delta / combat_message_* / combat_console_image_* / 胜利图标` 这批对象的统一投影已下移到共享 render sink
+- `RenderTextAndImage @ 0x4C26A0`
+  - mode: `replace_with_fallback`
+  - patch span: `13`
+  - reason: 战斗数字、战斗图标、胜利图标等程序控制元素绕过普通 CEGUI 窗口树 renderer；当前只在共享 sink 上把 battle overlay 的旧 fullscreen logical 坐标固定投到 1080p battle overlay target，不再额外加 centered UI origin
 - `ui_showCombatHint @ 0x54A1F0`
   - mode: `replace_with_fallback`
   - patch span: `7`
@@ -64,11 +70,10 @@
   - mode: `replace_with_fallback`
   - patch span: `10`
   - reason: 复用原始 D3D9 多重采样探测逻辑，在设备创建 / reset 前写入记忆下来的 `MSAA` 请求值
-- `PAL4_Main_WndProc @ 0x40A170`
+- `BinkPlayer_UpdateAndRender @ 0x65D170`
   - mode: `replace_with_fallback`
-  - patch span: `8`
-  - reason: panel 焦点切换后拦截最小化链，避免点击 inject panel 再切回游戏时窗口被最小化
-
+  - patch span: `7`
+  - reason: PAL4 原始链路在这一层把 Bink 纹理直接按整屏矩形提交，宽屏下会把 4:3 视频拉伸；当前 hook 改为按源视频宽高计算居中的 `aspect-fit` 目标矩形
 ## Reserved Hooks
 - `HandlePlayerInputEvents @ 0x4283B0`
   - mode: reserved
@@ -78,7 +83,6 @@
 - `MapVirtualKeyToUIKey @ 0x412130`
 - `EnableMouseCapture @ 0x4120D0`
 - `DisableMouseCapture @ 0x4120E0`
-- `TransformMouseCoordinates @ 0x412320`
 - `PALGameIV_GetInstance @ 0x5B5AF0`
 - `UIFrameManager_GetInstance @ 0x4BB650`
 
