@@ -206,6 +206,17 @@ MsaaLevel RuntimeState::GetMsaaLevel() const {
     return msaa_level_;
 }
 
+void RuntimeState::SetBinkScalingMode(const BinkScalingMode mode) {
+    std::scoped_lock lock(mutex_);
+    bink_scaling_mode_ = mode;
+    state_cv_.notify_all();
+}
+
+BinkScalingMode RuntimeState::GetBinkScalingMode() const {
+    std::scoped_lock lock(mutex_);
+    return bink_scaling_mode_;
+}
+
 void RuntimeState::SetActiveUiProfile(const UiProfile profile) {
     std::scoped_lock lock(mutex_);
     active_ui_profile_ = profile;
@@ -308,6 +319,7 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.crash_handler_ready = crash_handler_ready_;
     snapshot.main_module_base = main_module_base_;
     snapshot.msaa_level = msaa_level_;
+    snapshot.bink_scaling_mode = bink_scaling_mode_;
     snapshot.active_ui_profile = active_ui_profile_;
     snapshot.current_paliv_entry = current_paliv_entry;
     snapshot.last_paliv_entry_observed = last_paliv_entry_observed_;

@@ -55,6 +55,7 @@ int* ReadGameConfigPointer() {
 
 void LogVideoRect(
     const HookId hook_id,
+    const BinkScalingMode scaling_mode,
     const int screen_width,
     const int screen_height,
     const int video_width,
@@ -63,6 +64,7 @@ void LogVideoRect(
     std::ostringstream out;
     out
         << "hook=" << ToString(hook_id)
+        << " scaling_mode=" << ToString(scaling_mode)
         << " screen=" << screen_width << "x" << screen_height
         << " video=" << video_width << "x" << video_height
         << " rect=" << rect.x << "," << rect.y
@@ -72,6 +74,7 @@ void LogVideoRect(
 
 bool TryBuildVideoRect(
     void* const self,
+    const BinkScalingMode scaling_mode,
     AspectRatioRect* const out_rect,
     int* const out_screen_width,
     int* const out_screen_height,
@@ -109,14 +112,26 @@ bool TryBuildVideoRect(
     *out_screen_height = config[1];
     *out_video_width = static_cast<int>(*reinterpret_cast<const std::uint32_t*>(bink_handle + 0));
     *out_video_height = static_cast<int>(*reinterpret_cast<const std::uint32_t*>(bink_handle + 4));
-    *out_rect = ComputeAspectFitRect(
-        *out_screen_width,
-        *out_screen_height,
-        *out_video_width,
-        *out_video_height);
+    switch (scaling_mode) {
+    case BinkScalingMode::fit:
+        *out_rect = ComputeAspectFitRect(
+            *out_screen_width,
+            *out_screen_height,
+            *out_video_width,
+            *out_video_height);
+        break;
+    case BinkScalingMode::fill_width_crop:
+        *out_rect = ComputeAspectFillWidthRect(
+            *out_screen_width,
+            *out_screen_height,
+            *out_video_width,
+            *out_video_height);
+        break;
+    }
     if (!out_rect->valid) {
         if (error) {
-            *error = "video aspect-fit rect is invalid";
+            *error = std::string("video rect is invalid for scaling mode ") +
+                ToString(scaling_mode);
         }
         return false;
     }
@@ -180,9 +195,11 @@ void __fastcall Hook_BinkPlayer_UpdateAndRender(
     int screen_height = 0;
     int video_width = 0;
     int video_height = 0;
+    const BinkScalingMode scaling_mode = state.GetBinkScalingMode();
     std::string error;
     if (!TryBuildVideoRect(
             self,
+            scaling_mode,
             &rect,
             &screen_width,
             &screen_height,
@@ -219,6 +236,7 @@ void __fastcall Hook_BinkPlayer_UpdateAndRender(
             255);
         LogVideoRect(
             HookId::bink_player_update_and_render,
+            scaling_mode,
             screen_width,
             screen_height,
             video_width,

@@ -16,4 +16,10 @@ AspectRatioRect ComputeAspectFitRect(
     int content_width,
     int content_height) noexcept;
 
+AspectRatioRect ComputeAspectFillWidthRect(
+    int container_width,
+    int container_height,
+    int content_width,
+    int content_height) noexcept;
+
 }  // namespace pal4::inject

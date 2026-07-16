@@ -227,6 +227,26 @@ void TestAspectRatioLayoutMath() {
 
     const auto invalid = pal4::inject::ComputeAspectFitRect(0, 1080, 640, 480);
     assert(!invalid.valid);
+
+    const auto width_fill =
+        pal4::inject::ComputeAspectFillWidthRect(1920, 1080, 640, 480);
+    assert(width_fill.valid);
+    assert(width_fill.x == 0);
+    assert(width_fill.y == -180);
+    assert(width_fill.width == 1920);
+    assert(width_fill.height == 1440);
+
+    const auto width_fill_tall_container =
+        pal4::inject::ComputeAspectFillWidthRect(1280, 1024, 640, 480);
+    assert(width_fill_tall_container.valid);
+    assert(width_fill_tall_container.x == 0);
+    assert(width_fill_tall_container.y == 32);
+    assert(width_fill_tall_container.width == 1280);
+    assert(width_fill_tall_container.height == 960);
+
+    const auto invalid_width_fill =
+        pal4::inject::ComputeAspectFillWidthRect(1920, 1080, 0, 480);
+    assert(!invalid_width_fill.valid);
 }
 
 void TestDpiAwarenessStrings() {
@@ -247,6 +267,19 @@ void TestMsaaLevelStrings() {
     assert(pal4::inject::TryParseMsaaLevel("4x", &parsed));
     assert(parsed == pal4::inject::MsaaLevel::x4);
     assert(!pal4::inject::TryParseMsaaLevel("16x", &parsed));
+}
+
+void TestBinkScalingModeStrings() {
+    assert(std::string(pal4::inject::ToString(pal4::inject::BinkScalingMode::fit)) ==
+           "fit");
+    assert(std::string(pal4::inject::ToString(
+               pal4::inject::BinkScalingMode::fill_width_crop)) ==
+           "fill_width_crop");
+
+    auto parsed = pal4::inject::BinkScalingMode::fit;
+    assert(pal4::inject::TryParseBinkScalingMode("fill_width_crop", &parsed));
+    assert(parsed == pal4::inject::BinkScalingMode::fill_width_crop);
+    assert(!pal4::inject::TryParseBinkScalingMode("stretch", &parsed));
 }
 
 void TestScriptModeStrings() {
@@ -637,6 +670,7 @@ void TestInjectFeatureCatalog() {
 void TestInjectSettingsRoundTrip() {
     pal4::inject::InjectPersistedSettings settings{};
     settings.msaa_level = pal4::inject::MsaaLevel::x4;
+    settings.bink_scaling_mode = pal4::inject::BinkScalingMode::fill_width_crop;
     settings.hooks.push_back({
         HookId::process_ui_event,
         pal4::inject::HookMode::replace_with_fallback,
@@ -661,6 +695,8 @@ void TestInjectSettingsRoundTrip() {
     pal4::inject::InjectPersistedSettings parsed{};
     assert(pal4::inject::ParseInjectPersistedSettings(text, &parsed, &error));
     assert(parsed.msaa_level == pal4::inject::MsaaLevel::x4);
+    assert(parsed.bink_scaling_mode ==
+           pal4::inject::BinkScalingMode::fill_width_crop);
     assert(parsed.hooks.size() == 3);
     const auto find_hook =
         [&parsed](const HookId id) -> const pal4::inject::PersistedHookSetting* {
@@ -689,7 +725,16 @@ void TestInjectSettingsRoundTrip() {
     pal4::inject::InjectPersistedSettings loaded{};
     assert(pal4::inject::LoadInjectPersistedSettings(temp_path, &loaded, &error));
     assert(loaded.msaa_level == pal4::inject::MsaaLevel::x4);
+    assert(loaded.bink_scaling_mode ==
+           pal4::inject::BinkScalingMode::fill_width_crop);
     std::filesystem::remove(temp_path);
+
+    pal4::inject::InjectPersistedSettings legacy{};
+    assert(pal4::inject::ParseInjectPersistedSettings(
+        "version=1\nmsaa_level=2x\n",
+        &legacy,
+        &error));
+    assert(legacy.bink_scaling_mode == pal4::inject::BinkScalingMode::fit);
 }
 
 void TestInputLogic() {
@@ -756,6 +801,7 @@ void TestRuntimeEventLog() {
     assert(!state.GetHookLogEnabled(HookId::process_ui_event));
     assert(!state.GetHookLogEnabled(HookId::load_font_file));
     state.SetMsaaLevel(pal4::inject::MsaaLevel::x2);
+    state.SetBinkScalingMode(pal4::inject::BinkScalingMode::fill_width_crop);
     state.AppendEventLog("event-1");
     state.AppendEventLog("event-2");
     state.SetCrashHandlerReady(true);
@@ -771,6 +817,8 @@ void TestRuntimeEventLog() {
     const auto snapshot = state.BuildSnapshot(0);
     assert(snapshot.crash_handler_ready);
     assert(snapshot.msaa_level == pal4::inject::MsaaLevel::x2);
+    assert(snapshot.bink_scaling_mode ==
+           pal4::inject::BinkScalingMode::fill_width_crop);
     assert(snapshot.active_ui_profile == pal4::inject::UiProfile::centered_800x600);
     assert(snapshot.last_crash_summary == "summary");
     assert(snapshot.last_crash_report_path == "report.txt");
@@ -1724,6 +1772,7 @@ int main() {
     TestHookInventory();
     TestDpiAwarenessStrings();
     TestMsaaLevelStrings();
+    TestBinkScalingModeStrings();
     TestScriptModeStrings();
     TestInheritedScriptModeOverride();
     TestInjectFeatureCatalog();

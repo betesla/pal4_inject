@@ -12,7 +12,8 @@
 namespace pal4::inject {
 namespace {
 
-constexpr int kSettingsVersion = 1;
+constexpr int kSettingsVersion = 2;
+constexpr int kMinSupportedSettingsVersion = 1;
 constexpr int kMaxSupportedSettingsVersion = 2;
 
 std::string TrimAscii(const std::string_view text) {
@@ -47,6 +48,7 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
     std::ostringstream out;
     out << "version=" << kSettingsVersion << '\n';
     out << "msaa_level=" << ToString(settings.msaa_level) << '\n';
+    out << "bink_scaling_mode=" << ToString(settings.bink_scaling_mode) << '\n';
 
     std::map<int, PersistedHookSetting> sorted_hooks;
     for (const auto& hook : settings.hooks) {
@@ -110,6 +112,15 @@ bool ParseInjectPersistedSettings(
             }
             continue;
         }
+        if (key == "bink_scaling_mode") {
+            if (!TryParseBinkScalingMode(value, &out->bink_scaling_mode)) {
+                if (error) {
+                    *error = "invalid bink_scaling_mode value: " + value;
+                }
+                return false;
+            }
+            continue;
+        }
         if (key.rfind("hook.", 0) != 0) {
             continue;
         }
@@ -164,7 +175,7 @@ bool ParseInjectPersistedSettings(
     }
 
     if (version != 0 &&
-        (version < kSettingsVersion || version > kMaxSupportedSettingsVersion)) {
+        (version < kMinSupportedSettingsVersion || version > kMaxSupportedSettingsVersion)) {
         if (error) {
             *error = "unsupported settings version: " + std::to_string(version);
         }

@@ -73,7 +73,7 @@
 - `BinkPlayer_UpdateAndRender @ 0x65D170`
   - mode: `replace_with_fallback`
   - patch span: `7`
-  - reason: PAL4 原始链路在这一层把 Bink 纹理直接按整屏矩形提交，宽屏下会把 4:3 视频拉伸；当前 hook 改为按源视频宽高计算居中的 `aspect-fit` 目标矩形
+  - reason: PAL4 原始链路在这一层把 Bink 纹理直接按整屏矩形提交，宽屏下会把 4:3 视频拉伸；当前 hook 支持居中 `aspect-fit` 与“按宽度铺满 + 上下裁剪”两种保持比例的矩形
 ## Reserved Hooks
 - `HandlePlayerInputEvents @ 0x4283B0`
   - mode: reserved

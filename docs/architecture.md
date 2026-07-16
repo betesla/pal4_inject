@@ -101,7 +101,8 @@
     - runtime restore/apply path when widescreen renderer mode changes
   - `bink_video_hooks.cpp`
     - `BinkPlayer_UpdateAndRender` seam
-    - 按源视频比例把 Bink 画面居中缩放到当前分辨率，避免最终呈现阶段再被横向拉满
+    - `fit` 保留完整画面；`fill_width_crop` 按屏幕宽度等比放大并居中裁剪上下区域
+    - 两种模式都不改变视频宽高比，选项由 launcher 写入配置
   - `d3d9_quality_hooks.cpp`
     - `D3D9SetPresentParameters` seam
     - 通过原始多重采样探测路径接入 `MSAA` 请求值
@@ -189,7 +190,7 @@
   - `TransformMouseCoordinates / ConvertUIFrameCoordinates` 保持原版 screen-space 语义，不再安装全局坐标改写 hook
   - `SetProperties_4C2550` 不再做 return-address 坐标修补；battle overlay 当前在共享 sink `RenderTextAndImage` 上单独做旧 fullscreen logical 到 battle overlay target 的位置投影，不再额外叠加 centered UI origin；该 legacy overlay 固定投到 1080p 中间目标，再交给后续呈现阶段适配最终分辨率
   - `ui_showCombatHint / ui_showCombatHint2` 这两类浮动提示窗会在原始 `setPosition + 居中` 后整体右移到中央 4:3 UI 框
-  - Bink 过场视频不再在最终呈现阶段直接按整屏矩形绘制；runtime 会按实际视频宽高计算居中的 `aspect-fit` 目标矩形
+  - Bink 过场视频不再直接按整屏矩形拉伸；runtime 可计算居中的 `aspect-fit` 目标矩形，或按屏幕宽度计算带负 Y 偏移的上下裁剪矩形
   - gameplay HUD 不再完全跟随居中的 4:3 框：
     - `minimap.xml` 关键窗口改靠左下
     - `portrait.xml` 关键窗口改靠右上

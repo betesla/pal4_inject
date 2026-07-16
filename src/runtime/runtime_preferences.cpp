@@ -33,6 +33,7 @@ HookMode ResolveEnabledHookMode(const HookId id) {
 bool SavePersistedRuntimePreferences(std::string* error) {
     InjectPersistedSettings settings{};
     settings.msaa_level = GetRuntimeState().GetMsaaLevel();
+    settings.bink_scaling_mode = GetRuntimeState().GetBinkScalingMode();
     for (const auto& status : GetRuntimeState().CopyHookStatuses()) {
         settings.hooks.push_back({
             status.id,
@@ -140,6 +141,7 @@ bool LoadPersistedRuntimePreferences(std::string* error) {
         GetRuntimeState().SetHookLogEnabled(hook.id, hook.log_enabled);
         ApplyHookModePreference(hook.id, hook.mode, false, false);
     }
+    GetRuntimeState().SetBinkScalingMode(settings.bink_scaling_mode);
     ApplyMsaaPreference(settings.msaa_level, false, false);
     if (error) {
         error->clear();

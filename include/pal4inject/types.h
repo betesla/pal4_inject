@@ -32,6 +32,11 @@ enum class MsaaLevel : std::uint8_t {
     x8,
 };
 
+enum class BinkScalingMode : std::uint8_t {
+    fit = 0,
+    fill_width_crop,
+};
+
 enum class ScriptMode : std::uint8_t {
     inherit = 0,
     cs,
@@ -99,6 +104,7 @@ struct RuntimeSnapshot {
     bool crash_handler_ready = false;
     std::uintptr_t main_module_base = 0;
     MsaaLevel msaa_level = MsaaLevel::off;
+    BinkScalingMode bink_scaling_mode = BinkScalingMode::fit;
     UiProfile active_ui_profile = UiProfile::centered_800x600;
     HookStatus process_ui_event{};
     std::uint32_t current_paliv_entry = 0;
@@ -136,11 +142,13 @@ public:
 const char* ToString(CallingConvention cc) noexcept;
 const char* ToString(HookMode mode) noexcept;
 const char* ToString(MsaaLevel level) noexcept;
+const char* ToString(BinkScalingMode mode) noexcept;
 const char* ToString(ScriptMode mode) noexcept;
 const char* ToString(HookId id) noexcept;
 
 bool TryParseHookMode(std::string_view text, HookMode* out) noexcept;
 bool TryParseMsaaLevel(std::string_view text, MsaaLevel* out) noexcept;
+bool TryParseBinkScalingMode(std::string_view text, BinkScalingMode* out) noexcept;
 bool TryParseScriptMode(std::string_view text, ScriptMode* out) noexcept;
 bool TryParseHookId(std::string_view text, HookId* out) noexcept;
 std::optional<std::uint32_t> ScriptModeToCsbFlag(ScriptMode mode) noexcept;

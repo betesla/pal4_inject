@@ -45,6 +45,8 @@ public:
     void ClearHookError(HookId id);
     void SetMsaaLevel(MsaaLevel level);
     MsaaLevel GetMsaaLevel() const;
+    void SetBinkScalingMode(BinkScalingMode mode);
+    BinkScalingMode GetBinkScalingMode() const;
     void SetActiveUiProfile(UiProfile profile);
     UiProfile GetActiveUiProfile() const;
 
@@ -90,6 +92,7 @@ private:
     std::string pipe_name_;
     std::vector<HookStatus> hook_statuses_;
     MsaaLevel msaa_level_ = MsaaLevel::off;
+    BinkScalingMode bink_scaling_mode_ = BinkScalingMode::fit;
     UiProfile active_ui_profile_ = UiProfile::centered_800x600;
     std::uint32_t last_paliv_entry_observed_ = 0;
     std::string last_ui_event_;

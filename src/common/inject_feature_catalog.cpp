@@ -57,7 +57,7 @@ std::vector<InjectFeatureDescriptor> BuildInjectFeatureCatalog() {
         {HookId::combat_console_set_image_position_2, BuildCategory(HookId::combat_console_set_image_position_2), BuildGroupLabel(HookId::combat_console_set_image_position_2), "战斗提示窗居中 A", "修正第一条战斗提示窗口路径。", true},
         {HookId::ui_show_combat_result, BuildCategory(HookId::ui_show_combat_result), BuildGroupLabel(HookId::ui_show_combat_result), "战斗提示窗居中 B", "修正战斗结算与失败提示窗口路径。", true},
         {HookId::render_text_and_image, BuildCategory(HookId::render_text_and_image), BuildGroupLabel(HookId::render_text_and_image), "战斗浮字共享投影", "统一宽屏战斗伤害数字与图像的投影空间。", true},
-        {HookId::bink_player_update_and_render, BuildCategory(HookId::bink_player_update_and_render), BuildGroupLabel(HookId::bink_player_update_and_render), "Bink 视频 4:3 居中", "保持过场视频原始比例并在宽屏画面中居中。", true},
+        {HookId::bink_player_update_and_render, BuildCategory(HookId::bink_player_update_and_render), BuildGroupLabel(HookId::bink_player_update_and_render), "Bink 视频比例修正", "按 launcher 选项完整显示视频，或保持比例铺满宽屏并裁剪上下画面。", true},
         {HookId::d3d9_set_present_parameters, BuildCategory(HookId::d3d9_set_present_parameters), BuildGroupLabel(HookId::d3d9_set_present_parameters), "MSAA 覆写", "在 D3D9 呈现参数生效时请求指定抗锯齿等级。", true},
         {HookId::camera_update_matrix, BuildCategory(HookId::camera_update_matrix), BuildGroupLabel(HookId::camera_update_matrix), "相机俯仰保护", "扩大相机俯仰范围并阻止越过翻转边界。", true},
     };

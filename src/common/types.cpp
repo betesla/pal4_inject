@@ -32,6 +32,11 @@ constexpr std::array<EnumName<MsaaLevel>, 4> kMsaaLevels{{
     {MsaaLevel::x8, "8x"},
 }};
 
+constexpr std::array<EnumName<BinkScalingMode>, 2> kBinkScalingModes{{
+    {BinkScalingMode::fit, "fit"},
+    {BinkScalingMode::fill_width_crop, "fill_width_crop"},
+}};
+
 constexpr std::array<EnumName<ScriptMode>, 3> kScriptModes{{
     {ScriptMode::inherit, "inherit"},
     {ScriptMode::cs, "cs"},
@@ -104,6 +109,10 @@ const char* ToString(const MsaaLevel level) noexcept {
     return FindEnumName(level, kMsaaLevels);
 }
 
+const char* ToString(const BinkScalingMode mode) noexcept {
+    return FindEnumName(mode, kBinkScalingModes);
+}
+
 const char* ToString(const ScriptMode mode) noexcept {
     return FindEnumName(mode, kScriptModes);
 }
@@ -118,6 +127,12 @@ bool TryParseHookMode(const std::string_view text, HookMode* out) noexcept {
 
 bool TryParseMsaaLevel(const std::string_view text, MsaaLevel* out) noexcept {
     return TryParseEnum(text, kMsaaLevels, out);
+}
+
+bool TryParseBinkScalingMode(
+    const std::string_view text,
+    BinkScalingMode* out) noexcept {
+    return TryParseEnum(text, kBinkScalingModes, out);
 }
 
 bool TryParseScriptMode(const std::string_view text, ScriptMode* out) noexcept {

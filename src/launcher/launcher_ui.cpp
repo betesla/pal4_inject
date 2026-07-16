@@ -87,6 +87,16 @@ const char* MsaaLabel(const MsaaLevel level) {
     return "关闭";
 }
 
+const char* BinkScalingModeLabel(const BinkScalingMode mode) {
+    switch (mode) {
+    case BinkScalingMode::fit:
+        return "完整显示（保持全画面）";
+    case BinkScalingMode::fill_width_crop:
+        return "宽屏铺满（上下裁剪）";
+    }
+    return "完整显示（保持全画面）";
+}
+
 void DrawPathRow(const char* const label, const std::filesystem::path& path) {
     ImGui::TextDisabled("%s", label);
     ImGui::SameLine(105.0F);
@@ -177,6 +187,37 @@ void DrawGamePage(LauncherUiState* const state) {
 }
 
 void ToggleFeature(PersistedHookSetting* setting, bool enabled);
+
+void DrawBinkScalingSetting(LauncherUiState* const state) {
+    ImGui::TextUnformatted("过场视频显示");
+    ImGui::SameLine(180.0F);
+    ImGui::SetNextItemWidth(240.0F);
+    if (ImGui::BeginCombo(
+            "##bink_scaling_mode",
+            BinkScalingModeLabel(state->inject_settings.bink_scaling_mode))) {
+        constexpr std::array modes{
+            BinkScalingMode::fit,
+            BinkScalingMode::fill_width_crop,
+        };
+        for (const auto mode : modes) {
+            const bool selected = mode == state->inject_settings.bink_scaling_mode;
+            if (ImGui::Selectable(BinkScalingModeLabel(mode), selected)) {
+                state->inject_settings.bink_scaling_mode = mode;
+                ToggleFeature(
+                    FindHookSetting(
+                        &state->inject_settings,
+                        HookId::bink_player_update_and_render),
+                    true);
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::TextDisabled(
+        "完整显示会保留全部画面；宽屏铺满保持比例并裁掉超出屏幕的上下部分。");
+}
 
 void DrawMsaaSetting(LauncherUiState* const state) {
     ImGui::TextUnformatted("抗锯齿 MSAA");
@@ -381,6 +422,7 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
         ImGui::TextDisabled("启动前配置期望行为；实际应用结果仍由 runtime 日志和 CLI 报告。");
         ImGui::Separator();
         DrawMsaaSetting(view->launcher);
+        DrawBinkScalingSetting(view->launcher);
         ImGui::Spacing();
         DrawFeatureCategoryTabs(view);
         break;

@@ -445,6 +445,7 @@ pal4::inject::InjectPersistedSettings NormalizeInjectSettings(
     const pal4::inject::InjectPersistedSettings& loaded) {
     pal4::inject::InjectPersistedSettings normalized{};
     normalized.msaa_level = loaded.msaa_level;
+    normalized.bink_scaling_mode = loaded.bink_scaling_mode;
     for (const auto& feature : pal4::inject::BuildInjectFeatureCatalog()) {
         if (const auto* persisted = FindPersistedHook(loaded, feature.id)) {
             normalized.hooks.push_back(*persisted);
