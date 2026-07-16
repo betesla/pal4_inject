@@ -70,6 +70,7 @@
     - 异常码筛选、crash summary 格式化、artifact 命名
   - `inject_feature_catalog.cpp`
     - launcher 与配置共用的功能分组、标签与 mode 列表
+    - 定义宽屏预设成员，并统一切换它们的 active / observe-only 模式
   - `inject_settings.cpp`
     - 游戏目录下的脚本模式、Hook 与画质设置持久化，并兼容读取旧文件名
 - `src/runtime`
@@ -198,6 +199,7 @@
 - launcher configuration
   - ImGui launcher 负责人类可读的配置界面，runtime 不创建额外游戏内窗口
   - `inject_feature_catalog` 是 launcher 功能列表的唯一模型，避免 UI 层复制 Hook metadata
+  - 普通界面用“启用宽屏”统一管理 renderer、font、minimap、battle overlay 和 Bink Hook；高级页仍可对当次启动逐项覆盖
   - `RuntimeState::SetHookMode` 仍作为 IPC 调试接口保留
 - crash capture
   - 不尝试拦截并吞掉异常

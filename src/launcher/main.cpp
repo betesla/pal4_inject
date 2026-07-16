@@ -508,6 +508,9 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* const options) {
         return false;
     }
     state.inject_settings = NormalizeInjectSettings(loaded_settings);
+    pal4::inject::ApplyWidescreenFeaturePreset(
+        &state.inject_settings,
+        state.display.widescreen != 0);
     state.script_mode = state.inject_settings.script_mode;
 
     std::wstring ui_error;

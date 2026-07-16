@@ -3,6 +3,7 @@
 #include <string_view>
 #include <vector>
 
+#include "pal4inject/inject_settings.h"
 #include "pal4inject/types.h"
 
 namespace pal4::inject {
@@ -24,6 +25,10 @@ struct InjectFeatureDescriptor {
 };
 
 std::vector<InjectFeatureDescriptor> BuildInjectFeatureCatalog();
+bool InjectFeatureFollowsWidescreen(HookId id) noexcept;
+void ApplyWidescreenFeaturePreset(
+    InjectPersistedSettings* settings,
+    bool enabled) noexcept;
 std::vector<HookMode> BuildInjectFeatureModes();
 std::string_view InjectFeatureCategoryLabel(InjectFeatureCategory category) noexcept;
 std::string_view InjectFeatureModeLabel(HookMode mode) noexcept;

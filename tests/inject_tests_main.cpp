@@ -652,6 +652,51 @@ void TestInjectFeatureCatalog() {
     assert(camera_row->category == pal4::inject::InjectFeatureCategory::camera);
     assert(camera_row->group_label == std::string_view("相机"));
 
+    std::size_t widescreen_feature_count = 0;
+    pal4::inject::InjectPersistedSettings preset{};
+    for (const auto& row : rows) {
+        if (pal4::inject::InjectFeatureFollowsWidescreen(row.id)) {
+            ++widescreen_feature_count;
+        }
+        preset.hooks.push_back({
+            row.id,
+            pal4::inject::HookMode::replace_with_fallback,
+            pal4::inject::HookMode::replace_with_fallback,
+            false,
+        });
+    }
+    assert(widescreen_feature_count == 8);
+    assert(pal4::inject::InjectFeatureFollowsWidescreen(
+        HookId::cegui_renderer_constructor_2));
+    assert(pal4::inject::InjectFeatureFollowsWidescreen(
+        HookId::bink_player_update_and_render));
+    assert(!pal4::inject::InjectFeatureFollowsWidescreen(
+        HookId::d3d9_set_present_parameters));
+    assert(!pal4::inject::InjectFeatureFollowsWidescreen(
+        HookId::camera_update_matrix));
+
+    const auto bink_preset = std::find_if(
+        preset.hooks.begin(),
+        preset.hooks.end(),
+        [](const pal4::inject::PersistedHookSetting& hook) {
+            return hook.id == HookId::bink_player_update_and_render;
+        });
+    assert(bink_preset != preset.hooks.end());
+    bink_preset->active_mode = pal4::inject::HookMode::mirror_compare;
+    pal4::inject::ApplyWidescreenFeaturePreset(&preset, false);
+    for (const auto& hook : preset.hooks) {
+        if (pal4::inject::InjectFeatureFollowsWidescreen(hook.id)) {
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.active_mode == pal4::inject::HookMode::replace_with_fallback);
+        } else {
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+        }
+    }
+    pal4::inject::ApplyWidescreenFeaturePreset(&preset, true);
+    for (const auto& hook : preset.hooks) {
+        assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+    }
+
     const auto modes = pal4::inject::BuildInjectFeatureModes();
     assert(modes.size() == 4);
     assert(modes[0] == pal4::inject::HookMode::observe_only);

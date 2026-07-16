@@ -23,7 +23,6 @@ struct LauncherViewState {
     LauncherUiState* launcher = nullptr;
     CheckForUpdatesCallback check_for_updates = nullptr;
     LauncherPage page = LauncherPage::game;
-    InjectFeatureCategory category = InjectFeatureCategory::render_visual;
     bool keep_open = true;
 };
 
@@ -172,6 +171,7 @@ void DrawGamePage(LauncherUiState* const state) {
     ImGui::SameLine();
     if (ImGui::Checkbox("启用宽屏", &widescreen)) {
         state->display.widescreen = widescreen ? 1 : 0;
+        ApplyWidescreenFeaturePreset(&state->inject_settings, widescreen);
     }
     ImGui::SameLine();
     if (ImGui::Checkbox("垂直同步", &vsync)) {
@@ -207,7 +207,7 @@ void DrawBinkScalingSetting(LauncherUiState* const state) {
                     FindHookSetting(
                         &state->inject_settings,
                         HookId::bink_player_update_and_render),
-                    true);
+                    state->display.widescreen != 0);
             }
             if (selected) {
                 ImGui::SetItemDefaultFocus();
@@ -289,28 +289,31 @@ void DrawFeatureCard(
     ImGui::PopID();
 }
 
-void DrawFeatureCategoryTabs(LauncherViewState* const view) {
-    constexpr std::array categories{
-        InjectFeatureCategory::render_visual,
-        InjectFeatureCategory::input_ui,
-        InjectFeatureCategory::script_text,
-        InjectFeatureCategory::camera,
-    };
-    if (ImGui::BeginTabBar("feature_categories")) {
-        for (const auto category : categories) {
-            const auto label = InjectFeatureCategoryLabel(category);
-            if (ImGui::BeginTabItem(label.data())) {
-                view->category = category;
-                const auto features = BuildInjectFeatureCatalog();
-                for (const auto& feature : features) {
-                    if (feature.category == category) {
-                        DrawFeatureCard(view->launcher, feature);
-                    }
-                }
-                ImGui::EndTabItem();
-            }
+void DrawPlayerEnhancements(LauncherUiState* const state) {
+    const bool widescreen_enabled = state->display.widescreen != 0;
+    ImGui::TextUnformatted("宽屏修正");
+    ImGui::SameLine(180.0F);
+    ImGui::TextColored(
+        widescreen_enabled
+            ? ImVec4(0.36F, 0.82F, 0.48F, 1.0F)
+            : ImVec4(0.66F, 0.66F, 0.66F, 1.0F),
+        widescreen_enabled ? "已跟随游戏设置启用" : "已跟随游戏设置关闭");
+    ImGui::TextDisabled(
+        "统一控制宽屏 UI、字体、小地图、战斗界面和 Bink 视频修正。");
+
+    ImGui::Spacing();
+    DrawBinkScalingSetting(state);
+    DrawMsaaSetting(state);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::TextUnformatted("其他增强");
+    const auto features = BuildInjectFeatureCatalog();
+    for (const auto& feature : features) {
+        if (feature.id == HookId::camera_update_matrix) {
+            DrawFeatureCard(state, feature);
+            break;
         }
-        ImGui::EndTabBar();
     }
 }
 
@@ -377,7 +380,7 @@ void DrawSidebar(LauncherViewState* const view, const HWND owner) {
     if (ImGui::Selectable("游戏设置", view->page == LauncherPage::game, 0, ImVec2(0.0F, 42.0F))) {
         view->page = LauncherPage::game;
     }
-    if (ImGui::Selectable("注入功能", view->page == LauncherPage::inject_features, 0, ImVec2(0.0F, 42.0F))) {
+    if (ImGui::Selectable("增强功能", view->page == LauncherPage::inject_features, 0, ImVec2(0.0F, 42.0F))) {
         view->page = LauncherPage::inject_features;
     }
     if (ImGui::Selectable("高级调试", view->page == LauncherPage::advanced, 0, ImVec2(0.0F, 42.0F))) {
@@ -418,13 +421,10 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
         DrawGamePage(view->launcher);
         break;
     case LauncherPage::inject_features:
-        ImGui::TextUnformatted("注入功能");
-        ImGui::TextDisabled("启动前配置期望行为；实际应用结果仍由 runtime 日志和 CLI 报告。");
+        ImGui::TextUnformatted("增强功能");
+        ImGui::TextDisabled("成熟宽屏修正统一跟随“启用宽屏”；逐项调试仍保留在高级页。");
         ImGui::Separator();
-        DrawMsaaSetting(view->launcher);
-        DrawBinkScalingSetting(view->launcher);
-        ImGui::Spacing();
-        DrawFeatureCategoryTabs(view);
+        DrawPlayerEnhancements(view->launcher);
         break;
     case LauncherPage::advanced:
         DrawAdvancedPage(view->launcher);

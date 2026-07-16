@@ -63,6 +63,46 @@ std::vector<InjectFeatureDescriptor> BuildInjectFeatureCatalog() {
     };
 }
 
+bool InjectFeatureFollowsWidescreen(const HookId id) noexcept {
+    switch (id) {
+    case HookId::cegui_renderer_constructor_2:
+    case HookId::load_font_file:
+    case HookId::setup_minimap_texture:
+    case HookId::combat_console_set_image_position:
+    case HookId::combat_console_set_image_position_2:
+    case HookId::ui_show_combat_result:
+    case HookId::render_text_and_image:
+    case HookId::bink_player_update_and_render:
+        return true;
+    default:
+        return false;
+    }
+}
+
+void ApplyWidescreenFeaturePreset(
+    InjectPersistedSettings* const settings,
+    const bool enabled) noexcept {
+    if (!settings) {
+        return;
+    }
+    for (auto& hook : settings->hooks) {
+        if (!InjectFeatureFollowsWidescreen(hook.id)) {
+            continue;
+        }
+        if (enabled) {
+            hook.mode = hook.active_mode == HookMode::replace_strict
+                ? HookMode::replace_strict
+                : HookMode::replace_with_fallback;
+            hook.active_mode = hook.mode;
+        } else {
+            if (hook.mode != HookMode::observe_only) {
+                hook.active_mode = hook.mode;
+            }
+            hook.mode = HookMode::observe_only;
+        }
+    }
+}
+
 std::vector<HookMode> BuildInjectFeatureModes() {
     return {
         HookMode::observe_only,

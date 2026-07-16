@@ -191,8 +191,9 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
 ## Launcher 配置
 
 - 详细中文说明见 [docs/launcher_guide.md](I:/PAL4/projects/pal4_inject/docs/launcher_guide.md)。
-- “注入功能”页按渲染、输入、脚本和相机分组显示功能开关。
-- “高级调试”页可逐项设置 `HookMode` 和详细日志。
+- “增强功能”页只保留宽屏总状态、Bink 显示方式、MSAA 和相机保护等面向玩家的选项。
+- 宽屏 UI、字体、小地图、战斗界面和 Bink 修正统一跟随游戏设置中的“启用宽屏”。
+- “高级调试”页仍可逐项设置 `HookMode` 和详细日志。
 - MSAA 和 Hook 选项在游戏启动前写入配置，runtime 在安装 Hook 前读取。
 
 ## 测试
