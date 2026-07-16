@@ -8,6 +8,7 @@
 #endif
 #include <windows.h>
 
+#include "background_window_hooks.h"
 #include "camera_unlock.h"
 #include "crash_handler.h"
 #include "hook_manager.h"
@@ -151,6 +152,14 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
         AppendBootstrapLog("install_crash_capture ok");
     }
 
+    const bool background_window_ok = InstallBackgroundWindowHooks(&error);
+    if (!background_window_ok) {
+        state.SetLastError(error);
+        AppendBootstrapLog(std::string("install_background_window_hooks failed: ") + error);
+    } else if (IsBackgroundWindowModeRequested()) {
+        AppendBootstrapLog("install_background_window_hooks ok");
+    }
+
     const bool init_ok = GetHookManager().Initialize(&error);
     if (!init_ok) {
         state.SetLastError(error);
@@ -207,6 +216,7 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
     state.SetHooksReady(hooks_ok);
     state.SetBootstrapReady(
         crash_capture_ok &&
+        background_window_ok &&
         init_ok &&
         pipe_ok &&
         control_window_ok &&

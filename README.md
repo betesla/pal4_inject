@@ -90,6 +90,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubRelease -SkipGiteeRelease
 ```
 
+自动化验证时使用 `--background`。运行时会拦截 PAL4 主窗口的激活请求，使窗口保持在
+当前工作窗口后方且不抢占焦点；配合 `cli click --direct-seam` 可完整驱动 UI。
+`--minimized` 作为兼容别名保留，因为原版真正最小化时会触发 RenderWare 初始化或主循环异常。
+
 如需显式附带发布说明，可传入：
 
 ```powershell
@@ -113,7 +117,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -ReleaseNotesPath
   - 作为游戏窗口的 owned popup 存在，避免点回游戏时像独立外部工具窗一样被压下去
 - Hook 框架内置 x86 inline detour，不依赖第三方 Hook 库。
 - `cli.exe` 会复用同一条 named pipe，提供：
-  - `snapshot / click / fill / type / press`
+  - `snapshot / click / click-path / fill / type / press / hold`
+  - `state / paliv / event-log`
+  - `wait-path / wait-text / wait-event / wait-state / wait-paliv / wait-hook`
+  - `click-path` 每次操作前重抓 snapshot，可用完整路径或唯一的 `/` 分段后缀；后缀有歧义时拒绝点击。
+  - `paliv` 与 `wait-paliv` 只读取游戏主线程 input hook 已发布的状态，不在 IPC worker 线程直接调用 PAL4 accessor，避免启动早期 UI 尚未创建时的跨线程崩溃。
   - `state / event-log / wait-path / wait-text`
   - `mem-query / mem-read / mem-read-scalar / mem-write-bytes / mem-write-scalar`
 - bootstrap 早期安装 crash capture：
@@ -132,11 +140,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -ReleaseNotesPath
   - `UpdateInputDeviceState`
   - `InitializeDirectInput`
   - `giTalk` 脚本执行入口
+  - `giPlayMovie` 资源请求观测
+  - `AudioSystem_PlayMusic` 对白 MP3 打开结果观测
+  - `BinkOpen` 包装层打开结果观测
   - `CEGUI_Renderer_Constructor_2` widescreen pillarbox patch
   - `SetupMinimapTexture` widescreen layout patch
   - `Camera_UpdateMatrix` second-angle guard
   - `D3D9SetPresentParameters` multisample override seam
 - `PAL4_Main_WndProc` 和 `HandlePlayerInputEvents` 目前只保留 inventory，不默认安装。
+
+媒体观测使用不可关闭的低频关键事件，供后台原版验收读取：`media=voice event=open ... success=1`、`media=bink event=request resource=...`、`media=bink event=open success=1`、`media=bink event=start ...`。普通 hook 调试日志仍由各行 `log_enabled` 控制，避免逐帧日志淹没事件尾。
 
 ## Agent / Debug CLI
 - 连接方式：

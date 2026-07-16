@@ -19,9 +19,16 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
 endif()
 
 set(PAL4_INJECT_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
-set(PAL4_INJECT_PAL4_RE_ROOT ${PAL4_INJECT_REPO_ROOT})
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pal4_re/rebuild/include")
-    set(PAL4_INJECT_PAL4_RE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../pal4_re")
+set(_PAL4_INJECT_DEFAULT_PAL4_RE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/vendor/pal4_re")
+if(NOT EXISTS "${_PAL4_INJECT_DEFAULT_PAL4_RE_ROOT}/rebuild/include" AND
+   EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pal4_re/rebuild/include")
+    set(_PAL4_INJECT_DEFAULT_PAL4_RE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../pal4_re")
+endif()
+set(PAL4_INJECT_PAL4_RE_ROOT "${_PAL4_INJECT_DEFAULT_PAL4_RE_ROOT}" CACHE PATH
+    "PAL4 reverse-engineering source root containing rebuild/include.")
+if(NOT EXISTS "${PAL4_INJECT_PAL4_RE_ROOT}/rebuild/include/pal4/runtime_layouts.h")
+    message(FATAL_ERROR
+        "PAL4_INJECT_PAL4_RE_ROOT does not contain rebuild/include/pal4/runtime_layouts.h")
 endif()
 
 set(PAL4_INJECT_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
@@ -71,6 +78,7 @@ add_library(pal4_inject_common STATIC
     src/common/runtime_paths.cpp
     src/common/script_mode_override.cpp
     src/common/ui_coordinate_space.cpp
+    src/common/ui_input_plan.cpp
     src/common/ui_snapshot.cpp
     src/common/types.cpp
 )
@@ -84,6 +92,7 @@ target_link_libraries(pal4_inject_common PUBLIC advapi32 user32)
 add_dependencies(pal4_inject_common pal4_inject_build_info)
 
 add_library(pal4_inject_runtime_core STATIC
+    src/runtime/background_window_hooks.cpp
     src/runtime/battle_ui_layout_hooks.cpp
     src/runtime/bink_video_hooks.cpp
     src/runtime/bootstrap.cpp
@@ -92,6 +101,7 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/cegui_renderer_hooks.cpp
     src/runtime/camera_hooks.cpp
     src/runtime/camera_unlock.cpp
+    src/runtime/combat_observation_hooks.cpp
     src/runtime/cegui_bindings.cpp
     src/runtime/crash_handler.cpp
     src/runtime/hud_layout_fixups.cpp
@@ -100,10 +110,14 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/inject_control_window.cpp
     src/runtime/input_hooks.cpp
     src/runtime/ipc_server.cpp
+    src/runtime/media_observation_hooks.cpp
     src/runtime/memory_debug_runtime.cpp
     src/runtime/minimap_hooks.cpp
+    src/runtime/mssrsx_abort_hook.cpp
+    src/runtime/process_failure_hooks.cpp
     src/runtime/runtime_preferences.cpp
     src/runtime/runtime_state.cpp
+    src/runtime/system_message_box_hook.cpp
     src/runtime/ui_snapshot_runtime.cpp
     src/runtime/window_focus_hooks.cpp
 )
@@ -131,10 +145,11 @@ pal4_inject_add_dev_publish(
     "runtime.dll"
 )
 
-add_executable(pal4_injector_launcher
-    src/launcher/main.cpp
-    src/launcher/launcher_resources.rc
-)
+set(PAL4_INJECT_LAUNCHER_SOURCES src/launcher/main.cpp)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/xianjian_syringe_energy.ico")
+    list(APPEND PAL4_INJECT_LAUNCHER_SOURCES src/launcher/launcher_resources.rc)
+endif()
+add_executable(pal4_injector_launcher ${PAL4_INJECT_LAUNCHER_SOURCES})
 target_link_libraries(pal4_injector_launcher PRIVATE pal4_inject_common)
 target_link_libraries(pal4_injector_launcher PRIVATE gdi32 comctl32 wininet)
 set_target_properties(pal4_injector_launcher PROPERTIES

@@ -15,6 +15,7 @@ InjectControlPanelPage BuildPage(const HookId id) {
     case HookId::handle_player_input_events:
         return InjectControlPanelPage::input_ui;
     case HookId::gi_talk:
+    case HookId::audio_system_play_music:
     case HookId::load_font_file:
         return InjectControlPanelPage::script_text;
     case HookId::cegui_renderer_constructor_2:
@@ -24,9 +25,13 @@ InjectControlPanelPage BuildPage(const HookId id) {
     case HookId::combat_console_set_image_position_2:
     case HookId::ui_show_combat_result:
     case HookId::render_text_and_image:
+    case HookId::gi_play_movie:
+    case HookId::bink_player_open_video:
     case HookId::bink_player_update_and_render:
     case HookId::d3d9_set_present_parameters:
         return InjectControlPanelPage::render_visual;
+    case HookId::camera_prepare:
+    case HookId::camera_run_single:
     case HookId::camera_update_matrix:
         return InjectControlPanelPage::camera;
     }
@@ -45,6 +50,7 @@ std::wstring_view BuildGroupLabel(const HookId id) {
     case HookId::handle_player_input_events:
         return L"\u754c\u9762\u4e0e\u8f93\u5165";
     case HookId::gi_talk:
+    case HookId::audio_system_play_music:
     case HookId::load_font_file:
         return L"\u811a\u672c\u4e0e\u6587\u672c";
     case HookId::cegui_renderer_constructor_2:
@@ -54,9 +60,13 @@ std::wstring_view BuildGroupLabel(const HookId id) {
     case HookId::combat_console_set_image_position_2:
     case HookId::ui_show_combat_result:
     case HookId::render_text_and_image:
+    case HookId::gi_play_movie:
+    case HookId::bink_player_open_video:
     case HookId::bink_player_update_and_render:
     case HookId::d3d9_set_present_parameters:
         return L"\u6e32\u67d3\u4e0e\u753b\u9762";
+    case HookId::camera_prepare:
+    case HookId::camera_run_single:
     case HookId::camera_update_matrix:
         return L"\u76f8\u673a";
     }
@@ -79,6 +89,8 @@ std::wstring_view BuildDisplayLabel(const HookId id) {
         return L"DirectInput \u89c2\u5bdf";
     case HookId::gi_talk:
         return L"\u5bf9\u767d\u6587\u672c\u6ce8\u5165";
+    case HookId::audio_system_play_music:
+        return L"\u5bf9\u767d\u8bed\u97f3\u6253\u5f00\u89c2\u6d4b";
     case HookId::cegui_renderer_constructor_2:
         return L"\u5bbd\u5c4f\u754c\u9762\u5c45\u4e2d";
     case HookId::cegui_system_initialize:
@@ -97,6 +109,14 @@ std::wstring_view BuildDisplayLabel(const HookId id) {
         return L"\u6218\u6597\u6d6e\u5b57\u5171\u4eab\u6295\u5f71";
     case HookId::bink_player_update_and_render:
         return L"Bink \u89c6\u9891 4:3 \u5c45\u4e2d";
+    case HookId::bink_player_open_video:
+        return L"Bink \u89c6\u9891\u6253\u5f00\u89c2\u6d4b";
+    case HookId::gi_play_movie:
+        return L"giPlayMovie \u8d44\u6e90\u8bf7\u6c42\u89c2\u6d4b";
+    case HookId::camera_prepare:
+        return L"\u76f8\u673a\u8d44\u6e90\u52a0\u8f7d\u5ba1\u8ba1";
+    case HookId::camera_run_single:
+        return L"\u5355\u955c\u5934\u8bb0\u5f55\u547d\u4e2d\u5ba1\u8ba1";
     case HookId::camera_update_matrix:
         return L"\u76f8\u673a\u4fef\u4ef0\u4fdd\u62a4";
     case HookId::d3d9_set_present_parameters:
@@ -122,6 +142,7 @@ std::vector<InjectControlPanelRow> BuildInjectControlPanelRows() {
         {HookId::pal4_main_wndproc, BuildPage(HookId::pal4_main_wndproc), BuildGroupLabel(HookId::pal4_main_wndproc), BuildDisplayLabel(HookId::pal4_main_wndproc), true},
         {HookId::handle_player_input_events, BuildPage(HookId::handle_player_input_events), BuildGroupLabel(HookId::handle_player_input_events), BuildDisplayLabel(HookId::handle_player_input_events), false},
         {HookId::gi_talk, BuildPage(HookId::gi_talk), BuildGroupLabel(HookId::gi_talk), BuildDisplayLabel(HookId::gi_talk), true},
+        {HookId::audio_system_play_music, BuildPage(HookId::audio_system_play_music), BuildGroupLabel(HookId::audio_system_play_music), BuildDisplayLabel(HookId::audio_system_play_music), false},
         {HookId::load_font_file, BuildPage(HookId::load_font_file), BuildGroupLabel(HookId::load_font_file), BuildDisplayLabel(HookId::load_font_file), true},
         {HookId::cegui_renderer_constructor_2, BuildPage(HookId::cegui_renderer_constructor_2), BuildGroupLabel(HookId::cegui_renderer_constructor_2), BuildDisplayLabel(HookId::cegui_renderer_constructor_2), true},
         {HookId::cegui_system_initialize, BuildPage(HookId::cegui_system_initialize), BuildGroupLabel(HookId::cegui_system_initialize), BuildDisplayLabel(HookId::cegui_system_initialize), true},
@@ -130,8 +151,12 @@ std::vector<InjectControlPanelRow> BuildInjectControlPanelRows() {
         {HookId::combat_console_set_image_position_2, BuildPage(HookId::combat_console_set_image_position_2), BuildGroupLabel(HookId::combat_console_set_image_position_2), BuildDisplayLabel(HookId::combat_console_set_image_position_2), true},
         {HookId::ui_show_combat_result, BuildPage(HookId::ui_show_combat_result), BuildGroupLabel(HookId::ui_show_combat_result), BuildDisplayLabel(HookId::ui_show_combat_result), true},
         {HookId::render_text_and_image, BuildPage(HookId::render_text_and_image), BuildGroupLabel(HookId::render_text_and_image), BuildDisplayLabel(HookId::render_text_and_image), true},
+        {HookId::gi_play_movie, BuildPage(HookId::gi_play_movie), BuildGroupLabel(HookId::gi_play_movie), BuildDisplayLabel(HookId::gi_play_movie), false},
+        {HookId::bink_player_open_video, BuildPage(HookId::bink_player_open_video), BuildGroupLabel(HookId::bink_player_open_video), BuildDisplayLabel(HookId::bink_player_open_video), false},
         {HookId::bink_player_update_and_render, BuildPage(HookId::bink_player_update_and_render), BuildGroupLabel(HookId::bink_player_update_and_render), BuildDisplayLabel(HookId::bink_player_update_and_render), true},
         {HookId::d3d9_set_present_parameters, BuildPage(HookId::d3d9_set_present_parameters), BuildGroupLabel(HookId::d3d9_set_present_parameters), BuildDisplayLabel(HookId::d3d9_set_present_parameters), true},
+        {HookId::camera_prepare, BuildPage(HookId::camera_prepare), BuildGroupLabel(HookId::camera_prepare), BuildDisplayLabel(HookId::camera_prepare), false},
+        {HookId::camera_run_single, BuildPage(HookId::camera_run_single), BuildGroupLabel(HookId::camera_run_single), BuildDisplayLabel(HookId::camera_run_single), false},
         {HookId::camera_update_matrix, BuildPage(HookId::camera_update_matrix), BuildGroupLabel(HookId::camera_update_matrix), BuildDisplayLabel(HookId::camera_update_matrix), true},
     };
 }

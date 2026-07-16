@@ -13,6 +13,23 @@
 #include "runtime_state.h"
 
 namespace pal4::inject {
+namespace {
+
+void AppendRuntimeLogFile(const std::string_view text) {
+    const auto log_path = RuntimeLogPath();
+    std::error_code ec;
+    std::filesystem::create_directories(log_path.parent_path(), ec);
+    if (ec) {
+        return;
+    }
+
+    std::ofstream output(log_path, std::ios::app | std::ios::binary);
+    if (output) {
+        output << text << "\r\n";
+    }
+}
+
+}  // namespace
 
 bool ShouldEmitHookLog(const HookId id) {
     return GetRuntimeState().GetHookLogEnabled(id);
@@ -24,19 +41,12 @@ void AppendHookEventLog(const HookId id, const std::string_view text) {
     }
 
     GetRuntimeState().AppendEventLog(text);
+    AppendRuntimeLogFile(text);
+}
 
-    const auto log_path = RuntimeLogPath();
-    std::error_code ec;
-    std::filesystem::create_directories(log_path.parent_path(), ec);
-    if (ec) {
-        return;
-    }
-
-    std::ofstream output(log_path, std::ios::app | std::ios::binary);
-    if (!output) {
-        return;
-    }
-    output << text << "\r\n";
+void AppendCriticalHookEventLog(const std::string_view text) {
+    GetRuntimeState().AppendEventLog(text);
+    AppendRuntimeLogFile(text);
 }
 
 }  // namespace pal4::inject

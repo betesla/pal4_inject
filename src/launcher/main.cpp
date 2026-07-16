@@ -34,7 +34,8 @@ std::filesystem::path DefaultRuntimeDllPath() {
 void PrintUsage() {
     std::cout
         << "Usage: PAL4_inject (--game-root <path> | --exe <path>) "
-        << "[--dll <path>] [--script-mode cs|csb] [--ready-timeout-ms <ms>] [--no-resume]\n";
+        << "[--dll <path>] [--script-mode cs|csb] [--ready-timeout-ms <ms>] "
+        << "[--background] [--no-resume]\n";
 }
 
 constexpr int kRadioCsId = 1001;
@@ -1352,6 +1353,8 @@ int main(int argc, char** argv) {
                 options.ready_timeout_ms = static_cast<DWORD>(std::stoul(argv[++i]));
             } else if (arg == "--no-resume") {
                 options.resume_after_ready = false;
+            } else if (arg == "--background" || arg == "--minimized") {
+                options.background_window = true;
             } else if (arg == "--arg" && i + 1 < argc) {
                 options.child_args.push_back(argv[++i]);
             } else {
@@ -1381,6 +1384,7 @@ int main(int argc, char** argv) {
         << " pipe=" << result.pipe_name
         << " ready_event=" << result.ready_event_name
         << " script_mode=" << pal4::inject::ToString(result.script_mode)
+        << " background=" << (options.background_window ? 1 : 0)
         << " resumed=" << (options.resume_after_ready ? 1 : 0)
         << "\n";
 

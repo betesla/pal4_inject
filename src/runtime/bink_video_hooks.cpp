@@ -29,6 +29,7 @@ using DrawTexturedRectangleFn = void (__cdecl*)(
     std::uint32_t);
 
 BinkPlayerUpdateAndRenderFn g_original_bink_player_update_and_render = nullptr;
+std::uint32_t g_active_bink_handle = 0;
 
 template <typename Fn>
 Fn ResolveRuntimeFunction(const std::uint32_t ida_ea) {
@@ -54,7 +55,6 @@ int* ReadGameConfigPointer() {
 }
 
 void LogVideoRect(
-    const HookId hook_id,
     const int screen_width,
     const int screen_height,
     const int video_width,
@@ -62,12 +62,13 @@ void LogVideoRect(
     const AspectRatioRect& rect) {
     std::ostringstream out;
     out
-        << "hook=" << ToString(hook_id)
+        << "hook=" << ToString(HookId::bink_player_update_and_render)
+        << " media=bink event=start"
         << " screen=" << screen_width << "x" << screen_height
         << " video=" << video_width << "x" << video_height
         << " rect=" << rect.x << "," << rect.y
         << "," << rect.width << "x" << rect.height;
-    AppendHookEventLog(hook_id, out.str());
+    AppendCriticalHookEventLog(out.str());
 }
 
 bool TryBuildVideoRect(
@@ -200,11 +201,17 @@ void __fastcall Hook_BinkPlayer_UpdateAndRender(
 
     auto* const player_bytes = static_cast<unsigned char*>(self);
     if (player_bytes[0] == 0) {
+        if (g_active_bink_handle != 0) {
+            AppendCriticalHookEventLog(
+                "media=bink event=finished reason=player_inactive");
+            g_active_bink_handle = 0;
+        }
         state.ClearHookError(HookId::bink_player_update_and_render);
         return;
     }
 
     if (bink_update_video(reinterpret_cast<float*>(player_bytes + 4))) {
+        const auto handle = *reinterpret_cast<const std::uint32_t*>(player_bytes + 4);
         void* const texture = *reinterpret_cast<void**>(player_bytes + 24);
         draw_textured_rectangle(
             render_context,
@@ -217,14 +224,21 @@ void __fastcall Hook_BinkPlayer_UpdateAndRender(
             255,
             255,
             255);
-        LogVideoRect(
-            HookId::bink_player_update_and_render,
-            screen_width,
-            screen_height,
-            video_width,
-            video_height,
-            rect);
+        if (handle != g_active_bink_handle) {
+            g_active_bink_handle = handle;
+            LogVideoRect(
+                screen_width,
+                screen_height,
+                video_width,
+                video_height,
+                rect);
+        }
     } else {
+        if (g_active_bink_handle != 0) {
+            AppendCriticalHookEventLog(
+                "media=bink event=finished reason=end_of_stream");
+            g_active_bink_handle = 0;
+        }
         void* const texture = *reinterpret_cast<void**>(player_bytes + 24);
         if (texture) {
             bink_player_close_video(reinterpret_cast<int>(self));

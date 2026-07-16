@@ -28,6 +28,7 @@ namespace {
 
 HANDLE g_ipc_thread = nullptr;
 constexpr DWORD kPipeBufferSize = 65536;
+constexpr DWORD kPipeWriteChunkSize = 32768;
 
 void AppendRuntimeDebugLog(const std::string_view line) {
     const auto log_path = RuntimeLogPath();
@@ -127,6 +128,9 @@ bool TryReadCurrentScriptModeFlag(std::uint32_t* out_flag) {
 
 ProtocolResponse BuildSnapshotResponse() {
     std::string dispatch_reason;
+    // Never call a game accessor from the IPC worker thread. PAL4's accessor
+    // is only safe on the game thread and can touch not-yet-created UI state.
+    // Main-thread input hooks continuously publish the last observed entry.
     const auto snapshot = GetRuntimeState().BuildSnapshot(0);
     ProtocolResponse response{};
     response.ok = true;
@@ -140,7 +144,8 @@ ProtocolResponse BuildSnapshotResponse() {
         HexValue(static_cast<std::uint32_t>(snapshot.main_module_base));
     response.fields["msaa_level"] = ToString(snapshot.msaa_level);
     response.fields["active_ui_profile"] = ToString(snapshot.active_ui_profile);
-    response.fields["current_paliv_entry"] = HexValue(snapshot.current_paliv_entry);
+    response.fields["current_paliv_entry"] =
+        HexValue(snapshot.last_paliv_entry_observed);
     response.fields["last_paliv_entry_observed"] = HexValue(snapshot.last_paliv_entry_observed);
     response.fields["last_ui_event"] = snapshot.last_ui_event;
     response.fields["last_error"] = snapshot.last_error;
@@ -191,11 +196,18 @@ ProtocolResponse DispatchCommand(const ProtocolCommand& command) {
     }
     case ProtocolCommandKind::enqueue_ui_message: {
         std::string error;
-        const bool handled = DispatchUiMessageCommand(command.ui_message, &error);
-        response.ok = handled;
-        response.status = handled ? "enqueue_ui_message" : "error";
-        response.fields["handled"] = handled ? "1" : "0";
-        if (!handled) {
+        bool message_handled = false;
+        const bool delivered = DispatchUiMessageCommand(
+            command.ui_message,
+            &error,
+            &message_handled);
+        response.ok = delivered;
+        response.status = delivered ? "enqueue_ui_message" : "error";
+        response.fields["delivered"] = delivered ? "1" : "0";
+        response.fields["handled"] = command.ui_message.bypass_os_queue
+            ? (message_handled ? "1" : "0")
+            : "unknown";
+        if (!delivered) {
             response.message = error;
         }
         response.fields["last_ui_event"] = GetRuntimeState().BuildSnapshot(0).last_ui_event;
@@ -203,15 +215,20 @@ ProtocolResponse DispatchCommand(const ProtocolCommand& command) {
     }
     case ProtocolCommandKind::simulate_key: {
         std::string error;
-        const bool handled = DispatchSimulatedKey(
+        bool message_handled = false;
+        const bool delivered = DispatchSimulatedKey(
             command.virtual_key,
             command.key_up,
             command.ui_message.bypass_os_queue,
-            &error);
-        response.ok = handled;
-        response.status = handled ? "simulate_key" : "error";
-        response.fields["handled"] = handled ? "1" : "0";
-        if (!handled) {
+            &error,
+            &message_handled);
+        response.ok = delivered;
+        response.status = delivered ? "simulate_key" : "error";
+        response.fields["delivered"] = delivered ? "1" : "0";
+        response.fields["handled"] = command.ui_message.bypass_os_queue
+            ? (message_handled ? "1" : "0")
+            : "unknown";
+        if (!delivered) {
             response.message = error;
         }
         return response;
@@ -220,7 +237,8 @@ ProtocolResponse DispatchCommand(const ProtocolCommand& command) {
         return BuildSnapshotResponse();
     case ProtocolCommandKind::read_paliv_state:
         response.status = "read_paliv_state";
-        response.fields["current_paliv_entry"] = HexValue(ReadCurrentPalivEntry());
+        response.fields["current_paliv_entry"] = HexValue(
+            GetRuntimeState().BuildSnapshot(0).last_paliv_entry_observed);
         return response;
     case ProtocolCommandKind::wait_for_hook_calls: {
         const bool ok = GetRuntimeState().WaitForHookCalls(
@@ -234,17 +252,12 @@ ProtocolResponse DispatchCommand(const ProtocolCommand& command) {
         return response;
     }
     case ProtocolCommandKind::wait_for_paliv_state: {
-        const ULONGLONG deadline = GetTickCount64() + command.timeout_ms;
-        bool ok = false;
-        std::uint32_t observed = 0;
-        do {
-            observed = ReadCurrentPalivEntry();
-            if (observed == command.expected_paliv_entry) {
-                ok = true;
-                break;
-            }
-            Sleep(25);
-        } while (GetTickCount64() < deadline);
+        const bool ok = GetRuntimeState().WaitForPalivEntry(
+            command.expected_paliv_entry,
+            command.timeout_ms);
+        const auto observed = GetRuntimeState()
+            .BuildSnapshot(0)
+            .last_paliv_entry_observed;
         response.ok = ok;
         response.status = ok ? "wait_for_paliv_state" : "timeout";
         response.fields["entry"] = HexValue(command.expected_paliv_entry);
@@ -455,8 +468,26 @@ DWORD WINAPI IpcServerThreadProc(LPVOID) {
         }
 
         const std::string wire = FormatProtocolResponse(response);
-        DWORD written = 0;
-        WriteFile(pipe, wire.data(), static_cast<DWORD>(wire.size()), &written, nullptr);
+        std::size_t write_offset = 0;
+        while (write_offset < wire.size()) {
+            const std::size_t remaining = wire.size() - write_offset;
+            const DWORD requested = static_cast<DWORD>(
+                remaining < kPipeWriteChunkSize ? remaining : kPipeWriteChunkSize);
+            DWORD written = 0;
+            if (!WriteFile(pipe, wire.data() + write_offset, requested, &written, nullptr) ||
+                written == 0) {
+                AppendRuntimeDebugLog(
+                    "ipc_write_failed offset=" + std::to_string(write_offset) +
+                    " requested=" + std::to_string(requested) +
+                    " error=" + FormatWindowsError(GetLastError()));
+                break;
+            }
+            write_offset += written;
+        }
+        if (write_offset == wire.size()) {
+            AppendRuntimeDebugLog(
+                "ipc_write_complete bytes=" + std::to_string(write_offset));
+        }
         DisconnectNamedPipe(pipe);
         CloseHandle(pipe);
         AppendRuntimeDebugLog("ipc_client_disconnected");

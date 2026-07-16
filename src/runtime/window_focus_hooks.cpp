@@ -8,6 +8,7 @@
 #endif
 #include <windows.h>
 
+#include "background_window_hooks.h"
 #include "hook_logging.h"
 #include "inject_control_window.h"
 #include "runtime_state.h"
@@ -74,6 +75,24 @@ LRESULT __stdcall Hook_Pal4_Main_WndProc(
     const HookMode mode = state.GetHookMode(HookId::pal4_main_wndproc);
     if (mode == HookMode::observe_only || mode == HookMode::mirror_compare) {
         return g_original_pal4_main_wndproc(hwnd, msg, wparam, lparam);
+    }
+
+    if (IsBackgroundWindowModeRequested()) {
+        if (msg == WM_ACTIVATE && LOWORD(wparam) == WA_INACTIVE) {
+            state.AppendEventLog("background_window suppress=WM_ACTIVATE_INACTIVE");
+            state.SetLastUiEvent("PAL4_Main_WndProc:WM_ACTIVATE:background");
+            return 0;
+        }
+        if (msg == WM_SYSCOMMAND && (wparam & 0xFFF0u) == SC_MINIMIZE) {
+            state.AppendEventLog("background_window suppress=SC_MINIMIZE");
+            state.SetLastUiEvent("PAL4_Main_WndProc:SC_MINIMIZE:background");
+            return 0;
+        }
+        if (msg == WM_SIZE && wparam == SIZE_MINIMIZED) {
+            state.AppendEventLog("background_window suppress=SIZE_MINIMIZED");
+            state.SetLastUiEvent("PAL4_Main_WndProc:WM_SIZE:background");
+            return 0;
+        }
     }
 
     if (msg == WM_ACTIVATE && LOWORD(wparam) != WA_INACTIVE) {

@@ -95,6 +95,53 @@ private:
 bool ok_ = false;
 };
 
+class ScopedChildBackgroundWindowEnvironment {
+public:
+    ScopedChildBackgroundWindowEnvironment(const bool requested, std::string* error)
+        : previous_value_(ReadEnvironmentVariable(kInjectedBackgroundWindowEnvVar)),
+          restore_required_(true) {
+        if (!SetEnvironmentVariableA(
+                kInjectedBackgroundWindowEnvVar,
+                requested ? "1" : nullptr)) {
+            restore_required_ = false;
+            ok_ = false;
+            if (error) {
+                *error = std::string("SetEnvironmentVariableA(") +
+                    kInjectedBackgroundWindowEnvVar + ") failed: " +
+                    FormatWindowsError(GetLastError());
+            }
+            return;
+        }
+        ok_ = true;
+        if (error) {
+            error->clear();
+        }
+    }
+
+    ScopedChildBackgroundWindowEnvironment(
+        const ScopedChildBackgroundWindowEnvironment&) = delete;
+    ScopedChildBackgroundWindowEnvironment& operator=(
+        const ScopedChildBackgroundWindowEnvironment&) = delete;
+
+    ~ScopedChildBackgroundWindowEnvironment() {
+        if (!restore_required_) {
+            return;
+        }
+        SetEnvironmentVariableA(
+            kInjectedBackgroundWindowEnvVar,
+            previous_value_.has_value() ? previous_value_->c_str() : nullptr);
+    }
+
+    bool ok() const noexcept {
+        return ok_;
+    }
+
+private:
+    std::optional<std::string> previous_value_;
+    bool restore_required_ = false;
+    bool ok_ = false;
+};
+
 std::string FormatWindowsError(const DWORD code) {
     char* buffer = nullptr;
     const DWORD size = FormatMessageA(
@@ -479,6 +526,23 @@ bool ResolveLaunchPaths(
     return true;
 }
 
+void ConfigureProcessStartupInfo(
+    const LaunchOptions& options,
+    STARTUPINFOA* startup) noexcept {
+    if (!startup) {
+        return;
+    }
+    *startup = {};
+    startup->cb = sizeof(*startup);
+    if (options.background_window) {
+        startup->dwFlags |= STARTF_USESHOWWINDOW;
+        // The runtime controller moves the real window off-screen before it
+        // reveals it without activation. Starting hidden prevents a one-frame
+        // flash while PAL4 creates the top-level Direct3D window at (0, 0).
+        startup->wShowWindow = SW_HIDE;
+    }
+}
+
 LaunchResult LaunchInjectedProcess(const LaunchOptions& options, InjectedProcess* out_process) {
     LaunchResult result{};
     if (!out_process) {
@@ -506,15 +570,21 @@ LaunchResult LaunchInjectedProcess(const LaunchOptions& options, InjectedProcess
     std::string cmdline = cmdline_stream.str();
 
     STARTUPINFOA startup{};
-    startup.cb = sizeof(startup);
+    ConfigureProcessStartupInfo(options, &startup);
     PROCESS_INFORMATION process_info{};
     std::string workdir_text = workdir.string();
     ScopedChildScriptModeEnvironment script_mode_env(options.script_mode, &result.error);
     if (!script_mode_env.ok()) {
         return result;
     }
+    ScopedChildBackgroundWindowEnvironment background_window_env(
+        options.background_window,
+        &result.error);
+    if (!background_window_env.ok()) {
+        return result;
+    }
 
-    if (!CreateProcessA(
+    const BOOL process_created = CreateProcessA(
             exe_path.string().c_str(),
             cmdline.data(),
             nullptr,
@@ -524,8 +594,10 @@ LaunchResult LaunchInjectedProcess(const LaunchOptions& options, InjectedProcess
             nullptr,
             workdir_text.empty() ? nullptr : workdir_text.c_str(),
             &startup,
-            &process_info)) {
-        result.error = "CreateProcessA failed: " + FormatWindowsError(GetLastError());
+            &process_info);
+    const DWORD process_create_error = process_created ? ERROR_SUCCESS : GetLastError();
+    if (!process_created) {
+        result.error = "CreateProcessA failed: " + FormatWindowsError(process_create_error);
         return result;
     }
 

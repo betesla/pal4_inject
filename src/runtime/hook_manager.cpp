@@ -177,12 +177,18 @@ bool CopyRelocatingX86Bytes(
             return remaining >= prefix_len + 5 ? prefix_len + 5 : 0;
         case 0x8A:
         case 0x8B:
-        case 0x8D: {
+        case 0x8D:
+        case 0x33:
+        case 0x39: {
             const std::size_t len = modrm_length(code + prefix_len, remaining - prefix_len, 1, 0);
             return len == 0 ? 0 : len + prefix_len;
         }
         case 0x83: {
             const std::size_t len = modrm_length(code + prefix_len, remaining - prefix_len, 1, 1);
+            return len == 0 ? 0 : len + prefix_len;
+        }
+        case 0x81: {
+            const std::size_t len = modrm_length(code + prefix_len, remaining - prefix_len, 1, 4);
             return len == 0 ? 0 : len + prefix_len;
         }
         case 0x80: {
@@ -273,9 +279,21 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::combat_console_set_image_position_2:
         case HookId::ui_show_combat_result:
         case HookId::render_text_and_image:
+        case HookId::camera_prepare:
+        case HookId::camera_run_single:
         case HookId::camera_update_matrix:
         case HookId::d3d9_set_present_parameters:
+        case HookId::audio_system_play_music:
+        case HookId::gi_play_movie:
+        case HookId::bink_player_open_video:
         case HookId::bink_player_update_and_render:
+        case HookId::combat_handle_action:
+        case HookId::combat_create_stunt_action:
+        case HookId::combat_execute_stunt:
+        case HookId::combat_skill_damage:
+        case HookId::combat_system_end:
+        case HookId::crt_runtime_message:
+        case HookId::crt_message_box:
         case HookId::pal4_main_wndproc:
             registration.install_on_bootstrap = true;
             registration.descriptor.replacement = GetReplacementForHook(descriptor.id);

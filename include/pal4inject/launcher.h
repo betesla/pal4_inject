@@ -14,6 +14,9 @@
 
 namespace pal4::inject {
 
+inline constexpr const char* kInjectedBackgroundWindowEnvVar =
+    "PAL4_INJECT_BACKGROUND_WINDOW";
+
 struct LaunchOptions {
     std::filesystem::path game_root;
     std::filesystem::path executable_path;
@@ -23,6 +26,9 @@ struct LaunchOptions {
     DWORD creation_flags = CREATE_SUSPENDED;
     DWORD ready_timeout_ms = 15000;
     bool resume_after_ready = true;
+    // Keep PAL4 rendered off-screen and prevent it from activating the user's
+    // foreground app while background validation drives it through IPC.
+    bool background_window = false;
 };
 
 struct InjectedProcess {
@@ -51,6 +57,9 @@ bool ResolveLaunchPaths(
     std::filesystem::path* exe_path,
     std::filesystem::path* workdir,
     std::string* error);
+void ConfigureProcessStartupInfo(
+    const LaunchOptions& options,
+    STARTUPINFOA* startup) noexcept;
 bool WaitForRuntimeReady(
     std::string_view ready_event_name,
     DWORD timeout_ms,

@@ -33,6 +33,7 @@
 #include "pal4inject/cegui_font_resync.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ui_coordinate_space.h"
+#include "pal4inject/ui_input_plan.h"
 #include "pal4inject/camera_unlock_patch.h"
 #include "pal4inject/crash_capture.h"
 #include "pal4inject/memory_debug.h"
@@ -83,7 +84,7 @@ void TestPackagedRuntimeLayoutPaths() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 20);
+    assert(inventory.size() == 32);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -95,9 +96,21 @@ void TestHookInventory() {
     bool found_combat_console_set_image_position_2 = false;
     bool found_ui_show_combat_result = false;
     bool found_render_text_and_image = false;
+    bool found_camera_prepare = false;
+    bool found_camera_run_single = false;
     bool found_camera_update_matrix = false;
     bool found_d3d9_present = false;
     bool found_bink_player_update_and_render = false;
+    bool found_audio_system_play_music = false;
+    bool found_bink_player_open_video = false;
+    bool found_gi_play_movie = false;
+    bool found_combat_handle_action = false;
+    bool found_combat_create_stunt_action = false;
+    bool found_combat_execute_stunt = false;
+    bool found_combat_skill_damage = false;
+    bool found_combat_system_end = false;
+    bool found_crt_runtime_message = false;
+    bool found_crt_message_box = false;
     bool found_reserved_wndproc = false;
     for (const auto& hook : inventory) {
         assert(!hook.expected_prologue.empty());
@@ -172,6 +185,20 @@ void TestHookInventory() {
             assert(hook.ida_ea == pal4::inject::ida::kRenderTextAndImage);
             assert(!hook.bootstrap_required);
         }
+        if (hook.id == HookId::camera_prepare) {
+            found_camera_prepare = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kCameraPrepare);
+            assert(hook.bootstrap_required);
+        }
+        if (hook.id == HookId::camera_run_single) {
+            found_camera_run_single = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 8);
+            assert(hook.ida_ea == pal4::inject::ida::kCameraRunSingle);
+            assert(hook.bootstrap_required);
+        }
         if (hook.id == HookId::camera_update_matrix) {
             found_camera_update_matrix = true;
             assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
@@ -191,6 +218,75 @@ void TestHookInventory() {
             assert(hook.ida_ea == pal4::inject::ida::kBinkPlayerUpdateAndRender);
             assert(hook.bootstrap_required);
         }
+        if (hook.id == HookId::audio_system_play_music) {
+            found_audio_system_play_music = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kAudioSystemPlayMusic);
+        }
+        if (hook.id == HookId::bink_player_open_video) {
+            found_bink_player_open_video = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 8);
+            assert(hook.ida_ea == pal4::inject::ida::kBinkPlayerOpenVideo);
+        }
+        if (hook.id == HookId::gi_play_movie) {
+            found_gi_play_movie = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 8);
+            assert(hook.ida_ea == pal4::inject::ida::kGiPlayMovieScriptCallback);
+        }
+        if (hook.id == HookId::combat_handle_action) {
+            found_combat_handle_action = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 5);
+            assert(hook.ida_ea == pal4::inject::ida::kCombatHandleAction);
+            assert(!hook.bootstrap_required);
+        }
+        if (hook.id == HookId::combat_create_stunt_action) {
+            found_combat_create_stunt_action = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 8);
+            assert(hook.ida_ea == pal4::inject::ida::kCombatCreateStuntAction);
+            assert(!hook.bootstrap_required);
+        }
+        if (hook.id == HookId::combat_execute_stunt) {
+            found_combat_execute_stunt = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kCombatExecuteStunt);
+            assert(!hook.bootstrap_required);
+        }
+        if (hook.id == HookId::combat_skill_damage) {
+            found_combat_skill_damage = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 5);
+            assert(hook.ida_ea == pal4::inject::ida::kCombatSkillDamage);
+            assert(!hook.bootstrap_required);
+        }
+        if (hook.id == HookId::combat_system_end) {
+            found_combat_system_end = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 5);
+            assert(hook.ida_ea == pal4::inject::ida::kCombatSystemEnd);
+            assert(!hook.bootstrap_required);
+        }
+        if (hook.id == HookId::crt_runtime_message) {
+            found_crt_runtime_message = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 9);
+            assert(hook.ida_ea == pal4::inject::ida::kCrtRuntimeMessage);
+            assert(hook.bootstrap_order == 131);
+            assert(!hook.bootstrap_required);
+        }
+        if (hook.id == HookId::crt_message_box) {
+            found_crt_message_box = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 9);
+            assert(hook.ida_ea == pal4::inject::ida::kCrtMessageBox);
+            assert(hook.bootstrap_order == 131);
+            assert(!hook.bootstrap_required);
+        }
         if (hook.id == HookId::pal4_main_wndproc) {
             found_reserved_wndproc = true;
             assert(hook.patch_span == 8);
@@ -208,9 +304,21 @@ void TestHookInventory() {
     assert(found_combat_console_set_image_position_2);
     assert(found_ui_show_combat_result);
     assert(found_render_text_and_image);
+    assert(found_camera_prepare);
+    assert(found_camera_run_single);
     assert(found_camera_update_matrix);
     assert(found_d3d9_present);
     assert(found_bink_player_update_and_render);
+    assert(found_audio_system_play_music);
+    assert(found_bink_player_open_video);
+    assert(found_gi_play_movie);
+    assert(found_combat_handle_action);
+    assert(found_combat_create_stunt_action);
+    assert(found_combat_execute_stunt);
+    assert(found_combat_skill_damage);
+    assert(found_combat_system_end);
+    assert(found_crt_runtime_message);
+    assert(found_crt_message_box);
     assert(found_reserved_wndproc);
 }
 
@@ -435,10 +543,100 @@ void TestUiSnapshotSerialization() {
     const auto* by_path = pal4::inject::FindUiSnapshotNodeByPath(parsed, "Desktop/BtnNewGame");
     assert(by_path);
     assert(by_path->clickable);
+    assert(pal4::inject::FindUniqueUiSnapshotNodeByPathSuffix(
+               parsed, "BtnNewGame") == by_path);
+    assert(pal4::inject::FindUniqueUiSnapshotNodeByPathSuffix(
+               parsed, "Desktop/BtnNewGame") == by_path);
     assert(pal4::inject::UiSnapshotTreeContainsText(parsed, "Game"));
     const auto display = pal4::inject::FormatUiSnapshotTreeForDisplay(parsed);
     assert(display.find("[ref=e2]") != std::string::npos);
     assert(display.find("BtnNewGame") != std::string::npos);
+
+    pal4::inject::UiSnapshotTree large_tree{};
+    large_tree.root.ref = "e1";
+    large_tree.root.type = "gui_sheet";
+    large_tree.root.name = "Desktop";
+    large_tree.root.path = "Desktop";
+    large_tree.root.visible = true;
+    large_tree.root.enabled = true;
+    for (int index = 0; index < 600; ++index) {
+        pal4::inject::UiSnapshotNode large_child{};
+        large_child.ref = "e" + std::to_string(index + 2);
+        large_child.type = "button";
+        large_child.name = "CombatRoleState/VeryLongControlName" + std::to_string(index);
+        large_child.path = "Desktop/CombatMainWindow/CombatRoleState/" + large_child.name;
+        large_child.text = "snapshot transport payload " + std::to_string(index);
+        large_child.rect = {10, 20, 110, 60};
+        large_child.visible = true;
+        large_child.enabled = true;
+        large_child.clickable = true;
+        large_tree.root.children.push_back(std::move(large_child));
+    }
+    const std::string large_payload = pal4::inject::SerializeUiSnapshotTree(large_tree);
+    assert(large_payload.size() > 65536);
+    pal4::inject::ProtocolResponse large_response{};
+    large_response.ok = true;
+    large_response.status = "snapshot_ui";
+    large_response.fields["tree"] = large_payload;
+    const std::string large_wire = pal4::inject::FormatProtocolResponse(large_response);
+    pal4::inject::ProtocolResponse parsed_large_response{};
+    assert(pal4::inject::ParseProtocolResponse(
+        large_wire, &parsed_large_response, &error));
+    pal4::inject::UiSnapshotTree parsed_large_tree{};
+    assert(pal4::inject::ParseUiSnapshotTree(
+        parsed_large_response.fields["tree"], &parsed_large_tree, &error));
+    assert(pal4::inject::CountUiSnapshotNodes(parsed_large_tree) == 601);
+}
+
+void TestUiInputPlan() {
+    pal4::inject::UiInputDispatchMode mode{};
+    assert(pal4::inject::TryParseUiInputDispatchOption("--os-queue", &mode));
+    assert(mode == pal4::inject::UiInputDispatchMode::os_queue);
+    assert(pal4::inject::TryParseUiInputDispatchOption("--direct-seam", &mode));
+    assert(mode == pal4::inject::UiInputDispatchMode::direct_seam);
+    assert(!pal4::inject::TryParseUiInputDispatchOption("--unsafe-default", &mode));
+
+    pal4::inject::UiSnapshotTree tree{};
+    tree.root.ref = "e1";
+    tree.root.rect = {0, 0, 800, 600};
+    tree.root.visible = true;
+    tree.root.enabled = true;
+
+    pal4::inject::UiSnapshotNode container{};
+    container.ref = "e2";
+    container.rect = {100, 50, 700, 550};
+    container.visible = true;
+    container.enabled = true;
+
+    pal4::inject::UiSnapshotNode child{};
+    child.ref = "e3";
+    child.rect = {10, 20, 110, 60};
+    child.visible = true;
+    child.enabled = true;
+    child.clickable = true;
+    container.children.push_back(child);
+    tree.root.children.push_back(container);
+
+    const auto viewport = pal4::inject::BuildUiViewportPlan(
+        1600,
+        900,
+        pal4::inject::UiProfile::centered_800x600);
+    pal4::inject::UiRefClickPlan click{};
+    std::string error;
+    assert(pal4::inject::BuildUiRefClickPlan(tree, "e3", viewport, &click, &error));
+    assert(click.logical_x == 160);
+    assert(click.logical_y == 90);
+    assert(click.client_x == 440);
+    assert(click.client_y == 135);
+
+    error.clear();
+    assert(!pal4::inject::BuildUiRefClickPlan(tree, "stale", viewport, &click, &error));
+    assert(error.find("fresh snapshot") != std::string::npos);
+
+    tree.root.children.front().children.front().enabled = false;
+    error.clear();
+    assert(!pal4::inject::BuildUiRefClickPlan(tree, "e3", viewport, &click, &error));
+    assert(error.find("clickable") != std::string::npos);
 }
 
 void TestMemoryDebugHelpers() {
@@ -564,7 +762,7 @@ void TestMemoryRuntimeHelpers() {
 
 void TestInjectControlPanelModel() {
     const auto rows = pal4::inject::BuildInjectControlPanelRows();
-    assert(rows.size() == 20);
+    assert(rows.size() == 25);
 
     const auto find_row =
         [&rows](const HookId id) -> const pal4::inject::InjectControlPanelRow* {
@@ -589,6 +787,16 @@ void TestInjectControlPanelModel() {
     assert(bink_row->group_label == std::wstring_view(L"\u6e32\u67d3\u4e0e\u753b\u9762"));
     assert(bink_row->allow_mode_change);
 
+    const auto* bink_open_row = find_row(HookId::bink_player_open_video);
+    assert(bink_open_row);
+    assert(bink_open_row->page == pal4::inject::InjectControlPanelPage::render_visual);
+    assert(!bink_open_row->allow_mode_change);
+
+    const auto* movie_request_row = find_row(HookId::gi_play_movie);
+    assert(movie_request_row);
+    assert(movie_request_row->page == pal4::inject::InjectControlPanelPage::render_visual);
+    assert(!movie_request_row->allow_mode_change);
+
     const auto* wndproc_row = find_row(HookId::pal4_main_wndproc);
     assert(wndproc_row);
     assert(wndproc_row->allow_mode_change);
@@ -601,6 +809,11 @@ void TestInjectControlPanelModel() {
     assert(gi_talk_row);
     assert(gi_talk_row->page == pal4::inject::InjectControlPanelPage::script_text);
     assert(gi_talk_row->group_label == std::wstring_view(L"\u811a\u672c\u4e0e\u6587\u672c"));
+
+    const auto* voice_open_row = find_row(HookId::audio_system_play_music);
+    assert(voice_open_row);
+    assert(voice_open_row->page == pal4::inject::InjectControlPanelPage::script_text);
+    assert(!voice_open_row->allow_mode_change);
 
     const auto* renderer_row = find_row(HookId::cegui_renderer_constructor_2);
     assert(renderer_row);
@@ -619,6 +832,18 @@ void TestInjectControlPanelModel() {
     const auto* combat_result_row = find_row(HookId::ui_show_combat_result);
     assert(combat_result_row);
     assert(combat_result_row->group_label == std::wstring_view(L"\u6e32\u67d3\u4e0e\u753b\u9762"));
+
+    const auto* camera_prepare_row = find_row(HookId::camera_prepare);
+    assert(camera_prepare_row);
+    assert(camera_prepare_row->page == pal4::inject::InjectControlPanelPage::camera);
+    assert(camera_prepare_row->group_label == std::wstring_view(L"\u76f8\u673a"));
+    assert(!camera_prepare_row->allow_mode_change);
+
+    const auto* camera_run_single_row = find_row(HookId::camera_run_single);
+    assert(camera_run_single_row);
+    assert(camera_run_single_row->page == pal4::inject::InjectControlPanelPage::camera);
+    assert(camera_run_single_row->group_label == std::wstring_view(L"\u76f8\u673a"));
+    assert(!camera_run_single_row->allow_mode_change);
 
     const auto* camera_row = find_row(HookId::camera_update_matrix);
     assert(camera_row);
@@ -756,6 +981,19 @@ void TestInputQueue() {
     frame = source.CaptureFrame();
     assert(frame.frame_index == 0);
     assert(frame.commands.empty());
+
+    pal4::inject::SynchronousUiMessageQueue ui_queue;
+    const auto ticket = ui_queue.Push(command);
+    pal4::inject::SynchronousUiMessageQueue::Ticket popped;
+    assert(ui_queue.TryPop(&popped));
+    assert(popped == ticket);
+    assert(popped->command.msg == WM_KEYDOWN);
+    ui_queue.Complete(popped, true, false);
+    bool message_handled = true;
+    std::string dispatch_error;
+    assert(ui_queue.Wait(ticket, 10, &message_handled, &dispatch_error));
+    assert(!message_handled);
+    assert(dispatch_error.empty());
 }
 
 void TestRuntimeEventLog() {
@@ -810,6 +1048,16 @@ void TestLauncherNaming() {
 
     pal4::inject::LaunchOptions options{};
     assert(options.script_mode == pal4::inject::ScriptMode::inherit);
+    STARTUPINFOA startup{};
+    pal4::inject::ConfigureProcessStartupInfo(options, &startup);
+    assert(startup.cb == sizeof(startup));
+    assert((startup.dwFlags & STARTF_USESHOWWINDOW) == 0);
+
+    options.background_window = true;
+    pal4::inject::ConfigureProcessStartupInfo(options, &startup);
+    assert((startup.dwFlags & STARTF_USESHOWWINDOW) != 0);
+    assert(startup.wShowWindow == SW_HIDE);
+    options.background_window = false;
     options.game_root = "I:\\Games\\PAL4_game";
     std::filesystem::path exe_path;
     std::filesystem::path workdir;
@@ -1261,15 +1509,40 @@ std::string WaitForUiNodeRefByName(
 }
 
 void ClickUiRef(const std::string& pipe_name, const std::string& ref) {
-    ProtocolCommand command{};
-    command.kind = ProtocolCommandKind::click_ui_ref;
-    command.ui_ref = ref;
-    const auto response = SendCommand(pipe_name, command);
-    if (!response.ok) {
-        std::cerr << "click_ui_ref failed: ref=" << ref
-                  << " message=" << response.message << "\n";
+    const auto tree = ReadUiSnapshot(pipe_name);
+    const int width = tree.root.rect.right - tree.root.rect.left;
+    const int height = tree.root.rect.bottom - tree.root.rect.top;
+    assert(width > 0 && height > 0);
+
+    const auto viewport = pal4::inject::BuildUiViewportPlan(
+        width,
+        height,
+        pal4::inject::UiProfile::centered_800x600);
+    pal4::inject::UiRefClickPlan click{};
+    std::string error;
+    assert(pal4::inject::BuildUiRefClickPlan(tree, ref, viewport, &click, &error));
+
+    const std::uint32_t lparam =
+        ((click.client_y & 0xFFFFu) << 16) | (click.client_x & 0xFFFFu);
+    const struct {
+        std::uint32_t message;
+        std::uint32_t wparam;
+    } messages[] = {
+        {WM_MOUSEMOVE, 0},
+        {WM_LBUTTONDOWN, MK_LBUTTON},
+        {WM_LBUTTONUP, 0},
+    };
+    for (const auto& item : messages) {
+        ProtocolCommand command{};
+        command.kind = ProtocolCommandKind::enqueue_ui_message;
+        command.ui_message = {item.message, item.wparam, lparam, false};
+        const auto response = SendCommand(pipe_name, command);
+        if (!response.ok) {
+            std::cerr << "OS-queue click failed: ref=" << ref
+                      << " message=" << response.message << "\n";
+        }
+        assert(response.ok);
     }
-    assert(response.ok);
 }
 
 void SendWindowClose(const std::string& pipe_name) {
@@ -1738,6 +2011,7 @@ int main() {
     TestInjectSettingsRoundTrip();
     TestProtocolRoundTrip();
     TestUiSnapshotSerialization();
+    TestUiInputPlan();
     TestMemoryDebugHelpers();
     TestMemoryRuntimeHelpers();
     TestInputLogic();

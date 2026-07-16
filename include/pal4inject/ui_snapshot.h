@@ -45,6 +45,12 @@ const UiSnapshotNode* FindUiSnapshotNodeByRef(
 const UiSnapshotNode* FindUiSnapshotNodeByPath(
     const UiSnapshotTree& tree,
     std::string_view path) noexcept;
+// Resolves a unique complete path first, then a unique slash-delimited suffix.
+// Returns null for missing or ambiguous suffixes so automation never clicks a
+// similarly named control by accident.
+const UiSnapshotNode* FindUniqueUiSnapshotNodeByPathSuffix(
+    const UiSnapshotTree& tree,
+    std::string_view path_or_suffix) noexcept;
 bool UiSnapshotTreeContainsText(
     const UiSnapshotTree& tree,
     std::string_view text_substring) noexcept;
