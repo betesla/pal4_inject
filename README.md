@@ -40,7 +40,7 @@ cmake --build I:\PAL4\projects\pal4_inject\build --config Debug
 - 新增脚本模式切换：
   - `--script-mode cs`
   - `--script-mode csb`
-  - 不传参数直接双击 `PAL4_inject.exe` 时，会弹出中文 GUI 选择 `CS` 或 `CSB`，默认使用 `CSB`
+  - 不传参数直接双击 `PAL4_inject.exe` 时，会弹出中文 GUI 选择 `CS` 或 `CSB`；首次默认 `CSB`，后续恢复上次启动时的选择
 - 发布启动入口：
   - 发布使用时，把 `dist` 目录里的文件复制到 PAL4 游戏安装目录
   - `PAL4_inject.exe` 放在游戏目录根部，和 `PAL4.exe` 同级

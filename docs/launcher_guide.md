@@ -5,7 +5,8 @@
 ## 游戏设置
 
 - `CS 文本脚本`：适合脚本调试和快速迭代。
-- `CSB 原始脚本`：适合普通游玩和回归验证，也是默认选项。
+- `CSB 原始脚本`：适合普通游玩和回归验证，首次启动默认选中。
+- launcher 会把上次启动时选择的 `CS / CSB` 写入 `inject_settings.ini`，下次打开自动恢复。
 - `常用分辨率 / 显示器支持`：选择预设分辨率，也可以直接输入宽高。
 - `全屏运行 / 启用宽屏 / 垂直同步`：写入游戏目录的 `config.cfg`。
 - 保存 `config.cfg` 前会保留一份 `config.cfg.bak`。
@@ -37,6 +38,7 @@
 ## 配置与运行状态
 
 - 新配置文件：`pal4_inject\inject_settings.ini`
+- 脚本选择使用 `script_mode=cs|csb` 持久化；旧配置缺省该项时使用 `csb`。
 - Bink 显示模式使用 `bink_scaling_mode=fit|fill_width_crop` 持久化；旧配置缺省该项时使用“完整显示”。
 - 旧版 `pal4_inject\inject_panel_settings.ini` 会被兼容读取，并在下次从 launcher 启动时迁移到新文件名。
 - runtime 会在 Hook 安装前加载配置。

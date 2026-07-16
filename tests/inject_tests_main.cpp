@@ -669,6 +669,7 @@ void TestInjectFeatureCatalog() {
 
 void TestInjectSettingsRoundTrip() {
     pal4::inject::InjectPersistedSettings settings{};
+    settings.script_mode = pal4::inject::ScriptMode::cs;
     settings.msaa_level = pal4::inject::MsaaLevel::x4;
     settings.bink_scaling_mode = pal4::inject::BinkScalingMode::fill_width_crop;
     settings.hooks.push_back({
@@ -694,6 +695,7 @@ void TestInjectSettingsRoundTrip() {
     const auto text = pal4::inject::FormatInjectPersistedSettings(settings);
     pal4::inject::InjectPersistedSettings parsed{};
     assert(pal4::inject::ParseInjectPersistedSettings(text, &parsed, &error));
+    assert(parsed.script_mode == pal4::inject::ScriptMode::cs);
     assert(parsed.msaa_level == pal4::inject::MsaaLevel::x4);
     assert(parsed.bink_scaling_mode ==
            pal4::inject::BinkScalingMode::fill_width_crop);
@@ -724,6 +726,7 @@ void TestInjectSettingsRoundTrip() {
     assert(pal4::inject::SaveInjectPersistedSettings(temp_path, settings, &error));
     pal4::inject::InjectPersistedSettings loaded{};
     assert(pal4::inject::LoadInjectPersistedSettings(temp_path, &loaded, &error));
+    assert(loaded.script_mode == pal4::inject::ScriptMode::cs);
     assert(loaded.msaa_level == pal4::inject::MsaaLevel::x4);
     assert(loaded.bink_scaling_mode ==
            pal4::inject::BinkScalingMode::fill_width_crop);
@@ -734,7 +737,15 @@ void TestInjectSettingsRoundTrip() {
         "version=1\nmsaa_level=2x\n",
         &legacy,
         &error));
+    assert(legacy.script_mode == pal4::inject::ScriptMode::csb);
     assert(legacy.bink_scaling_mode == pal4::inject::BinkScalingMode::fit);
+
+    pal4::inject::InjectPersistedSettings invalid{};
+    assert(!pal4::inject::ParseInjectPersistedSettings(
+        "version=3\nscript_mode=inherit\n",
+        &invalid,
+        &error));
+    assert(error.find("invalid script_mode") != std::string::npos);
 }
 
 void TestInputLogic() {

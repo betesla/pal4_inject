@@ -17,6 +17,7 @@ struct PersistedHookSetting {
 };
 
 struct InjectPersistedSettings {
+    ScriptMode script_mode = ScriptMode::csb;
     MsaaLevel msaa_level = MsaaLevel::off;
     BinkScalingMode bink_scaling_mode = BinkScalingMode::fit;
     std::vector<PersistedHookSetting> hooks;

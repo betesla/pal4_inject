@@ -71,7 +71,7 @@
   - `inject_feature_catalog.cpp`
     - launcher 与配置共用的功能分组、标签与 mode 列表
   - `inject_settings.cpp`
-    - 游戏目录下的 Hook / 画质设置持久化，并兼容读取旧文件名
+    - 游戏目录下的脚本模式、Hook 与画质设置持久化，并兼容读取旧文件名
 - `src/runtime`
   - `runtime_state.cpp`
     - bootstrap / pipe / hook call count / last UI event / last error / font sync / crash artifacts

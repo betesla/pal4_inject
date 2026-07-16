@@ -444,6 +444,7 @@ pal4::inject::HookMode DefaultModeForHook(const pal4::inject::HookId id) {
 pal4::inject::InjectPersistedSettings NormalizeInjectSettings(
     const pal4::inject::InjectPersistedSettings& loaded) {
     pal4::inject::InjectPersistedSettings normalized{};
+    normalized.script_mode = loaded.script_mode;
     normalized.msaa_level = loaded.msaa_level;
     normalized.bink_scaling_mode = loaded.bink_scaling_mode;
     for (const auto& feature : pal4::inject::BuildInjectFeatureCatalog()) {
@@ -507,6 +508,7 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* const options) {
         return false;
     }
     state.inject_settings = NormalizeInjectSettings(loaded_settings);
+    state.script_mode = state.inject_settings.script_mode;
 
     std::wstring ui_error;
     if (!pal4::inject::launcher::RunLauncherUi(&state, &CheckForUpdates, &ui_error)) {
@@ -529,6 +531,7 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* const options) {
         ShowGuiError(config_error);
         return false;
     }
+    state.inject_settings.script_mode = state.script_mode;
     if (!pal4::inject::SaveInjectPersistedSettings(
             state.inject_settings_path,
             state.inject_settings,

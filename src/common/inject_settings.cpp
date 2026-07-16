@@ -12,9 +12,9 @@
 namespace pal4::inject {
 namespace {
 
-constexpr int kSettingsVersion = 2;
+constexpr int kSettingsVersion = 3;
 constexpr int kMinSupportedSettingsVersion = 1;
-constexpr int kMaxSupportedSettingsVersion = 2;
+constexpr int kMaxSupportedSettingsVersion = 3;
 
 std::string TrimAscii(const std::string_view text) {
     std::size_t begin = 0;
@@ -47,6 +47,7 @@ std::filesystem::path LegacyInjectPanelSettingsPath() {
 std::string FormatInjectPersistedSettings(const InjectPersistedSettings& settings) {
     std::ostringstream out;
     out << "version=" << kSettingsVersion << '\n';
+    out << "script_mode=" << ToString(settings.script_mode) << '\n';
     out << "msaa_level=" << ToString(settings.msaa_level) << '\n';
     out << "bink_scaling_mode=" << ToString(settings.bink_scaling_mode) << '\n';
 
@@ -101,6 +102,18 @@ bool ParseInjectPersistedSettings(
         const auto value = TrimAscii(trimmed.substr(equals + 1));
         if (key == "version") {
             version = std::atoi(value.c_str());
+            continue;
+        }
+        if (key == "script_mode") {
+            ScriptMode script_mode = ScriptMode::inherit;
+            if (!TryParseScriptMode(value, &script_mode) ||
+                script_mode == ScriptMode::inherit) {
+                if (error) {
+                    *error = "invalid script_mode value: " + value;
+                }
+                return false;
+            }
+            out->script_mode = script_mode;
             continue;
         }
         if (key == "msaa_level") {
