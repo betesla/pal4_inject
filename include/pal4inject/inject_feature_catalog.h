@@ -13,6 +13,7 @@ enum class InjectFeatureCategory : std::uint8_t {
     script_text,
     render_visual,
     camera,
+    resource,
 };
 
 struct InjectFeatureDescriptor {
@@ -22,6 +23,7 @@ struct InjectFeatureDescriptor {
     std::string_view label{};
     std::string_view description{};
     bool allow_mode_change = true;
+    bool allow_log_change = true;
 };
 
 std::vector<InjectFeatureDescriptor> BuildInjectFeatureCatalog();

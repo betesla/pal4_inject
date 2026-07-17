@@ -4,6 +4,21 @@
 这份清单只记录 `inject/` 当前消费的 IDA-backed 地址与 patch metadata。
 
 ## Active v1 Hooks
+- `PackageResourceManager_OpenFile @ 0x66E820`
+  - original IDA name: `ScriptManager_LoadScriptFile_2`
+  - mode: `replace_with_fallback`
+  - patch span: `7`
+  - bootstrap order: `5`（最早安装，但失败不阻断其他 hook）
+  - reason: 用原始完整 `gamedata\...` 路径检查 `<游戏目录>\gamepatch`；命中时把只读文件映射装入原 CPK manager 的空闲句柄槽，未命中时调用原函数回退 CPK
+  - diagnostics: 每次请求结果写入 `gamepatch\loose_file_load.log`，不依赖通用 hook 详细日志开关
+  - lifecycle: 继续使用原版 `Package_ReadData / Package_Seek / sub_793C10(close)`，不另建平行流接口
+- `cs_TextScriptInterpreter_Initialize @ 0x7E0DA0`
+  - mode: 跟随 `loose_file_overlay` 的统一 UI / HookMode
+  - calling convention: `bool __thiscall(void *self, const char *file_name, int unused_arg)`
+  - patch span: `5`
+  - bootstrap order: `6`（紧随 CPK seam 安装，失败不阻断其他 hook）
+  - reason: CS 模式的文本解释器用 `CRT_Fopen(file_name, "rb")` 直接读 `gamedata\editData\script\*.cs`，不会进入 CPK seam；发行版不携带 `editData` 源码，因此启用补丁时只把同路径 `gamepatch` 文件交给原文本读取器，缺失或读取失败直接返回失败
+  - diagnostics: 与 CPK seam 写入同一个独立 JSON Lines 日志，记录 `loader=text_script`；缺失时写 `gamepatch_required_missing`，不写任何 fallback 字段
 - `ProcessUIEvent @ 0x411900`
   - mode: `replace_with_fallback`
   - patch span: `8`

@@ -18,6 +18,7 @@
 #include "d3d9_quality_hooks.h"
 #include "hud_layout_fixups.h"
 #include "hook_logging.h"
+#include "loose_file_hooks.h"
 #include "minimap_hooks.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
@@ -809,6 +810,9 @@ void* GetReplacementForHook(const HookId id) {
         if (void* replacement = GetBinkVideoReplacementForHook(id)) {
             return replacement;
         }
+        if (void* replacement = GetLooseFileReplacementForHook(id)) {
+            return replacement;
+        }
         return GetCameraReplacementForHook(id);
     }
 }
@@ -846,6 +850,7 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
         SetD3d9QualityOriginalTrampoline(id, trampoline);
         SetBattleUiLayoutOriginalTrampoline(id, trampoline);
         SetBinkVideoOriginalTrampoline(id, trampoline);
+        SetLooseFileOriginalTrampoline(id, trampoline);
         SetCameraOriginalTrampoline(id, trampoline);
         break;
     }

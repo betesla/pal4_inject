@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 #include <cassert>
+#include <array>
 #include <chrono>
 #include <cstring>
 #include <cstdlib>
@@ -32,6 +33,7 @@
 #include "pal4inject/input_logic.h"
 #include "pal4inject/input_queue.h"
 #include "pal4inject/launcher.h"
+#include "pal4inject/loose_file_overlay.h"
 #include "pal4inject/camera_pitch_guard.h"
 #include "pal4inject/cegui_font_resync.h"
 #include "pal4inject/cegui_widescreen.h"
@@ -44,7 +46,9 @@
 #include "pal4inject/script_mode_override.h"
 #include "pal4inject/ui_snapshot.h"
 #include "memory_debug_runtime.h"
+#include "loose_file_load_log.h"
 #include "runtime_state.h"
+#include "x86_trampoline.h"
 #include "pal4inject_build_info.h"
 
 namespace {
@@ -84,9 +88,156 @@ void TestPackagedRuntimeLayoutPaths() {
         install_dir / "pal4_inject" / "cli.exe");
 }
 
+void TestLooseFileOverlayPaths() {
+    assert(!pal4::inject::IsLooseFileOverlayActiveMode(
+        pal4::inject::HookMode::observe_only));
+    assert(!pal4::inject::IsLooseFileOverlayActiveMode(
+        pal4::inject::HookMode::mirror_compare));
+    assert(pal4::inject::IsLooseFileOverlayActiveMode(
+        pal4::inject::HookMode::replace_with_fallback));
+    assert(pal4::inject::IsLooseFileOverlayActiveMode(
+        pal4::inject::HookMode::replace_strict));
+
+    const std::filesystem::path game_root = R"(I:\Games\original)";
+    const auto normalized = pal4::inject::NormalizeLooseResourcePath(
+        R"(.\GameData/PALWorld/Q99/Q99/test.dff)");
+    assert(normalized);
+    assert(*normalized == std::filesystem::path(R"(GameData\PALWorld\Q99\Q99\test.dff)"));
+    assert(!pal4::inject::NormalizeLooseResourcePath(R"(..\gamedata\test.bin)"));
+    assert(!pal4::inject::NormalizeLooseResourcePath(R"(C:\gamedata\test.bin)"));
+    assert(!pal4::inject::NormalizeLooseResourcePath(R"(PALWorld\Q99\test.dff)"));
+
+    const auto candidates = pal4::inject::BuildLooseFileCandidates(
+        game_root,
+        R"(gamedata\PALWorld\Q99\Q99\test.dff)");
+    assert(candidates.size() == 1);
+    assert(
+        candidates.front().path ==
+        game_root / "gamepatch" /
+            "gamedata" / "PALWorld" / "Q99" / "Q99" / "test.dff");
+    const auto script_candidates = pal4::inject::BuildLooseFileCandidates(
+        game_root,
+        R"(gamedata\editData\script\M10.cs)");
+    assert(script_candidates.size() == 1);
+    assert(
+        script_candidates.front().path ==
+        game_root / "gamepatch" /
+            "gamedata" / "editData" / "script" / "M10.cs");
+    assert(
+        pal4::inject::LooseFileLoadLogPath(game_root) ==
+        game_root / "gamepatch" / "loose_file_load.log");
+
+    const auto temp_root =
+        std::filesystem::temp_directory_path() / "pal4_inject_loose_file_overlay_test";
+    std::error_code ignored;
+    std::filesystem::remove_all(temp_root, ignored);
+    const auto loose_file = pal4::inject::GamePatchRoot(temp_root) /
+        "gamedata" / "PALWorld" / "Q99" / "Q99" / "test.dff";
+    std::filesystem::create_directories(loose_file.parent_path());
+    {
+        std::ofstream out(loose_file, std::ios::binary | std::ios::trunc);
+        out << "PAL4 loose resource";
+    }
+    const auto found = pal4::inject::FindExistingLooseFile(
+        temp_root,
+        R"(gamedata\PALWorld\Q99\Q99\test.dff)");
+    assert(found);
+    assert(found->path == loose_file);
+    std::filesystem::remove_all(temp_root, ignored);
+}
+
+void TestX86TrampolineCopiesLargeImmediateStackFrame() {
+    const std::array<std::uint8_t, 7> source{
+        0x81, 0xEC, 0x00, 0x01, 0x00, 0x00, 0x56,
+    };
+    std::array<std::uint8_t, 7> destination{};
+    std::string error;
+    assert(pal4::inject::CopyRelocatingX86Bytes(
+        source.data(),
+        destination.data(),
+        source.size(),
+        &error));
+    assert(destination == source);
+    assert(error.empty());
+}
+
+void TestX86TrampolineCopiesTextScriptPrologue() {
+    const std::array<std::uint8_t, 5> source{
+        0x8B, 0x44, 0x24, 0x04, 0x56,
+    };
+    std::array<std::uint8_t, 5> destination{};
+    std::string error;
+    assert(pal4::inject::CopyRelocatingX86Bytes(
+        source.data(),
+        destination.data(),
+        source.size(),
+        &error));
+    assert(destination == source);
+    assert(error.empty());
+}
+
+void TestLooseFileLoadLogFormatting() {
+    pal4::inject::LooseFileLoadLogEntry entry{};
+    entry.event = "override";
+    entry.loader = "package";
+    entry.mode = pal4::inject::HookMode::replace_with_fallback;
+    entry.resource_path = R"(gamedata\PALActor\101\101_2.png)";
+    entry.file_path = R"(I:\Games\PAL4\gamepatch\gamedata\PALActor\101\101_2.png)";
+    entry.size = 490778;
+    entry.has_size = true;
+
+    const auto record = pal4::inject::FormatLooseFileLoadLogEntry(entry);
+    assert(!record.empty());
+    assert(record.front() == '{');
+    assert(record.back() == '}');
+    assert(record.find(R"("event":"override")") != std::string::npos);
+    assert(record.find(R"("loader":"package")") != std::string::npos);
+    assert(record.find(R"("mode":"replace_with_fallback")") != std::string::npos);
+    assert(record.find(R"("resource":"gamedata\\PALActor\\101\\101_2.png")") !=
+           std::string::npos);
+    assert(record.find(R"("size":490778)") != std::string::npos);
+
+    pal4::inject::LooseFileLoadLogEntry package_fallback{};
+    package_fallback.event = "cpk_fallback";
+    package_fallback.loader = "package";
+    package_fallback.mode = pal4::inject::HookMode::replace_with_fallback;
+    package_fallback.resource_path = R"(gamedata\database\pal4db.db)";
+    package_fallback.fallback_source = "cpk";
+    package_fallback.fallback_result_known = true;
+    package_fallback.fallback_opened = true;
+    package_fallback.fallback_used = true;
+    const auto package_record =
+        pal4::inject::FormatLooseFileLoadLogEntry(package_fallback);
+    assert(package_record.find(R"("fallback_source":"cpk")") !=
+           std::string::npos);
+    assert(package_record.find(R"("cpk_opened":true)") != std::string::npos);
+    assert(package_record.find(R"("fallback_to_cpk":true)") !=
+           std::string::npos);
+
+    pal4::inject::LooseFileLoadLogEntry script_entry{};
+    script_entry.event = "gamepatch_required_missing";
+    script_entry.loader = "text_script";
+    script_entry.mode = pal4::inject::HookMode::replace_with_fallback;
+    script_entry.resource_path = R"(gamedata\editData\script\M10.cs)";
+    script_entry.file_path =
+        R"(I:\Games\PAL4\gamepatch\gamedata\editData\script\M10.cs)";
+    script_entry.reason = "gamepatch_file_required";
+    const auto script_record =
+        pal4::inject::FormatLooseFileLoadLogEntry(script_entry);
+    assert(script_record.find(R"("loader":"text_script")") != std::string::npos);
+    assert(script_record.find(R"("event":"gamepatch_required_missing")") !=
+           std::string::npos);
+    assert(script_record.find(R"("reason":"gamepatch_file_required")") !=
+           std::string::npos);
+    assert(script_record.find("fallback_source") == std::string::npos);
+    assert(script_record.find("fallback_opened") == std::string::npos);
+    assert(script_record.find("fallback_used") == std::string::npos);
+    assert(script_record.find("cpk_opened") == std::string::npos);
+}
+
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 19);
+    assert(inventory.size() == 21);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -101,6 +252,8 @@ void TestHookInventory() {
     bool found_camera_update_matrix = false;
     bool found_d3d9_present = false;
     bool found_bink_player_update_and_render = false;
+    bool found_loose_file_overlay = false;
+    bool found_loose_text_script_overlay = false;
     for (const auto& hook : inventory) {
         assert(!hook.expected_prologue.empty());
         assert(hook.patch_span >= 5);
@@ -193,6 +346,24 @@ void TestHookInventory() {
             assert(hook.ida_ea == pal4::inject::ida::kBinkPlayerUpdateAndRender);
             assert(hook.bootstrap_required);
         }
+        if (hook.id == HookId::loose_file_overlay) {
+            found_loose_file_overlay = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kOpenPackageResourceFile);
+            assert(hook.bootstrap_order == 5);
+            assert(!hook.bootstrap_required);
+        }
+        if (hook.id == HookId::loose_text_script_overlay) {
+            found_loose_text_script_overlay = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 5);
+            assert(
+                hook.ida_ea ==
+                pal4::inject::ida::kTextScriptInterpreterInitialize);
+            assert(hook.bootstrap_order == 6);
+            assert(!hook.bootstrap_required);
+        }
     }
     assert(found_process_ui_event);
     assert(found_handle_ui_message);
@@ -208,6 +379,8 @@ void TestHookInventory() {
     assert(found_camera_update_matrix);
     assert(found_d3d9_present);
     assert(found_bink_player_update_and_render);
+    assert(found_loose_file_overlay);
+    assert(found_loose_text_script_overlay);
 }
 
 void TestAspectRatioLayoutMath() {
@@ -593,7 +766,7 @@ void TestMemoryRuntimeHelpers() {
 
 void TestInjectFeatureCatalog() {
     const auto rows = pal4::inject::BuildInjectFeatureCatalog();
-    assert(rows.size() == 18);
+    assert(rows.size() == 19);
 
     const auto find_row =
         [&rows](const HookId id) -> const pal4::inject::InjectFeatureDescriptor* {
@@ -651,6 +824,17 @@ void TestInjectFeatureCatalog() {
     assert(camera_row);
     assert(camera_row->category == pal4::inject::InjectFeatureCategory::camera);
     assert(camera_row->group_label == std::string_view("相机"));
+
+    const auto* loose_file_row = find_row(HookId::loose_file_overlay);
+    assert(loose_file_row);
+    assert(loose_file_row->category == pal4::inject::InjectFeatureCategory::resource);
+    assert(loose_file_row->group_label == std::string_view("资源与补丁"));
+    assert(loose_file_row->allow_mode_change);
+    assert(!loose_file_row->allow_log_change);
+
+    const auto* loose_text_script_row =
+        find_row(HookId::loose_text_script_overlay);
+    assert(!loose_text_script_row);
 
     std::size_t widescreen_feature_count = 0;
     pal4::inject::InjectPersistedSettings preset{};
@@ -1825,6 +2009,10 @@ int main() {
     ConfigureNonInteractiveCrashDialogs();
     TestResolveRuntimeAddress();
     TestPackagedRuntimeLayoutPaths();
+    TestLooseFileOverlayPaths();
+    TestX86TrampolineCopiesLargeImmediateStackFrame();
+    TestX86TrampolineCopiesTextScriptPrologue();
+    TestLooseFileLoadLogFormatting();
     TestHookInventory();
     TestDpiAwarenessStrings();
     TestMsaaLevelStrings();

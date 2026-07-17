@@ -310,11 +310,17 @@ void DrawPlayerEnhancements(LauncherUiState* const state) {
     ImGui::TextUnformatted("其他增强");
     const auto features = BuildInjectFeatureCatalog();
     for (const auto& feature : features) {
-        if (feature.id == HookId::camera_update_matrix) {
+        if (feature.id == HookId::camera_update_matrix ||
+            feature.id == HookId::loose_file_overlay) {
             DrawFeatureCard(state, feature);
-            break;
         }
     }
+    const auto gamepatch_path = PathText(state->game_exe.parent_path() / "gamepatch");
+    ImGui::TextDisabled(
+        "松散文件目录：%s（CPK 资源与 CS 脚本共用）",
+        gamepatch_path.c_str());
+    ImGui::TextDisabled("CS 模式只读取 gamepatch；缺少脚本时不会回退 editData。");
+    ImGui::TextDisabled("独立日志：gamepatch\\loose_file_load.log（JSON Lines）");
 }
 
 void DrawAdvancedPage(LauncherUiState* const state) {
@@ -347,23 +353,31 @@ void DrawAdvancedPage(LauncherUiState* const state) {
             ImGui::TableSetColumnIndex(1);
             ImGui::TextDisabled("%s", ToString(feature.id));
             ImGui::TableSetColumnIndex(2);
-            ImGui::SetNextItemWidth(-1.0F);
             const auto current_label = InjectFeatureModeLabel(setting->mode);
-            if (ImGui::BeginCombo("##mode", current_label.data())) {
-                for (const auto mode : modes) {
-                    const auto mode_label = InjectFeatureModeLabel(mode);
-                    const bool selected = mode == setting->mode;
-                    if (ImGui::Selectable(mode_label.data(), selected)) {
-                        setting->mode = mode;
-                        if (mode != HookMode::observe_only) {
-                            setting->active_mode = mode;
+            if (feature.allow_mode_change) {
+                ImGui::SetNextItemWidth(-1.0F);
+                if (ImGui::BeginCombo("##mode", current_label.data())) {
+                    for (const auto mode : modes) {
+                        const auto mode_label = InjectFeatureModeLabel(mode);
+                        const bool selected = mode == setting->mode;
+                        if (ImGui::Selectable(mode_label.data(), selected)) {
+                            setting->mode = mode;
+                            if (mode != HookMode::observe_only) {
+                                setting->active_mode = mode;
+                            }
                         }
                     }
+                    ImGui::EndCombo();
                 }
-                ImGui::EndCombo();
+            } else {
+                ImGui::TextDisabled("%.*s", static_cast<int>(current_label.size()), current_label.data());
             }
             ImGui::TableSetColumnIndex(3);
-            ImGui::Checkbox("##log", &setting->log_enabled);
+            if (feature.allow_log_change) {
+                ImGui::Checkbox("##log", &setting->log_enabled);
+            } else {
+                ImGui::TextDisabled("独立文件");
+            }
             ImGui::PopID();
         }
         ImGui::EndTable();

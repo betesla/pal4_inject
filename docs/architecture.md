@@ -73,12 +73,27 @@
     - 定义宽屏预设成员，并统一切换它们的 active / observe-only 模式
   - `inject_settings.cpp`
     - 游戏目录下的脚本模式、Hook 与画质设置持久化，并兼容读取旧文件名
+  - `loose_file_overlay.cpp`
+    - 校验 `gamedata\...` 相对资源路径
+    - 构造并查找 `<游戏目录>\gamepatch` 补丁候选与独立日志路径
 - `src/runtime`
   - `runtime_state.cpp`
     - bootstrap / pipe / hook call count / last UI event / last error / font sync / crash artifacts
   - `hook_manager.cpp`
-    - x86 inline detour、trampoline、prologue 校验、卸载
+    - x86 inline detour、prologue 校验、卸载
     - bootstrap hook 按稳定优先级排序安装；实验性 hook 可后置且失败不阻断主链
+  - `x86_trampoline.cpp`
+    - trampoline 指令复制与相对分支重定位
+    - 覆盖 PAL4 hook prologue 使用的 `0x81 / 0x83 / ModRM` 指令形态
+  - `loose_file_hooks.cpp`
+    - `PackageResourceManager_OpenFile @ 0x66E820` 松散文件优先 seam
+    - 复用原 CPK manager 的文件句柄池和 read / seek / close 生命周期
+    - 补丁不存在或默认模式加载失败时回退 CPK
+    - `cs_TextScriptInterpreter_Initialize @ 0x7E0DA0` 接管 CS 模式绕过 CPK 的直接文件读取
+    - CPK 与 CS 两条 seam 共用 `loose_file_overlay` 的 UI / HookMode；启用时 CS 只允许 `gamepatch`，缺失或读取失败直接返回失败
+  - `loose_file_load_log.cpp`
+    - 向 `gamepatch\loose_file_load.log` 写入可供其他软件解析的 UTF-8 JSON Lines
+    - 通过 `loader=package|text_script` 统一记录 UI 关闭绕过、松散文件覆盖、CPK 回退、CS 必需文件缺失与覆盖错误；启动时轮换超过 8 MiB 的旧日志
   - `cegui_bindings.cpp`
     - CEGUIBase 导出解析
     - Window tree / name / text / focus / editbox / geometry 绑定
@@ -133,6 +148,8 @@
 
 ## Current Behavior Boundary
 - 已默认安装的 Hook：
+  - `PackageResourceManager_OpenFile`
+  - `cs_TextScriptInterpreter_Initialize`
   - `ProcessUIEvent`
   - `HandleUIMessageAndProcess`
   - `SimulateKeyPressAndRelease`

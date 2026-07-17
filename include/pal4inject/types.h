@@ -64,6 +64,8 @@ enum class HookId : std::uint8_t {
     ui_show_combat_result,
     render_text_and_image,
     bink_player_update_and_render,
+    loose_file_overlay,
+    loose_text_script_overlay,
 };
 
 struct HookDescriptor {

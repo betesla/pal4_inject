@@ -86,6 +86,7 @@ add_library(pal4_inject_common STATIC
     src/common/input_logic.cpp
     src/common/input_queue.cpp
     src/common/launcher.cpp
+    src/common/loose_file_overlay.cpp
     src/common/memory_debug.cpp
     src/common/protocol.cpp
     src/common/runtime_paths.cpp
@@ -119,11 +120,14 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/hook_manager.cpp
     src/runtime/input_hooks.cpp
     src/runtime/ipc_server.cpp
+    src/runtime/loose_file_load_log.cpp
+    src/runtime/loose_file_hooks.cpp
     src/runtime/memory_debug_runtime.cpp
     src/runtime/minimap_hooks.cpp
     src/runtime/runtime_preferences.cpp
     src/runtime/runtime_state.cpp
     src/runtime/ui_snapshot_runtime.cpp
+    src/runtime/x86_trampoline.cpp
 )
 target_include_directories(pal4_inject_runtime_core
     PUBLIC

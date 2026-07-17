@@ -74,6 +74,28 @@ I:\PAL4\projects\pal4_inject\build\Debug\PAL4_inject.exe `
 `requested_script_mode / script_mode / script_mode_flag`
 导出到 `read_ui_state` 快照里。
 
+## 松散文件优先补丁
+
+把新增或修改的关卡资源按完整游戏内路径放到：
+
+```text
+<游戏目录>\gamepatch\gamedata\...
+```
+
+例如 `gamedata\PALWorld\Q99\Q99\A.dff` 对应：
+
+```text
+<游戏目录>\gamepatch\gamedata\PALWorld\Q99\Q99\A.dff
+```
+
+CS 文本脚本使用同一规则，例如 `gamedata\editData\script\M10.cs` 放到：
+
+```text
+<游戏目录>\gamepatch\gamedata\editData\script\M10.cs
+```
+
+CPK 资源不存在补丁或加载失败时仍可回退原 CPK。CS 模式不同：发行版不携带 `editData` 文本源码，启用松散文件补丁后只从 `gamepatch` 读取；缺少脚本或读取失败会直接报失败，不会尝试游戏目录原路径。“增强功能”页使用一个统一开关，所有覆盖、缺失、关闭绕过和 CPK 回退都会写入 `gamepatch\loose_file_load.log`（JSON Lines）。完整规则见 [docs/loose_file_overlay.md](docs/loose_file_overlay.md)。
+
 ## 产物
 - `runtime.dll`
 - `cli.exe`
@@ -124,6 +146,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -ReleaseNotesPath
   - 把竖直鼠标缩放对齐到横向鼠标缩放
   - 通过 `Camera_UpdateMatrix @ 0x5EA190` 统一把最终 second angle 夹回安全区 `[0,89] U [271,360)`，避免越过 `90` 度后的视角翻面
 - v1 默认安装这些 Hook：
+  - `PackageResourceManager_OpenFile` loose-file overlay seam
+  - `cs_TextScriptInterpreter_Initialize` CS text-script loose-file seam（跟随同一个 UI 开关）
   - `ProcessUIEvent`
   - `HandleUIMessageAndProcess`
   - `SimulateKeyPressAndRelease`
