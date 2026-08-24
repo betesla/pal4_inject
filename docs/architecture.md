@@ -225,7 +225,7 @@
 - launcher configuration
   - ImGui launcher 负责人类可读的配置界面，runtime 不创建额外游戏内窗口
   - `inject_feature_catalog` 是 launcher 功能列表的唯一模型，避免 UI 层复制 Hook metadata
-  - 普通界面用“启用宽屏”统一管理 renderer、font、minimap、battle overlay 和 Bink Hook；高级页仍可对当次启动逐项覆盖
+  - launcher 按所选分辨率是否宽于 4:3 自动管理 renderer、font、minimap、battle overlay 和 Bink Hook；高级页仍可对当次启动逐项覆盖
   - `RuntimeState::SetHookMode` 仍作为 IPC 调试接口保留
   - “反馈 Bug”页只消费 common 层已经脱敏的文本，不直接接触 minidump
   - 诊断信息复选框与独立授权复选框组成提交门槛；未授权时不打开携带诊断数据的 URL

@@ -70,6 +70,8 @@ using OpenBugReportCallback = bool (*)(
     const std::string& body,
     std::wstring* error);
 
+void SynchronizeAutomaticWidescreen(LauncherUiState* state) noexcept;
+
 bool RunLauncherUi(
     LauncherUiState* state,
     CheckForUpdatesCallback check_for_updates,

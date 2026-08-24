@@ -9,6 +9,7 @@
 #include "imgui.h"
 #include "imgui_host.h"
 #include "pal4inject/inject_feature_catalog.h"
+#include "pal4inject/ui_coordinate_space.h"
 #include "pal4inject_build_info.h"
 
 namespace pal4::inject::launcher {
@@ -305,22 +306,25 @@ void DrawCustomResolution(LauncherUiState* const state) {
 }
 
 void DrawVisualOptions(LauncherUiState* const state) {
-    bool widescreen = state->display.widescreen != 0;
     bool vsync = state->display.sync != 0;
+    ImGui::TextUnformatted("宽屏修正");
+    ImGui::SameLine(135.0F);
+    const bool widescreen = state->display.widescreen != 0;
+    ImGui::TextColored(
+        widescreen
+            ? ImVec4(0.36F, 0.82F, 0.48F, 1.0F)
+            : ImVec4(0.66F, 0.66F, 0.66F, 1.0F),
+        widescreen ? "自动开启（宽于 4:3）" : "自动关闭（4:3 或更窄）");
+
     ImGui::TextUnformatted("画面选项");
     ImGui::SameLine(135.0F);
-    if (ImGui::Checkbox("启用宽屏", &widescreen)) {
-        state->display.widescreen = widescreen ? 1 : 0;
-        ApplyWidescreenFeaturePreset(&state->inject_settings, widescreen);
-    }
-    ImGui::SameLine();
     if (ImGui::Checkbox("垂直同步", &vsync)) {
         state->display.sync = vsync ? 1 : 0;
     }
 }
 
 void DrawDisplaySettings(LauncherUiState* const state) {
-    ImGui::BeginChild("display_settings", ImVec2(0.0F, 270.0F), ImGuiChildFlags_Borders);
+    ImGui::BeginChild("display_settings", ImVec2(0.0F, 300.0F), ImGuiChildFlags_Borders);
     DrawDisplayModeSetting(state);
     DrawMonitorSetting(state);
     DrawResolutionCombo(
@@ -330,10 +334,11 @@ void DrawDisplaySettings(LauncherUiState* const state) {
         "显示器支持", "##monitor_resolution",
         &state->display, state->display_resolutions);
     DrawCustomResolution(state);
+    SynchronizeAutomaticWidescreen(state);
     DrawVisualOptions(state);
     ImGui::Spacing();
     ImGui::TextDisabled(
-        "无边框模式使用所选显示器的完整区域，并同步该显示器的当前分辨率。");
+        "宽屏修正随分辨率比例自动切换；无边框模式使用所选显示器的完整区域。");
     ImGui::EndChild();
 }
 
@@ -436,7 +441,7 @@ void DrawVideoPage(LauncherUiState* const state) {
         widescreen_enabled
             ? ImVec4(0.36F, 0.82F, 0.48F, 1.0F)
             : ImVec4(0.66F, 0.66F, 0.66F, 1.0F),
-        widescreen_enabled ? "宽屏修正已启用" : "宽屏修正未启用");
+        widescreen_enabled ? "自动宽屏修正已启用" : "自动宽屏修正未启用");
     DrawBinkScalingSetting(state);
     DrawMsaaSetting(state);
 }
@@ -770,6 +775,17 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
 }
 
 }  // namespace
+
+void SynchronizeAutomaticWidescreen(LauncherUiState* const state) noexcept {
+    if (!state) {
+        return;
+    }
+    const bool enabled = IsWideAspectResolution(
+        state->display.width,
+        state->display.height);
+    state->display.widescreen = enabled ? 1 : 0;
+    ApplyWidescreenFeaturePreset(&state->inject_settings, enabled);
+}
 
 bool RunLauncherUi(
     LauncherUiState* const state,

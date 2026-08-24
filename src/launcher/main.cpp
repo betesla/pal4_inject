@@ -737,9 +737,7 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* const options) {
         state.display_resolutions = monitor->resolutions;
     }
     AddCurrentResolution(&state.display_resolutions, current_resolution);
-    pal4::inject::ApplyWidescreenFeaturePreset(
-        &state.inject_settings,
-        state.display.widescreen != 0);
+    pal4::inject::launcher::SynchronizeAutomaticWidescreen(&state);
     state.script_mode = state.inject_settings.script_mode;
 
     std::wstring ui_error;
@@ -762,6 +760,7 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* const options) {
         ShowGuiError(L"没有找到 pal4_inject\\runtime.dll。\n\n请确认发布文件已复制完整。");
         return false;
     }
+    pal4::inject::launcher::SynchronizeAutomaticWidescreen(&state);
     std::wstring config_error;
     if (!SaveGameConfig(state.config_path, state.display, &config_error)) {
         ShowGuiError(config_error);

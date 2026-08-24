@@ -1453,7 +1453,10 @@ void TestCeguiWidescreenPlanMath() {
     assert(std::string(pal4::inject::ToString(pal4::inject::UiProfile::widescreen_1067x600)) == "widescreen_1067x600");
     assert(!pal4::inject::IsWideAspectResolution(800, 600));
     assert(!pal4::inject::IsWideAspectResolution(1024, 768));
+    assert(!pal4::inject::IsWideAspectResolution(1280, 1024));
+    assert(pal4::inject::IsWideAspectResolution(1280, 800));
     assert(pal4::inject::IsWideAspectResolution(1920, 1080));
+    assert(pal4::inject::IsWideAspectResolution(3440, 1440));
     assert(pal4::inject::UsesOriginalWideRendererVariant(1280, 800));
     assert(!pal4::inject::UsesOriginalWideRendererVariant(1920, 1080));
 

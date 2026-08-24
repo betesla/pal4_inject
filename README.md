@@ -239,7 +239,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
 
 - 详细中文说明见 [docs/launcher_guide.md](I:/PAL4/projects/pal4_inject/docs/launcher_guide.md)。
 - “视频”页统一管理显示器、窗口模式、分辨率、宽屏、Bink 显示方式与 MSAA；“增强”页保留相机和资源覆盖等功能。
-- 宽屏 UI、字体、小地图、战斗界面和 Bink 修正统一跟随“视频”中的“启用宽屏”。
+- 宽屏 UI、字体、小地图、战斗界面和 Bink 修正由所选分辨率自动控制：宽于 `4:3` 时开启，`4:3` 或更窄时关闭。
 - “高级调试”页仍可逐项设置 `HookMode` 和详细日志。
 - MSAA 和 Hook 选项在游戏启动前写入配置，runtime 在安装 Hook 前读取。
 
