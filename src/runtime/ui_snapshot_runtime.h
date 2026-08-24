@@ -13,6 +13,12 @@ bool CopyCachedUiSnapshotNode(
     UiSnapshotNode* out,
     std::string* error);
 bool ClickCachedUiSnapshotRef(std::string_view ref, std::string* error);
+bool ClickLikelySystemMenuCloseButton(std::string* error);
+bool QuerySystemMenuState(
+    bool* visible,
+    bool* page_visible,
+    std::string* error);
+bool QuerySystemMenuShellVisible(bool* visible, std::string* error);
 bool FillCachedUiSnapshotRef(
     std::string_view ref,
     std::string_view text,

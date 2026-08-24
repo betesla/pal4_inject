@@ -89,6 +89,8 @@ add_library(pal4_inject_common STATIC
     src/common/cegui_widescreen.cpp
     src/common/crash_capture.cpp
     src/common/dpi_awareness.cpp
+    src/common/dialogue_voice_volume.cpp
+    src/common/gamepad.cpp
     src/common/hook_inventory.cpp
     src/common/inject_feature_catalog.cpp
     src/common/inject_settings.cpp
@@ -122,6 +124,9 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/bootstrap.cpp
     src/runtime/cegui_font_hooks.cpp
     src/runtime/d3d9_quality_hooks.cpp
+    src/runtime/dialogue_voice_osd.cpp
+    src/runtime/gamepad_control_hooks.cpp
+    src/runtime/gamepad_runtime.cpp
     src/runtime/cegui_renderer_hooks.cpp
     src/runtime/camera_hooks.cpp
     src/runtime/camera_unlock.cpp
@@ -155,7 +160,7 @@ target_include_directories(pal4_inject_runtime_core
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
 )
-target_link_libraries(pal4_inject_runtime_core PUBLIC pal4_inject_common advapi32 user32)
+target_link_libraries(pal4_inject_runtime_core PUBLIC pal4_inject_common advapi32 user32 winmm)
 add_dependencies(pal4_inject_runtime_core pal4_inject_build_info)
 
 add_library(pal4_runtime_x86 SHARED

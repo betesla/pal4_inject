@@ -43,7 +43,7 @@ constexpr std::array<EnumName<ScriptMode>, 3> kScriptModes{{
     {ScriptMode::csb, "csb"},
 }};
 
-constexpr std::array<EnumName<HookId>, 35> kHookIds{{
+constexpr std::array<EnumName<HookId>, 38> kHookIds{{
     {HookId::process_ui_event, "process_ui_event"},
     {HookId::handle_ui_message, "handle_ui_message"},
     {HookId::simulate_key_press_and_release, "simulate_key_press_and_release"},
@@ -61,6 +61,8 @@ constexpr std::array<EnumName<HookId>, 35> kHookIds{{
     {HookId::d3d9_set_present_parameters, "d3d9_set_present_parameters"},
     {HookId::pal4_main_wndproc, "pal4_main_wndproc"},
     {HookId::handle_player_input_events, "handle_player_input_events"},
+    {HookId::player_control_update, "player_control_update"},
+    {HookId::set_camera_mode_script, "set_camera_mode_script"},
     {HookId::combat_console_set_image_position, "combat_console_set_image_position"},
     {HookId::combat_console_set_image_position_2, "combat_console_set_image_position_2"},
     {HookId::ui_show_combat_result, "ui_show_combat_result"},
@@ -79,6 +81,7 @@ constexpr std::array<EnumName<HookId>, 35> kHookIds{{
     {HookId::crt_runtime_message, "crt_runtime_message"},
     {HookId::crt_message_box, "crt_message_box"},
     {HookId::movement_collision_check, "movement_collision_check"},
+    {HookId::ui_frame_manager_set_cursor, "ui_frame_manager_set_cursor"},
 }};
 
 template <typename Enum, std::size_t N>

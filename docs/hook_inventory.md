@@ -42,6 +42,12 @@
   - mode: `replace_with_fallback`
   - patch span: `8`
   - reason: `0x5D8DA0 giTalk` 是注册壳；真正吃对白文本参数的是已注册回调 `ProxyClass_Vtable12 @ 0x5DFB10`
+- `AudioSystem_PlaySample @ 0x658E90`
+  - persisted hook id: `audio_system_play_music`（为兼容既有配置保留）
+  - mode: `observe_only`
+  - patch span: `7`
+  - reason: IDA 已确认该函数创建 `AudioSample` 并返回对象 ID；runtime 只在同步的 `giTalk` 请求范围内，从 `AudioSystem+0x34/+0x38` 的活动列表定位该对象，把 `AudioSample+20` 的对象级音量倍率改为 launcher 配置值，再调用 vtable `+44` 的 `SetVolume`
+  - isolation: 最终配音音量仍是原游戏全局音效音量乘以对象倍率，背景音乐和其他音效不变
 - `CEGUI_Renderer_Constructor_2 @ 0x413580`
   - mode: `replace_with_fallback`
   - patch span: `8`
@@ -89,6 +95,14 @@
   - mode: `replace_with_fallback`
   - patch span: `7`
   - reason: PAL4 原始链路在这一层把 Bink 纹理直接按整屏矩形提交，宽屏下会把 4:3 视频拉伸；当前 hook 支持居中 `aspect-fit` 与“按宽度铺满 + 上下裁剪”两种保持比例的矩形
+- `PlayerControlUpdate @ 0x427660`
+  - mode: `replace_with_fallback`
+  - patch span: `6`
+  - reason: 这是两套原版移动输入分支之前的共同入口。连接手柄并启用现代控制时，左摇杆直接调用 `MovePlayerInDirection @ 0x427E70`，以活动相机的前向/右向量形成连续方向；`SetPlayerMovementMode @ 0x428190` 按推动幅度选择走、跑或快跑，并沿用原版 `0.4 / 1.0 / 1.5` 速度倍率。无有效摇杆输入时回退原逻辑。
+- `SetCameraMode script callback @ 0x5BC650`
+  - mode: `replace_with_fallback`
+  - patch span: `6`
+  - reason: 保留原脚本调用和附带状态更新；仅在用户启用实验选项时，通过 `CameraManager_SetMode @ 0x5EB960` 恢复脚本切换前的模式，阻止小场景固定镜头覆盖自由镜头。
 ## Reserved Hooks
 - `HandlePlayerInputEvents @ 0x4283B0`
   - mode: reserved
@@ -98,8 +112,16 @@
 - `MapVirtualKeyToUIKey @ 0x412130`
 - `EnableMouseCapture @ 0x4120D0`
 - `DisableMouseCapture @ 0x4120E0`
+- `uiFrameManager_SetCursor @ 0x4BBB70`
+  - 3D 场景 `WM_SETCURSOR` 会调用该函数，并在内部执行 Win32 `SetCursor`
+  - 手柄光标隐藏期间由注入层在入口直接拦截，避免原生箭头短暂显示
 - `PALGameIV_GetInstance @ 0x5B5AF0`
 - `UIFrameManager_GetInstance @ 0x4BB650`
+
+## Native Helpers Used By Gamepad Control
+- `MovePlayerInDirection @ 0x427E70`
+- `SetPlayerMovementMode @ 0x428190`
+- `Camera_SetScalarAndUpdateMatrix @ 0x5E9CC0`（R3 跟随距离循环；基准来自当前 CameraManager 模式记录 `+8`，原函数仍负责最终安全钳制）
 
 ## Evidence Notes
 - 所有地址均已在 IDA 中重新确认。

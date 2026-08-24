@@ -4,6 +4,7 @@
 #include <cassert>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <cstdlib>
 #include <filesystem>
@@ -29,6 +30,7 @@
 #include "pal4inject/borderless_window.h"
 #include "pal4inject/ida_addresses.h"
 #include "pal4inject/dpi_awareness.h"
+#include "pal4inject/dialogue_voice_volume.h"
 #include "pal4inject/inject_feature_catalog.h"
 #include "pal4inject/inject_settings.h"
 #include "pal4inject/input_logic.h"
@@ -241,7 +243,7 @@ void TestLooseFileLoadLogFormatting() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 34);
+    assert(inventory.size() == 37);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -271,6 +273,9 @@ void TestHookInventory() {
     bool found_crt_runtime_message = false;
     bool found_crt_message_box = false;
     bool found_movement_collision_check = false;
+    bool found_player_control_update = false;
+    bool found_set_camera_mode_script = false;
+    bool found_ui_frame_manager_set_cursor = false;
     for (const auto& hook : inventory) {
         assert(!hook.expected_prologue.empty());
         assert(hook.patch_span >= 5);
@@ -470,6 +475,25 @@ void TestHookInventory() {
             assert(hook.patch_span == 7);
             assert(hook.ida_ea == pal4::inject::ida::kMovementCollisionCheck);
         }
+        if (hook.id == HookId::ui_frame_manager_set_cursor) {
+            found_ui_frame_manager_set_cursor = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kUiFrameManagerSetCursor);
+            assert(hook.bootstrap_required);
+        }
+        if (hook.id == HookId::player_control_update) {
+            found_player_control_update = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 6);
+            assert(hook.ida_ea == pal4::inject::ida::kPlayerControlUpdate);
+        }
+        if (hook.id == HookId::set_camera_mode_script) {
+            found_set_camera_mode_script = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 6);
+            assert(hook.ida_ea == pal4::inject::ida::kSetCameraModeScript);
+        }
     }
     assert(found_process_ui_event);
     assert(found_handle_ui_message);
@@ -500,6 +524,9 @@ void TestHookInventory() {
     assert(found_crt_runtime_message);
     assert(found_crt_message_box);
     assert(found_movement_collision_check);
+    assert(found_player_control_update);
+    assert(found_set_camera_mode_script);
+    assert(found_ui_frame_manager_set_cursor);
 }
 
 void TestHookManagerBootstrapReplacementCoverage() {
@@ -1116,6 +1143,19 @@ void TestInjectSettingsRoundTrip() {
     settings.script_mode = pal4::inject::ScriptMode::cs;
     settings.msaa_level = pal4::inject::MsaaLevel::x4;
     settings.bink_scaling_mode = pal4::inject::BinkScalingMode::fill_width_crop;
+    settings.gi_talk_volume = 1.65F;
+    settings.gamepad_enabled = true;
+    settings.gamepad_log_enabled = true;
+    settings.gamepad_modern_controls = true;
+    settings.gamepad_invert_camera_y = true;
+    settings.gamepad_preserve_free_camera = true;
+    settings.gamepad_run_threshold = 0.71F;
+    settings.gamepad_fast_run_threshold = 0.91F;
+    settings.gamepad_camera_sensitivity = 175.0F;
+    pal4::inject::SetGamepadBinding(
+        &settings.gamepad_mapping,
+        pal4::inject::Xbox360Button::y,
+        pal4::inject::GamepadAction::map);
     settings.borderless_window = true;
     settings.borderless_monitor = R"(\\.\DISPLAY2)";
     settings.hooks.push_back({
@@ -1145,6 +1185,18 @@ void TestInjectSettingsRoundTrip() {
     assert(parsed.msaa_level == pal4::inject::MsaaLevel::x4);
     assert(parsed.bink_scaling_mode ==
            pal4::inject::BinkScalingMode::fill_width_crop);
+    assert(parsed.gi_talk_volume == 1.65F);
+    assert(parsed.gamepad_enabled);
+    assert(parsed.gamepad_log_enabled);
+    assert(parsed.gamepad_modern_controls);
+    assert(parsed.gamepad_invert_camera_y);
+    assert(parsed.gamepad_preserve_free_camera);
+    assert(parsed.gamepad_run_threshold == 0.71F);
+    assert(parsed.gamepad_fast_run_threshold == 0.91F);
+    assert(parsed.gamepad_camera_sensitivity == 175.0F);
+    assert(pal4::inject::GetGamepadBinding(
+        parsed.gamepad_mapping,
+        pal4::inject::Xbox360Button::y) == pal4::inject::GamepadAction::map);
     assert(parsed.borderless_window);
     assert(parsed.borderless_monitor == R"(\\.\DISPLAY2)");
     assert(parsed.hooks.size() == 3);
@@ -1178,6 +1230,11 @@ void TestInjectSettingsRoundTrip() {
     assert(loaded.msaa_level == pal4::inject::MsaaLevel::x4);
     assert(loaded.bink_scaling_mode ==
            pal4::inject::BinkScalingMode::fill_width_crop);
+    assert(loaded.gi_talk_volume == 1.65F);
+    assert(loaded.gamepad_run_threshold == 0.71F);
+    assert(loaded.gamepad_fast_run_threshold == 0.91F);
+    assert(loaded.gamepad_camera_sensitivity == 175.0F);
+    assert(loaded.gamepad_preserve_free_camera);
     assert(loaded.borderless_window);
     assert(loaded.borderless_monitor == R"(\\.\DISPLAY2)");
     std::filesystem::remove(temp_path);
@@ -1189,6 +1246,28 @@ void TestInjectSettingsRoundTrip() {
         &error));
     assert(legacy.script_mode == pal4::inject::ScriptMode::csb);
     assert(legacy.bink_scaling_mode == pal4::inject::BinkScalingMode::fit);
+    assert(legacy.gi_talk_volume == pal4::inject::kDefaultGiTalkVolume);
+    assert(legacy.gamepad_modern_controls);
+    assert(!legacy.gamepad_preserve_free_camera);
+    assert(legacy.gamepad_fast_run_threshold == 0.88F);
+    assert(pal4::inject::GetGamepadBinding(
+        legacy.gamepad_mapping,
+        pal4::inject::Xbox360Button::right_thumb) ==
+        pal4::inject::GamepadAction::camera_distance_cycle);
+    assert(pal4::inject::GetGamepadBinding(
+        legacy.gamepad_mapping,
+        pal4::inject::Xbox360Button::left_thumb) ==
+        pal4::inject::GamepadAction::switch_leader);
+
+    pal4::inject::InjectPersistedSettings version9{};
+    assert(pal4::inject::ParseInjectPersistedSettings(
+        "version=9\ngamepad.binding.left_thumb=auto_forward\n",
+        &version9,
+        &error));
+    assert(pal4::inject::GetGamepadBinding(
+        version9.gamepad_mapping,
+        pal4::inject::Xbox360Button::left_thumb) ==
+        pal4::inject::GamepadAction::switch_leader);
     assert(!legacy.borderless_window);
     assert(legacy.borderless_monitor.empty());
 
@@ -1198,6 +1277,153 @@ void TestInjectSettingsRoundTrip() {
         &invalid,
         &error));
     assert(error.find("invalid script_mode") != std::string::npos);
+    assert(!pal4::inject::ParseInjectPersistedSettings(
+        "version=6\ngi_talk_volume=3.1\n",
+        &invalid,
+        &error));
+    assert(error.find("invalid gi_talk_volume") != std::string::npos);
+    assert(!pal4::inject::ParseInjectPersistedSettings(
+        "version=8\ngamepad_run_threshold=nan\n",
+        &invalid,
+        &error));
+    assert(error.find("invalid gamepad_run_threshold") != std::string::npos);
+    assert(!pal4::inject::ParseInjectPersistedSettings(
+        "version=9\ngamepad_fast_run_threshold=nan\n",
+        &invalid,
+        &error));
+    assert(error.find("invalid gamepad_fast_run_threshold") != std::string::npos);
+}
+
+void TestGamepadLogic() {
+    assert(!pal4::inject::HasGamepadInputActivity(
+        0, 0, 0, 0, 0, 0, 0, 7849, 8689, 128));
+    assert(pal4::inject::HasGamepadInputActivity(
+        0x1000, 0, 0, 0, 0, 0, 0, 7849, 8689, 128));
+    assert(pal4::inject::HasGamepadInputActivity(
+        0, 128, 0, 0, 0, 0, 0, 7849, 8689, 128));
+    assert(pal4::inject::HasGamepadInputActivity(
+        0, 0, 0, 20000, 0, 0, 0, 7849, 8689, 128));
+
+    const auto centered = pal4::inject::BuildGamepadAnalogStick(2000, -2000, 7849);
+    assert(centered.magnitude == 0.0F);
+
+    const auto forward = pal4::inject::BuildGamepadAnalogStick(0, 32767, 7849);
+    assert(std::fabs(forward.x) < 0.001F);
+    assert(std::fabs(forward.y - 1.0F) < 0.001F);
+    assert(std::fabs(forward.magnitude - 1.0F) < 0.001F);
+
+    const auto diagonal = pal4::inject::BuildGamepadAnalogStick(32767, 32767, 7849);
+    assert(std::fabs(diagonal.x - 0.7071F) < 0.001F);
+    assert(std::fabs(diagonal.y - 0.7071F) < 0.001F);
+    assert(std::fabs(diagonal.magnitude - 1.0F) < 0.001F);
+    assert(pal4::inject::SelectGamepadMovementMode(0.61F, 0.62F, 0.88F) == 0);
+    assert(pal4::inject::SelectGamepadMovementMode(0.62F, 0.62F, 0.88F) == 1);
+    assert(pal4::inject::SelectGamepadMovementMode(0.87F, 0.62F, 0.88F) == 1);
+    assert(pal4::inject::SelectGamepadMovementMode(0.88F, 0.62F, 0.88F) == 2);
+    assert(pal4::inject::SelectNextGamepadCameraDistance(1.0F, 5.0F) == 2.5F);
+    assert(pal4::inject::SelectNextGamepadCameraDistance(2.5F, 5.0F) == 5.0F);
+    assert(pal4::inject::SelectNextGamepadCameraDistance(5.0F, 5.0F) == 7.5F);
+    assert(pal4::inject::SelectNextGamepadCameraDistance(7.5F, 5.0F) == 1.0F);
+
+    const auto mapping = pal4::inject::DefaultXbox360GamepadMapping();
+    assert(pal4::inject::GetGamepadBinding(
+        mapping,
+        pal4::inject::Xbox360Button::a) == pal4::inject::GamepadAction::confirm);
+    assert(pal4::inject::GetGamepadBinding(
+        mapping,
+        pal4::inject::Xbox360Button::right_thumb) ==
+        pal4::inject::GamepadAction::camera_distance_cycle);
+    assert(pal4::inject::GetGamepadBinding(
+        mapping,
+        pal4::inject::Xbox360Button::left_thumb) ==
+        pal4::inject::GamepadAction::switch_leader);
+    assert(pal4::inject::WrapGamepadCycleIndex(0, -1, 7) == 6);
+    assert(
+        pal4::inject::SelectGamepadCursorPresentation(true, true) ==
+        pal4::inject::GamepadCursorPresentation::hide_all);
+    assert(
+        pal4::inject::SelectGamepadCursorPresentation(false, true) ==
+        pal4::inject::GamepadCursorPresentation::cegui_only);
+    assert(
+        pal4::inject::SelectGamepadCursorPresentation(false, false) ==
+        pal4::inject::GamepadCursorPresentation::native_only);
+    assert(
+        pal4::inject::SelectSystemMenuCancelAction(false, false) ==
+        pal4::inject::SystemMenuCancelAction::none);
+    assert(
+        pal4::inject::SelectSystemMenuCancelAction(true, false) ==
+        pal4::inject::SystemMenuCancelAction::close_root);
+    assert(
+        pal4::inject::SelectSystemMenuCancelAction(true, true) ==
+        pal4::inject::SystemMenuCancelAction::escape_nested);
+}
+
+void TestGiTalkVoiceVolume() {
+    float parsed = -1.0F;
+    assert(pal4::inject::TryParseGiTalkVolume("0", &parsed));
+    assert(parsed == 0.0F);
+    assert(pal4::inject::TryParseGiTalkVolume("0.375", &parsed));
+    assert(parsed == 0.375F);
+    assert(pal4::inject::TryParseGiTalkVolume("1", &parsed));
+    assert(parsed == 1.0F);
+    assert(pal4::inject::TryParseGiTalkVolume("3", &parsed));
+    assert(parsed == 3.0F);
+    assert(!pal4::inject::TryParseGiTalkVolume("-0.1", &parsed));
+    assert(!pal4::inject::TryParseGiTalkVolume("nan", &parsed));
+    assert(!pal4::inject::TryParseGiTalkVolume("50%", &parsed));
+    assert(pal4::inject::ClampGiTalkVolume(-0.5F) == 0.0F);
+    assert(pal4::inject::ClampGiTalkVolume(1.5F) == 1.5F);
+    assert(pal4::inject::ClampGiTalkVolume(2.5F) == 2.5F);
+    assert(pal4::inject::ClampGiTalkVolume(3.5F) == 3.0F);
+    assert(pal4::inject::IsGiTalkVoiceResource(R"(gamedata\PALSOUND\A123.mp3)"));
+    assert(pal4::inject::IsGiTalkVoiceResource("PALSOUND/A123.MP3"));
+    assert(!pal4::inject::IsGiTalkVoiceResource(R"(gamedata\PALMUSIC\A123.mp3)"));
+    assert(!pal4::inject::IsGiTalkVoiceResource(R"(gamedata\PALSOUND\A123.wav)"));
+
+    const auto decrease = pal4::inject::ResolveGiTalkVolumeHotkey(
+        WM_KEYDOWN, VK_OEM_4, false);
+    assert(decrease.consume);
+    assert(decrease.step_direction == -1);
+    const auto increase = pal4::inject::ResolveGiTalkVolumeHotkey(
+        WM_KEYDOWN, VK_OEM_6, false);
+    assert(increase.consume);
+    assert(increase.step_direction == 1);
+    const auto repeated = pal4::inject::ResolveGiTalkVolumeHotkey(
+        WM_KEYDOWN, VK_OEM_6, true);
+    assert(repeated.consume);
+    assert(repeated.step_direction == 0);
+    const auto released = pal4::inject::ResolveGiTalkVolumeHotkey(
+        WM_KEYUP, VK_OEM_4, false);
+    assert(released.consume);
+    assert(released.step_direction == 0);
+    const auto character = pal4::inject::ResolveGiTalkVolumeHotkey(
+        WM_CHAR, '[', false);
+    assert(character.consume);
+    assert(character.step_direction == 0);
+    const auto unrelated = pal4::inject::ResolveGiTalkVolumeHotkey(
+        WM_KEYDOWN, 'P', false);
+    assert(!unrelated.consume);
+    assert(unrelated.step_direction == 0);
+
+    assert(std::fabs(pal4::inject::StepGiTalkVolume(0.50F, -1) - 0.45F) < 0.0001F);
+    assert(std::fabs(pal4::inject::StepGiTalkVolume(0.50F, 1) - 0.55F) < 0.0001F);
+    assert(pal4::inject::StepGiTalkVolume(0.0F, -1) == 0.0F);
+    assert(pal4::inject::StepGiTalkVolume(1.0F, 1) == 1.05F);
+    assert(pal4::inject::StepGiTalkVolume(2.95F, 1) == 3.0F);
+    assert(pal4::inject::StepGiTalkVolume(3.0F, 1) == 3.0F);
+    assert(pal4::inject::StepGiTalkVolume(0.0999998F, -1) == 0.05F);
+    assert(pal4::inject::GiTalkVolumeWaveCount(0.0F) == 0);
+    assert(pal4::inject::GiTalkVolumeWaveCount(0.05F) == 1);
+    assert(pal4::inject::GiTalkVolumeWaveCount(1.0F) == 1);
+    assert(pal4::inject::GiTalkVolumeWaveCount(1.05F) == 2);
+    assert(pal4::inject::GiTalkVolumeWaveCount(2.0F) == 2);
+    assert(pal4::inject::GiTalkVolumeWaveCount(2.05F) == 3);
+    assert(pal4::inject::GiTalkVolumeWaveCount(3.0F) == 3);
+    assert(pal4::inject::ComputeGiTalkVolumeOsdOpacity(0) == 1.0F);
+    assert(pal4::inject::ComputeGiTalkVolumeOsdOpacity(1250) == 1.0F);
+    assert(std::fabs(
+        pal4::inject::ComputeGiTalkVolumeOsdOpacity(1425) - 0.5F) < 0.0001F);
+    assert(pal4::inject::ComputeGiTalkVolumeOsdOpacity(1600) == 0.0F);
 }
 
 void TestBorderlessWindowPlan() {
@@ -1234,6 +1460,11 @@ void TestBorderlessWindowPlan() {
 }
 
 void TestInputLogic() {
+    assert(pal4::inject::IsCapturedMouseRecenterPosition(960, 540, 1920, 1080));
+    assert(pal4::inject::IsCapturedMouseRecenterPosition(958, 542, 1920, 1080));
+    assert(!pal4::inject::IsCapturedMouseRecenterPosition(950, 540, 1920, 1080));
+    assert(!pal4::inject::IsCapturedMouseRecenterPosition(0, 0, 0, 1080));
+
     assert(pal4::inject::NormalizeProcessUiEventKeyDown(17) == 200);
     assert(pal4::inject::NormalizeProcessUiEventKeyDown(30) == 203);
     assert(pal4::inject::NormalizeProcessUiEventKeyDown(57) == 28);
@@ -1311,6 +1542,8 @@ void TestRuntimeEventLog() {
     assert(!state.GetHookLogEnabled(HookId::load_font_file));
     state.SetMsaaLevel(pal4::inject::MsaaLevel::x2);
     state.SetBinkScalingMode(pal4::inject::BinkScalingMode::fill_width_crop);
+    state.SetGiTalkVolume(0.55F);
+    state.SetGiTalkVolumeApplied(true, "voice_key=A123 multiplier=0.55");
     state.SetBorderlessWindowEnabled(true);
     state.SetBorderlessMonitor(R"(\\.\DISPLAY2)");
     state.SetBorderlessWindowApplied(true, "monitor=0,0 1920x1080");
@@ -1331,6 +1564,9 @@ void TestRuntimeEventLog() {
     assert(snapshot.msaa_level == pal4::inject::MsaaLevel::x2);
     assert(snapshot.bink_scaling_mode ==
            pal4::inject::BinkScalingMode::fill_width_crop);
+    assert(snapshot.gi_talk_volume == 0.55F);
+    assert(snapshot.gi_talk_volume_applied);
+    assert(snapshot.gi_talk_volume_summary == "voice_key=A123 multiplier=0.55");
     assert(snapshot.borderless_window_enabled);
     assert(snapshot.borderless_window_applied);
     assert(snapshot.borderless_monitor == R"(\\.\DISPLAY2)");
@@ -2403,6 +2639,8 @@ int main() {
     TestInheritedScriptModeOverride();
     TestInjectFeatureCatalog();
     TestInjectSettingsRoundTrip();
+    TestGamepadLogic();
+    TestGiTalkVoiceVolume();
     TestBorderlessWindowPlan();
     TestProtocolRoundTrip();
     TestUiSnapshotSerialization();

@@ -77,13 +77,23 @@
     - launcher 与配置共用的功能分组、标签与 mode 列表
     - 定义宽屏预设成员，并统一切换它们的 active / observe-only 模式
   - `inject_settings.cpp`
-    - 游戏目录下的脚本模式、Hook 与画质设置持久化，并兼容读取旧文件名
+    - 游戏目录下的脚本模式、Hook、画质与 `giTalk` 对白音量设置持久化，并兼容读取旧文件名
+  - `dialogue_voice_volume.cpp`
+    - 对白音量范围、配置解析、`PALSOUND/*.mp3` 资源分类与 `[` / `]` 单键决策的纯逻辑
   - `loose_file_overlay.cpp`
     - 校验 `gamedata\...` 相对资源路径
     - 构造并查找 `<游戏目录>\gamepatch` 补丁候选与独立日志路径
 - `src/runtime`
   - `runtime_state.cpp`
-    - bootstrap / pipe / hook call count / last UI event / last error / font sync / crash artifacts
+    - bootstrap / pipe / hook call count / last UI event / last error / font sync / crash artifacts / 对白音量应用状态
+  - `media_observation_hooks.cpp`
+    - `audio_system_play_music` 是为兼容旧配置保留的 Hook ID；IDA 已确认 `0x658E90` 实际为 `AudioSystem_PlaySample`
+    - `giTalk` 调用范围使用线程局部标记，仅对该范围内同步创建的 `PALSOUND` AudioSample 写入对象级倍率并调用其 `SetVolume` 虚函数
+    - 对象最终音量仍由原游戏的全局音效音量乘以该对象倍率计算，BGM 与其他音效不受影响
+    - 保存最近一次 `giTalk` AudioSample ID；游戏内快捷键改变设置时重新从活动列表定位，当前配音存在则立即应用，不存在则等待下一句
+    - 活动 AudioSample 向量对象位于 `AudioSystem+0x30`，实际 begin/end 字段为 `+0x34/+0x38`；该布局由 `AudioSystem_PlaySample @ 0x658E90` 的插入调用与 `AudioSystem_CleanupSounds @ 0x6593E0` 共同确认
+  - `dialogue_voice_osd.cpp`
+    - 保存最近一次快捷键调整的百分比和显示时刻；renderer 每帧读取无锁快照
   - `hook_manager.cpp`
     - x86 inline detour、prologue 校验、卸载
     - bootstrap hook 按稳定优先级排序安装；实验性 hook 可后置且失败不阻断主链
@@ -114,6 +124,7 @@
     - shared `CEGUI_Renderer_Constructor_2` widescreen pillarbox patch
     - object-local synthetic vtable for `active UI logical -> physical` 投影
     - 原版 4:3 UI 走居中缩放时，只在白名单界面先绘制左右黑色 pillarbox 底板，再提交 CEGUI 队列；白名单覆盖主菜单族窗口和底部工具栏打开的角色/属性/装备/仙术/锻造/任务/系统设置窗口，普通 gameplay HUD 不绘制黑边遮罩，避免贴边元素被盖住
+    - 在普通 CEGUI 队列提交完成后绘制 `giTalk` 矢量喇叭、0～3 道音波和七段式百分比数字，保证提示位于游戏 UI 上层，并按 1.6 秒可见周期在末尾淡出
   - `battle_ui_layout_hooks.cpp`
     - `SetProperties_4C2550` 保留为纯透传 hook，不再承载战斗坐标修正
     - `RenderTextAndImage` 当前只负责 battle 自绘共享 sink 的位置投影
@@ -140,7 +151,7 @@
   - `crash_handler.cpp`
     - VEH / unhandled exception handler、crash report、minidump
   - `runtime_preferences.cpp`
-    - 加载 launcher 写入的 remembered hook mode 与 `MSAA` 设置
+    - 加载 launcher 写入的 remembered hook mode、`MSAA`、对白音量与手柄设置
     - 把 IPC 调试期的 mode 变更统一转成 runtime side effect
   - `memory_debug_runtime.cpp`
     - `IDA EA / runtime VA` 解析
@@ -154,6 +165,20 @@
   - `bootstrap.cpp`
     - bootstrap 主流程
     - 复核 launcher 期请求的脚本模式，必要时补写并记录日志
+  - `gamepad_runtime.cpp`
+    - 动态加载 XInput、轮询 0 号手柄、维护菜单上下文与按钮映射
+    - 仅由原生 `ProcessInputs` 入口轮询；Start/F1 同时按七个内容页与 `frameToolbar/btnClose` 的实际状态切换整层系统菜单，并通过关闭按钮的 CEGUI 点击事件逐层收敛；B 在内容页执行一级 Esc 返回、在只剩工具栏的主页面触发关闭事件，因此可连续返回直至退出 UI，且不会在 3D 场景中借由 Esc 误开菜单；缓存为菜单状态时，同一输入入口检查关闭按钮能否沿父节点链连接到当前 `GUISheet`，而不是仅检查 WindowManager 中可能残留的对象及其局部 visible 标志；除刚打开菜单的四帧延迟外，连续两帧脱离当前 UI 树即清除菜单状态，使读档切场景后立即恢复移动，不从渲染帧或 timer 建立第二条轮询路径
+    - LB/RB 与 LT/RT 的分页键通过游戏线程上的 CEGUI 直连事件派发，避免 `SendInput` 的同帧按下/释放被菜单漏采样
+    - 产出经过径向死区处理的左右摇杆状态；兼容模式才回写 W/A/S/D
+    - 根据最近的有效手柄/鼠标输入控制光标；手柄模式维持 CEGUI 与 Win32 光标隐藏，鼠标模式读取 CEGUI `MouseCursor::isVisible()`，UI 中仅保留游戏光标、3D 场景仅保留原生光标，避免两枚指针同时显示
+    - 过滤 3D 场景鼠标捕获产生的窗口中心回中消息，并对手柄到鼠标切换做短时去抖，避免把游戏自身的回中动作误判为鼠标接管
+    - 在 `uiFrameManager_SetCursor @ 0x4BBB70` 入口拦截手柄模式下的原生 `SetCursor`，消除先显示、后清空造成的单帧闪烁
+  - `gamepad_control_hooks.cpp`
+    - 在玩家控制总入口消费左摇杆，调用游戏原生任意方向移动函数与走/跑/快跑模式函数
+    - 通过活动相机前向/右向量构建相机相对方向，并用右摇杆更新 yaw/pitch
+    - R3 默认读取当前镜头模式配置记录的原版距离，并调用原生相机距离 setter 在 `0.2× / 0.5× / 1.0× / 1.5×` 四档间循环
+    - 左摇杆持续推动时维护独立的目标 yaw，并在中央相机矩阵入口阻断“角色转向带动跟随镜头、下一帧方向再次偏转”的反馈环
+    - 可选地在脚本 `SetCameraMode` 返回后恢复此前模式
 
 ## Current Behavior Boundary
 - 已默认安装的 Hook：
@@ -165,6 +190,8 @@
   - `ProcessInputs`
   - `UpdateInputDeviceState`
   - `InitializeDirectInput`
+  - `PlayerControlUpdate`
+  - `SetCameraMode` 脚本回调
   - `giTalk` 脚本执行入口
   - `CEGUI_Renderer_Constructor_2`
   - `LoadFontFile`
@@ -204,6 +231,7 @@
   - 当前 hook 的是已注册脚本回调 `ProxyClass_Vtable12 @ 0x5DFB10`
   - 只重写显示文本参数为 `已注入` 的 GBK 字节串
   - 保留第二个音频 key 参数，避免把语音资源路径一起改坏
+  - 调用原回调期间建立线程局部配音请求范围；`AudioSystem_PlaySample @ 0x658E90` 返回对象 ID 后，通过活动 AudioSample 列表定位同一对象并设置独立倍率
 - wide-aspect UI
   - 系统任一时刻只存在一个 `active UI logical space`
   - 当前默认 profile 是 `centered_800x600`

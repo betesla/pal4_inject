@@ -28,6 +28,12 @@ struct UiInjectedPlan {
 std::uint32_t NormalizeProcessUiEventKeyDown(std::uint32_t mapped_key) noexcept;
 std::uint32_t NormalizeProcessUiEventKeyUp(std::uint32_t mapped_key) noexcept;
 bool ShouldSuppressMappedUiKey(std::uint32_t mapped_key) noexcept;
+bool IsCapturedMouseRecenterPosition(
+    int x,
+    int y,
+    int client_width,
+    int client_height,
+    int tolerance = 2) noexcept;
 UiInjectedPlan BuildUiInjectedPlan(
     std::uint32_t message,
     std::uint32_t mapped_key,

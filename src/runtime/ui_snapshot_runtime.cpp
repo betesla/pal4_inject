@@ -1,5 +1,6 @@
 #include "ui_snapshot_runtime.h"
 
+#include <array>
 #include <cmath>
 #include <mutex>
 
@@ -409,6 +410,112 @@ const UiSnapshotNode* FindFocusedEditableNode(const UiSnapshotNode& node) {
     return nullptr;
 }
 
+bool EqualsInsensitiveAscii(
+    const std::string_view lhs,
+    const std::string_view rhs) {
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < lhs.size(); ++index) {
+        char left = lhs[index];
+        char right = rhs[index];
+        if (left >= 'A' && left <= 'Z') {
+            left = static_cast<char>(left - 'A' + 'a');
+        }
+        if (right >= 'A' && right <= 'Z') {
+            right = static_cast<char>(right - 'A' + 'a');
+        }
+        if (left != right) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ResolveWindowByName(
+    const CeguiBindings& bindings,
+    const char* const name,
+    void** const out,
+    std::string* error) {
+    if (!name || !out ||
+        !bindings.get_window_manager_singleton_ptr ||
+        !bindings.window_manager_is_window_present ||
+        !bindings.window_manager_get_window ||
+        !bindings.cegui_string_ctor_from_ansi ||
+        !bindings.cegui_string_dtor) {
+        if (error) {
+            *error = "CEGUI named-window lookup dependencies are unavailable";
+        }
+        return false;
+    }
+
+    void* const window_manager = bindings.get_window_manager_singleton_ptr();
+    if (!window_manager) {
+        if (error) {
+            *error = "CEGUI window manager singleton is null";
+        }
+        return false;
+    }
+
+    OpaqueCeguiString window_name{};
+    bindings.cegui_string_ctor_from_ansi(&window_name, name);
+    const bool present = bindings.window_manager_is_window_present(
+        window_manager,
+        &window_name);
+    *out = present
+        ? bindings.window_manager_get_window(window_manager, &window_name)
+        : nullptr;
+    bindings.cegui_string_dtor(&window_name);
+    if (error) {
+        error->clear();
+    }
+    return true;
+}
+
+bool IsWindowAttachedToActiveGuiSheet(
+    const CeguiBindings& bindings,
+    const void* window) {
+    if (!window ||
+        !bindings.get_system_singleton_ptr ||
+        !bindings.get_gui_sheet ||
+        !bindings.window_get_parent) {
+        return false;
+    }
+    void* const system = bindings.get_system_singleton_ptr();
+    void* const gui_sheet = system
+        ? bindings.get_gui_sheet(system)
+        : nullptr;
+    if (!gui_sheet) {
+        return false;
+    }
+
+    constexpr unsigned int kMaxAncestorDepth = 64;
+    const void* current = window;
+    for (unsigned int depth = 0;
+         current && depth < kMaxAncestorDepth;
+         ++depth) {
+        if (current == gui_sheet) {
+            return true;
+        }
+        current = bindings.window_get_parent(current);
+    }
+    return false;
+}
+
+const UiSnapshotNode* FindNodeByNameInsensitive(
+    const UiSnapshotNode& node,
+    const std::string_view name) {
+    if (EqualsInsensitiveAscii(node.name, name)) {
+        return &node;
+    }
+    for (const auto& child : node.children) {
+        if (const auto* found = FindNodeByNameInsensitive(child, name)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 bool CaptureAndCacheUiSnapshot(UiSnapshotTree* out, std::string* error) {
@@ -428,6 +535,116 @@ bool ClickCachedUiSnapshotRef(const std::string_view ref, std::string* error) {
         return false;
     }
     return DispatchClientClick(node, error);
+}
+
+bool ClickLikelySystemMenuCloseButton(std::string* error) {
+    CeguiBindings bindings{};
+    if (!TryGetCeguiBindings(&bindings, error) ||
+        !bindings.window_event_args_ctor ||
+        !bindings.window_event_args_dtor ||
+        !bindings.push_button_on_clicked) {
+        return false;
+    }
+
+    void* close_button = nullptr;
+    if (!ResolveWindowByName(
+            bindings,
+            "frameToolbar/btnClose",
+            &close_button,
+            error)) {
+        return false;
+    }
+    if (!close_button) {
+        if (error) {
+            *error = "failed to locate system-menu close button frameToolbar/btnClose";
+        }
+        return false;
+    }
+    if ((bindings.window_is_visible &&
+         !bindings.window_is_visible(close_button, false)) ||
+        (bindings.window_is_disabled &&
+         bindings.window_is_disabled(close_button, false))) {
+        if (error) {
+            *error = "system-menu close button is not visible and enabled";
+        }
+        return false;
+    }
+
+    OpaqueCeguiWindowEventArgs event_args{};
+    bindings.window_event_args_ctor(&event_args, close_button);
+    bindings.push_button_on_clicked(close_button, &event_args);
+    bindings.window_event_args_dtor(&event_args);
+    if (error) {
+        error->clear();
+    }
+    return true;
+}
+
+bool QuerySystemMenuShellVisible(bool* const visible, std::string* error) {
+    if (!visible) {
+        if (error) {
+            *error = "system-menu shell visibility output pointer is null";
+        }
+        return false;
+    }
+
+    CeguiBindings bindings{};
+    if (!TryGetCeguiBindings(&bindings, error) ||
+        !bindings.window_is_visible ||
+        !bindings.window_get_parent) {
+        return false;
+    }
+    void* close_button = nullptr;
+    if (!ResolveWindowByName(
+            bindings,
+            "frameToolbar/btnClose",
+            &close_button,
+            error)) {
+        return false;
+    }
+    *visible = close_button &&
+        IsWindowAttachedToActiveGuiSheet(bindings, close_button) &&
+        bindings.window_is_visible(close_button, false);
+    return true;
+}
+
+bool QuerySystemMenuState(
+    bool* const visible,
+    bool* const page_visible,
+    std::string* error) {
+    if (!visible || !page_visible) {
+        if (error) {
+            *error = "system-menu state output pointer is null";
+        }
+        return false;
+    }
+
+    UiSnapshotTree tree{};
+    if (!CaptureUiSnapshotInternal(false, &tree, error)) {
+        return false;
+    }
+    constexpr std::array<std::string_view, 7> kSystemMenuPageRoots{
+        "roleStateWindow/Root",
+        "PropertyWindow/Root",
+        "EquipmentWindow/Root",
+        "magicWindow/Root",
+        "SmithWindow/Root",
+        "MissionWindow/Root",
+        "SystemSetting/Root",
+    };
+    *page_visible = false;
+    for (const auto name : kSystemMenuPageRoots) {
+        const auto* root = FindNodeByNameInsensitive(tree.root, name);
+        if (root && root->visible) {
+            *page_visible = true;
+        }
+    }
+    const auto* close_button =
+        FindNodeByNameInsensitive(tree.root, "frameToolbar/btnClose");
+    const bool close_button_visible =
+        close_button && close_button->visible && close_button->enabled;
+    *visible = *page_visible || close_button_visible;
+    return true;
 }
 
 bool FillCachedUiSnapshotRef(

@@ -1,5 +1,6 @@
 build/
 build-local/
+build-nopublish/
 .codex/
 .playwright-cli/
 *.obj

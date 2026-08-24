@@ -26,6 +26,10 @@ struct OpaqueCeguiString {
     std::array<std::byte, 152> storage{};
 };
 
+struct alignas(void*) OpaqueCeguiWindowEventArgs {
+    std::array<std::byte, 12> storage{};
+};
+
 struct CeguiBindings {
     using GetSingletonFn = void* (__cdecl*)();
     using GetSingletonPtrFn = void* (__cdecl*)();
@@ -41,6 +45,7 @@ struct CeguiBindings {
     using CeguiStringCStrFn = const char* (__thiscall*)(const void*);
     using WindowGetChildCountFn = unsigned int (__thiscall*)(const void*);
     using WindowGetChildAtIdxFn = void* (__thiscall*)(const void*, unsigned int);
+    using WindowGetParentFn = void* (__thiscall*)(const void*);
     using WindowGetScalarFn = float (__thiscall*)(const void*);
     using WindowIsFlagFn = bool (__thiscall*)(const void*, bool);
     using WindowIsActiveFn = bool (__thiscall*)(const void*);
@@ -58,11 +63,17 @@ struct CeguiBindings {
     using FontGetFontHeightFn = float (__thiscall*)(void*, float);
     using CeguiStringCtorFromAnsiFn = void (__thiscall*)(void*, const char*);
     using CeguiStringDtorFn = void (__thiscall*)(void*);
+    using MouseCursorVisibilityFn = void (__thiscall*)(void*);
+    using MouseCursorIsVisibleFn = bool (__thiscall*)(const void*);
+    using WindowEventArgsCtorFn = void* (__thiscall*)(void*, void*);
+    using WindowEventArgsDtorFn = void (__thiscall*)(void*);
+    using PushButtonOnClickedFn = void (__thiscall*)(void*, void*);
 
     GetSingletonFn get_system_singleton = nullptr;
     GetSingletonPtrFn get_system_singleton_ptr = nullptr;
     GetSingletonPtrFn get_font_manager_singleton_ptr = nullptr;
     GetSingletonPtrFn get_window_manager_singleton_ptr = nullptr;
+    GetSingletonPtrFn get_mouse_cursor_singleton_ptr = nullptr;
     SystemGetGuiSheetFn get_gui_sheet = nullptr;
     WindowManagerIsWindowPresentFn window_manager_is_window_present = nullptr;
     WindowManagerGetWindowFn window_manager_get_window = nullptr;
@@ -78,6 +89,7 @@ struct CeguiBindings {
     CeguiStringCStrFn cegui_string_c_str = nullptr;
     WindowGetChildCountFn window_get_child_count = nullptr;
     WindowGetChildAtIdxFn window_get_child_at_index = nullptr;
+    WindowGetParentFn window_get_parent = nullptr;
     WindowGetScalarFn window_get_absolute_x = nullptr;
     WindowGetScalarFn window_get_absolute_y = nullptr;
     WindowGetScalarFn window_get_absolute_width = nullptr;
@@ -101,6 +113,12 @@ struct CeguiBindings {
     FontGetFontHeightFn font_get_font_height = nullptr;
     CeguiStringCtorFromAnsiFn cegui_string_ctor_from_ansi = nullptr;
     CeguiStringDtorFn cegui_string_dtor = nullptr;
+    MouseCursorVisibilityFn mouse_cursor_show = nullptr;
+    MouseCursorVisibilityFn mouse_cursor_hide = nullptr;
+    MouseCursorIsVisibleFn mouse_cursor_is_visible = nullptr;
+    WindowEventArgsCtorFn window_event_args_ctor = nullptr;
+    WindowEventArgsDtorFn window_event_args_dtor = nullptr;
+    PushButtonOnClickedFn push_button_on_clicked = nullptr;
     const void* event_args_vftable = nullptr;
     const void* renderer_event_namespace = nullptr;
     const void* renderer_event_display_size_changed = nullptr;

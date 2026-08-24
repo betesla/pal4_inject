@@ -100,10 +100,13 @@ bool HookManager::Initialize(std::string* error) {
         switch (descriptor.id) {
         case HookId::process_ui_event:
         case HookId::handle_ui_message:
+        case HookId::ui_frame_manager_set_cursor:
         case HookId::simulate_key_press_and_release:
         case HookId::process_inputs:
         case HookId::update_input_device_state:
         case HookId::initialize_direct_input:
+        case HookId::player_control_update:
+        case HookId::set_camera_mode_script:
         case HookId::gi_talk:
         case HookId::cegui_renderer_constructor_2:
         case HookId::cegui_system_initialize:

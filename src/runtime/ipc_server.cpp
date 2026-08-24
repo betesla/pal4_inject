@@ -144,6 +144,22 @@ ProtocolResponse BuildSnapshotResponse() {
         HexValue(static_cast<std::uint32_t>(snapshot.main_module_base));
     response.fields["msaa_level"] = ToString(snapshot.msaa_level);
     response.fields["bink_scaling_mode"] = ToString(snapshot.bink_scaling_mode);
+    response.fields["gi_talk_volume"] = std::to_string(snapshot.gi_talk_volume);
+    response.fields["gi_talk_volume_applied"] = snapshot.gi_talk_volume_applied ? "1" : "0";
+    response.fields["gi_talk_volume_summary"] = snapshot.gi_talk_volume_summary;
+    response.fields["gamepad_enabled"] = snapshot.gamepad_enabled ? "1" : "0";
+    response.fields["gamepad_connected"] = snapshot.gamepad_connected ? "1" : "0";
+    response.fields["gamepad_context"] = ToString(snapshot.gamepad_context);
+    response.fields["gamepad_modern_controls"] =
+        snapshot.gamepad_modern_controls ? "1" : "0";
+    response.fields["gamepad_preserve_free_camera"] =
+        snapshot.gamepad_preserve_free_camera ? "1" : "0";
+    response.fields["gamepad_run_threshold"] =
+        std::to_string(snapshot.gamepad_run_threshold);
+    response.fields["gamepad_fast_run_threshold"] =
+        std::to_string(snapshot.gamepad_fast_run_threshold);
+    response.fields["gamepad_camera_sensitivity"] =
+        std::to_string(snapshot.gamepad_camera_sensitivity);
     response.fields["borderless_window_enabled"] =
         snapshot.borderless_window_enabled ? "1" : "0";
     response.fields["borderless_window_applied"] =

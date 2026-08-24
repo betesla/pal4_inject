@@ -1,7 +1,9 @@
 #include "cegui_renderer_hooks.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -15,9 +17,11 @@
 #include <windows.h>
 
 #include "cegui_bindings.h"
+#include "dialogue_voice_osd.h"
 #include "hook_logging.h"
 #include "input_hooks.h"
 #include "pal4inject/cegui_widescreen.h"
+#include "pal4inject/dialogue_voice_volume.h"
 #include "pal4inject/ida_addresses.h"
 #include "hud_layout_fixups.h"
 #include "runtime_state.h"
@@ -284,6 +288,344 @@ void AppendSolidQuad(
         1.0F,
         0.0F);
     *reinterpret_cast<int*>(bytes + kRendererVertexCountOffset) = vertex_index + 4;
+}
+
+void AppendSolidQuadCorners(
+    void* const renderer,
+    const int vertex_buffer,
+    const float x0,
+    const float y0,
+    const float x1,
+    const float y1,
+    const float x2,
+    const float y2,
+    const float x3,
+    const float y3,
+    const float reciprocal_camera_scale,
+    const std::uint32_t color) {
+    auto* const bytes = static_cast<unsigned char*>(renderer);
+    const int vertex_index =
+        *reinterpret_cast<int*>(bytes + kRendererVertexCountOffset);
+    constexpr float kZ = 0.0F;
+    WriteUiVertex(
+        reinterpret_cast<unsigned char*>(vertex_buffer + 28 * vertex_index),
+        x0, y0, kZ, reciprocal_camera_scale, color, 0.0F, 0.0F);
+    WriteUiVertex(
+        reinterpret_cast<unsigned char*>(vertex_buffer + 28 * (vertex_index + 1)),
+        x1, y1, kZ, reciprocal_camera_scale, color, 0.0F, 1.0F);
+    WriteUiVertex(
+        reinterpret_cast<unsigned char*>(vertex_buffer + 28 * (vertex_index + 2)),
+        x2, y2, kZ, reciprocal_camera_scale, color, 1.0F, 1.0F);
+    WriteUiVertex(
+        reinterpret_cast<unsigned char*>(vertex_buffer + 28 * (vertex_index + 3)),
+        x3, y3, kZ, reciprocal_camera_scale, color, 1.0F, 0.0F);
+    *reinterpret_cast<int*>(bytes + kRendererVertexCountOffset) = vertex_index + 4;
+}
+
+void AppendThickLine(
+    void* const renderer,
+    const int vertex_buffer,
+    const float x0,
+    const float y0,
+    const float x1,
+    const float y1,
+    const float thickness,
+    const float reciprocal_camera_scale,
+    const std::uint32_t color) {
+    const float dx = x1 - x0;
+    const float dy = y1 - y0;
+    const float length = std::sqrt(dx * dx + dy * dy);
+    if (length <= 0.001F) {
+        return;
+    }
+    const float nx = -dy * thickness * 0.5F / length;
+    const float ny = dx * thickness * 0.5F / length;
+    AppendSolidQuadCorners(
+        renderer,
+        vertex_buffer,
+        x0 + nx,
+        y0 + ny,
+        x0 - nx,
+        y0 - ny,
+        x1 - nx,
+        y1 - ny,
+        x1 + nx,
+        y1 + ny,
+        reciprocal_camera_scale,
+        color);
+}
+
+std::uint32_t ApplyColorOpacity(
+    const std::uint32_t argb,
+    const float opacity) noexcept {
+    const auto source_alpha = static_cast<unsigned int>((argb >> 24) & 0xFFU);
+    const auto scaled_alpha = static_cast<unsigned int>(std::clamp(
+        std::lround(static_cast<float>(source_alpha) * opacity),
+        0L,
+        255L));
+    return (scaled_alpha << 24) | (argb & 0x00FFFFFFU);
+}
+
+void DrawSpeakerVectorIcon(
+    void* const renderer,
+    const int vertex_buffer,
+    const float left,
+    const float center_y,
+    const float volume,
+    const float reciprocal_camera_scale,
+    const std::uint32_t color) {
+    AppendSolidQuad(
+        renderer,
+        vertex_buffer,
+        left,
+        center_y - 4.0F,
+        left + 6.0F,
+        center_y + 4.0F,
+        0.0F,
+        reciprocal_camera_scale,
+        color);
+    AppendSolidQuadCorners(
+        renderer,
+        vertex_buffer,
+        left + 6.0F,
+        center_y - 4.0F,
+        left + 6.0F,
+        center_y + 4.0F,
+        left + 15.0F,
+        center_y + 10.0F,
+        left + 15.0F,
+        center_y - 10.0F,
+        reciprocal_camera_scale,
+        color);
+
+    if (volume <= 0.0F) {
+        AppendThickLine(
+            renderer, vertex_buffer,
+            left + 19.0F, center_y - 5.0F,
+            left + 29.0F, center_y + 5.0F,
+            2.0F, reciprocal_camera_scale, color);
+        AppendThickLine(
+            renderer, vertex_buffer,
+            left + 29.0F, center_y - 5.0F,
+            left + 19.0F, center_y + 5.0F,
+            2.0F, reciprocal_camera_scale, color);
+        return;
+    }
+
+    const int wave_count = GiTalkVolumeWaveCount(volume);
+    if (wave_count >= 1) {
+        AppendThickLine(
+            renderer, vertex_buffer,
+            left + 18.0F, center_y - 4.0F,
+            left + 21.0F, center_y,
+            2.0F, reciprocal_camera_scale, color);
+        AppendThickLine(
+            renderer, vertex_buffer,
+            left + 21.0F, center_y,
+            left + 18.0F, center_y + 4.0F,
+            2.0F, reciprocal_camera_scale, color);
+    }
+    if (wave_count >= 2) {
+        AppendThickLine(
+            renderer, vertex_buffer,
+            left + 22.0F, center_y - 7.0F,
+            left + 27.0F, center_y,
+            2.0F, reciprocal_camera_scale, color);
+        AppendThickLine(
+            renderer, vertex_buffer,
+            left + 27.0F, center_y,
+            left + 22.0F, center_y + 7.0F,
+            2.0F, reciprocal_camera_scale, color);
+    }
+    if (wave_count >= 3) {
+        AppendThickLine(
+            renderer, vertex_buffer,
+            left + 27.0F, center_y - 10.0F,
+            left + 34.0F, center_y,
+            2.0F, reciprocal_camera_scale, color);
+        AppendThickLine(
+            renderer, vertex_buffer,
+            left + 34.0F, center_y,
+            left + 27.0F, center_y + 10.0F,
+            2.0F, reciprocal_camera_scale, color);
+    }
+}
+
+void DrawSevenSegmentDigit(
+    void* const renderer,
+    const int vertex_buffer,
+    const int digit,
+    const float left,
+    const float top,
+    const float reciprocal_camera_scale,
+    const std::uint32_t color) {
+    constexpr std::array<std::uint8_t, 10> kDigitMasks = {
+        0x3F, 0x06, 0x5B, 0x4F, 0x66,
+        0x6D, 0x7D, 0x07, 0x7F, 0x6F,
+    };
+    if (digit < 0 || digit > 9) {
+        return;
+    }
+    constexpr float kWidth = 9.0F;
+    constexpr float kHeight = 18.0F;
+    constexpr float kThickness = 2.0F;
+    const float middle = top + kHeight * 0.5F;
+    const auto draw_segment = [&](const std::uint8_t bit) {
+        if ((kDigitMasks[static_cast<std::size_t>(digit)] & bit) == 0) {
+            return;
+        }
+        switch (bit) {
+        case 0x01:
+            AppendSolidQuad(renderer, vertex_buffer, left + kThickness, top,
+                left + kWidth - kThickness, top + kThickness,
+                0.0F, reciprocal_camera_scale, color);
+            break;
+        case 0x02:
+            AppendSolidQuad(renderer, vertex_buffer, left + kWidth - kThickness, top + kThickness,
+                left + kWidth, middle,
+                0.0F, reciprocal_camera_scale, color);
+            break;
+        case 0x04:
+            AppendSolidQuad(renderer, vertex_buffer, left + kWidth - kThickness, middle,
+                left + kWidth, top + kHeight - kThickness,
+                0.0F, reciprocal_camera_scale, color);
+            break;
+        case 0x08:
+            AppendSolidQuad(renderer, vertex_buffer, left + kThickness, top + kHeight - kThickness,
+                left + kWidth - kThickness, top + kHeight,
+                0.0F, reciprocal_camera_scale, color);
+            break;
+        case 0x10:
+            AppendSolidQuad(renderer, vertex_buffer, left, middle,
+                left + kThickness, top + kHeight - kThickness,
+                0.0F, reciprocal_camera_scale, color);
+            break;
+        case 0x20:
+            AppendSolidQuad(renderer, vertex_buffer, left, top + kThickness,
+                left + kThickness, middle,
+                0.0F, reciprocal_camera_scale, color);
+            break;
+        case 0x40:
+            AppendSolidQuad(renderer, vertex_buffer, left + kThickness, middle - kThickness * 0.5F,
+                left + kWidth - kThickness, middle + kThickness * 0.5F,
+                0.0F, reciprocal_camera_scale, color);
+            break;
+        default:
+            break;
+        }
+    };
+    constexpr std::array<std::uint8_t, 7> kSegments = {
+        0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40,
+    };
+    for (const auto segment : kSegments) {
+        draw_segment(segment);
+    }
+}
+
+void DrawVectorPercentValue(
+    void* const renderer,
+    const int vertex_buffer,
+    const float volume,
+    const float left,
+    const float top,
+    const float reciprocal_camera_scale,
+    const std::uint32_t color) {
+    constexpr float kDigitAdvance = 12.0F;
+    constexpr float kDigitFieldWidth = 33.0F;
+    const int percent = static_cast<int>(std::lround(
+        ClampGiTalkVolume(volume) * 100.0F));
+    const std::string digits = std::to_string(percent);
+    float cursor = left + kDigitFieldWidth -
+        (static_cast<float>(digits.size()) * kDigitAdvance - 3.0F);
+    for (const char ch : digits) {
+        DrawSevenSegmentDigit(
+            renderer,
+            vertex_buffer,
+            ch - '0',
+            cursor,
+            top,
+            reciprocal_camera_scale,
+            color);
+        cursor += kDigitAdvance;
+    }
+
+    constexpr float kPercentDotSize = 5.0F;
+    const float percent_left = left + kDigitFieldWidth + 4.0F;
+    AppendSolidQuad(
+        renderer, vertex_buffer,
+        percent_left, top + 1.0F,
+        percent_left + kPercentDotSize, top + 1.0F + kPercentDotSize,
+        0.0F, reciprocal_camera_scale, color);
+    AppendThickLine(
+        renderer, vertex_buffer,
+        percent_left + 12.0F, top + 1.0F,
+        percent_left + 1.0F, top + 17.0F,
+        2.5F, reciprocal_camera_scale, color);
+    AppendSolidQuad(
+        renderer, vertex_buffer,
+        percent_left + 8.0F, top + 12.0F,
+        percent_left + 8.0F + kPercentDotSize,
+        top + 12.0F + kPercentDotSize,
+        0.0F, reciprocal_camera_scale, color);
+}
+
+void DrawGiTalkVolumeOsd(
+    void* const renderer,
+    const PatchedRendererState& patched,
+    const int vertex_buffer,
+    const float reciprocal_camera_scale) {
+    GiTalkVolumeOsdSnapshot osd{};
+    if (!TryGetGiTalkVolumeOsdSnapshot(&osd)) {
+        return;
+    }
+
+    const float screen_width = static_cast<float>(patched.plan.width);
+    const float screen_height = static_cast<float>(patched.plan.height);
+    constexpr float kIconWidth = 36.0F;
+    constexpr float kIconToValueGap = 14.0F;
+    constexpr float kValueWidth = 50.0F;
+    constexpr float kContentHeight = 24.0F;
+    constexpr float kHorizontalPadding = 14.0F;
+    constexpr float kVerticalPadding = 12.0F;
+    const float panel_width = kIconWidth + kIconToValueGap + kValueWidth +
+        2.0F * kHorizontalPadding;
+    const float panel_height = kContentHeight + 2.0F * kVerticalPadding;
+    const float panel_left = AlignToHalfPixel((screen_width - panel_width) * 0.5F);
+    const float panel_top = AlignToHalfPixel(std::max(28.0F, screen_height * 0.065F));
+    const float content_center_y = panel_top + panel_height * 0.5F;
+    const float icon_left = panel_left + kHorizontalPadding;
+    const float value_left = icon_left + kIconWidth + kIconToValueGap;
+
+    g_render_state_set_texture(1, 0);
+    AppendSolidQuad(
+        renderer,
+        vertex_buffer,
+        panel_left,
+        panel_top,
+        panel_left + panel_width,
+        panel_top + panel_height,
+        0.0F,
+        reciprocal_camera_scale,
+        ApplyColorOpacity(0xC0121820U, osd.opacity));
+    const auto foreground_color =
+        ApplyColorOpacity(0xFFF4F6F8U, osd.opacity);
+    DrawSpeakerVectorIcon(
+        renderer,
+        vertex_buffer,
+        icon_left,
+        content_center_y,
+        osd.volume,
+        reciprocal_camera_scale,
+        foreground_color);
+    DrawVectorPercentValue(
+        renderer,
+        vertex_buffer,
+        osd.volume,
+        value_left,
+        content_center_y - 9.0F,
+        reciprocal_camera_scale,
+        foreground_color);
+    g_render_geometry_and_reset_counter(renderer);
 }
 
 void DrawOriginalUiPillarboxMasks(
@@ -580,6 +922,11 @@ int __fastcall Hook_CeguiRendererDoRenderWide(void* self, void*) {
     }
 
     g_render_geometry_and_reset_counter(self);
+    DrawGiTalkVolumeOsd(
+        self,
+        *patched,
+        vertex_buffer,
+        reciprocal_camera_scale);
     return 0;
 }
 

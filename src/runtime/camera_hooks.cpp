@@ -10,6 +10,7 @@
 #include <windows.h>
 
 #include "hook_logging.h"
+#include "gamepad_control_hooks.h"
 #include "pal4inject/camera_pitch_guard.h"
 #include "runtime_state.h"
 
@@ -178,6 +179,8 @@ int __fastcall Hook_CameraUpdateMatrix(
         state.SetLastError("camera pointer is null");
         return 0;
     }
+
+    ApplyGamepadCameraYawGuard(self);
 
     if (g_capture_pose_after_run_single > 0) {
         const int sample = 9 - g_capture_pose_after_run_single;

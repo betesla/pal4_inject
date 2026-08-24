@@ -1,5 +1,8 @@
 #include "runtime_state.h"
 
+#include "pal4inject/dialogue_voice_volume.h"
+
+#include <algorithm>
 #include <chrono>
 
 namespace pal4::inject {
@@ -217,6 +220,143 @@ BinkScalingMode RuntimeState::GetBinkScalingMode() const {
     return bink_scaling_mode_;
 }
 
+void RuntimeState::SetGiTalkVolume(const float volume) {
+    std::scoped_lock lock(mutex_);
+    gi_talk_volume_ = ClampGiTalkVolume(volume);
+    gi_talk_volume_applied_ = false;
+    gi_talk_volume_summary_ = "waiting for giTalk voice";
+    state_cv_.notify_all();
+}
+
+float RuntimeState::GetGiTalkVolume() const {
+    std::scoped_lock lock(mutex_);
+    return gi_talk_volume_;
+}
+
+void RuntimeState::SetGiTalkVolumeApplied(
+    const bool applied,
+    const std::string_view summary) {
+    std::scoped_lock lock(mutex_);
+    gi_talk_volume_applied_ = applied;
+    gi_talk_volume_summary_ = summary;
+    state_cv_.notify_all();
+}
+
+void RuntimeState::SetGamepadEnabled(const bool enabled) {
+    std::scoped_lock lock(mutex_);
+    gamepad_enabled_ = enabled;
+    if (!enabled) {
+        gamepad_connected_ = false;
+        gamepad_context_ = GamepadInputContext::gameplay;
+    }
+    state_cv_.notify_all();
+}
+
+bool RuntimeState::GamepadEnabled() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_enabled_;
+}
+
+void RuntimeState::SetGamepadLogEnabled(const bool enabled) {
+    std::scoped_lock lock(mutex_);
+    gamepad_log_enabled_ = enabled;
+    state_cv_.notify_all();
+}
+
+bool RuntimeState::GamepadLogEnabled() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_log_enabled_;
+}
+
+void RuntimeState::SetGamepadModernControls(const bool enabled) {
+    std::scoped_lock lock(mutex_);
+    gamepad_modern_controls_ = enabled;
+}
+
+bool RuntimeState::GamepadModernControls() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_modern_controls_;
+}
+
+void RuntimeState::SetGamepadInvertCameraY(const bool enabled) {
+    std::scoped_lock lock(mutex_);
+    gamepad_invert_camera_y_ = enabled;
+}
+
+bool RuntimeState::GamepadInvertCameraY() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_invert_camera_y_;
+}
+
+void RuntimeState::SetGamepadPreserveFreeCamera(const bool enabled) {
+    std::scoped_lock lock(mutex_);
+    gamepad_preserve_free_camera_ = enabled;
+}
+
+bool RuntimeState::GamepadPreserveFreeCamera() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_preserve_free_camera_;
+}
+
+void RuntimeState::SetGamepadRunThreshold(const float threshold) {
+    std::scoped_lock lock(mutex_);
+    gamepad_run_threshold_ = std::clamp(threshold, 0.05F, 0.95F);
+    gamepad_fast_run_threshold_ = std::max(
+        gamepad_fast_run_threshold_,
+        gamepad_run_threshold_ + 0.01F);
+}
+
+float RuntimeState::GamepadRunThreshold() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_run_threshold_;
+}
+
+void RuntimeState::SetGamepadFastRunThreshold(const float threshold) {
+    std::scoped_lock lock(mutex_);
+    gamepad_fast_run_threshold_ = std::clamp(
+        threshold,
+        gamepad_run_threshold_ + 0.01F,
+        1.0F);
+}
+
+float RuntimeState::GamepadFastRunThreshold() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_fast_run_threshold_;
+}
+
+void RuntimeState::SetGamepadCameraSensitivity(const float degrees_per_second) {
+    std::scoped_lock lock(mutex_);
+    gamepad_camera_sensitivity_ = std::clamp(degrees_per_second, 20.0F, 360.0F);
+}
+
+float RuntimeState::GamepadCameraSensitivity() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_camera_sensitivity_;
+}
+
+void RuntimeState::SetGamepadMapping(const Xbox360GamepadMapping& mapping) {
+    std::scoped_lock lock(mutex_);
+    gamepad_mapping_ = mapping;
+    state_cv_.notify_all();
+}
+
+Xbox360GamepadMapping RuntimeState::GetGamepadMapping() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_mapping_;
+}
+
+void RuntimeState::SetGamepadConnected(const bool connected) {
+    std::scoped_lock lock(mutex_);
+    gamepad_connected_ = connected;
+    state_cv_.notify_all();
+}
+
+void RuntimeState::SetGamepadContext(const GamepadInputContext context) {
+    std::scoped_lock lock(mutex_);
+    gamepad_context_ = context;
+    state_cv_.notify_all();
+}
+
 void RuntimeState::SetBorderlessWindowEnabled(const bool enabled) {
     std::scoped_lock lock(mutex_);
     borderless_window_enabled_ = enabled;
@@ -355,6 +495,19 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.main_module_base = main_module_base_;
     snapshot.msaa_level = msaa_level_;
     snapshot.bink_scaling_mode = bink_scaling_mode_;
+    snapshot.gi_talk_volume = gi_talk_volume_;
+    snapshot.gi_talk_volume_applied = gi_talk_volume_applied_;
+    snapshot.gi_talk_volume_summary = gi_talk_volume_summary_;
+    snapshot.gamepad_enabled = gamepad_enabled_;
+    snapshot.gamepad_log_enabled = gamepad_log_enabled_;
+    snapshot.gamepad_modern_controls = gamepad_modern_controls_;
+    snapshot.gamepad_invert_camera_y = gamepad_invert_camera_y_;
+    snapshot.gamepad_preserve_free_camera = gamepad_preserve_free_camera_;
+    snapshot.gamepad_run_threshold = gamepad_run_threshold_;
+    snapshot.gamepad_fast_run_threshold = gamepad_fast_run_threshold_;
+    snapshot.gamepad_camera_sensitivity = gamepad_camera_sensitivity_;
+    snapshot.gamepad_connected = gamepad_connected_;
+    snapshot.gamepad_context = gamepad_context_;
     snapshot.borderless_window_enabled = borderless_window_enabled_;
     snapshot.borderless_window_applied = borderless_window_applied_;
     snapshot.borderless_monitor = borderless_monitor_;

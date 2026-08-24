@@ -2,19 +2,22 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <map>
 #include <sstream>
 
 #include "pal4inject/runtime_paths.h"
+#include "pal4inject/dialogue_voice_volume.h"
 
 namespace pal4::inject {
 namespace {
 
-constexpr int kSettingsVersion = 5;
+constexpr int kSettingsVersion = 10;
 constexpr int kMinSupportedSettingsVersion = 1;
-constexpr int kMaxSupportedSettingsVersion = 5;
+constexpr int kMaxSupportedSettingsVersion = 10;
 
 std::string TrimAscii(const std::string_view text) {
     std::size_t begin = 0;
@@ -50,6 +53,32 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
     out << "script_mode=" << ToString(settings.script_mode) << '\n';
     out << "msaa_level=" << ToString(settings.msaa_level) << '\n';
     out << "bink_scaling_mode=" << ToString(settings.bink_scaling_mode) << '\n';
+    out << "gi_talk_volume=" << std::fixed << std::setprecision(3)
+        << ClampGiTalkVolume(settings.gi_talk_volume) << '\n';
+    out << "gamepad_enabled=" << (settings.gamepad_enabled ? "1" : "0") << '\n';
+    out << "gamepad_log_enabled=" <<
+        (settings.gamepad_log_enabled ? "1" : "0") << '\n';
+    out << "gamepad_modern_controls=" <<
+        (settings.gamepad_modern_controls ? "1" : "0") << '\n';
+    out << "gamepad_invert_camera_y=" <<
+        (settings.gamepad_invert_camera_y ? "1" : "0") << '\n';
+    out << "gamepad_preserve_free_camera=" <<
+        (settings.gamepad_preserve_free_camera ? "1" : "0") << '\n';
+    out << "gamepad_run_threshold=" << std::fixed << std::setprecision(3)
+        << std::clamp(settings.gamepad_run_threshold, 0.05F, 0.95F) << '\n';
+    out << "gamepad_fast_run_threshold=" << std::fixed << std::setprecision(3)
+        << std::clamp(
+               settings.gamepad_fast_run_threshold,
+               std::clamp(settings.gamepad_run_threshold, 0.05F, 0.95F) + 0.01F,
+               1.0F)
+        << '\n';
+    out << "gamepad_camera_sensitivity=" << std::fixed << std::setprecision(1)
+        << std::clamp(settings.gamepad_camera_sensitivity, 20.0F, 360.0F) << '\n';
+    for (std::size_t index = 0; index < kXbox360ButtonCount; ++index) {
+        const auto button = static_cast<Xbox360Button>(index);
+        out << "gamepad.binding." << ToString(button) << '='
+            << ToString(GetGamepadBinding(settings.gamepad_mapping, button)) << '\n';
+    }
     out << "borderless_window=" << (settings.borderless_window ? "1" : "0") << '\n';
     out << "borderless_monitor=" << settings.borderless_monitor << '\n';
 
@@ -136,6 +165,85 @@ bool ParseInjectPersistedSettings(
             }
             continue;
         }
+        if (key == "gi_talk_volume") {
+            if (!TryParseGiTalkVolume(value, &out->gi_talk_volume)) {
+                if (error) {
+                    *error = "invalid gi_talk_volume value: " + value;
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "gamepad_enabled" || key == "gamepad_log_enabled" ||
+            key == "gamepad_modern_controls" ||
+            key == "gamepad_invert_camera_y" ||
+            key == "gamepad_preserve_free_camera") {
+            bool* flag = nullptr;
+            if (key == "gamepad_enabled") {
+                flag = &out->gamepad_enabled;
+            } else if (key == "gamepad_log_enabled") {
+                flag = &out->gamepad_log_enabled;
+            } else if (key == "gamepad_modern_controls") {
+                flag = &out->gamepad_modern_controls;
+            } else if (key == "gamepad_invert_camera_y") {
+                flag = &out->gamepad_invert_camera_y;
+            } else {
+                flag = &out->gamepad_preserve_free_camera;
+            }
+            if (value == "1" || value == "true" || value == "on") {
+                *flag = true;
+            } else if (value == "0" || value == "false" || value == "off") {
+                *flag = false;
+            } else {
+                if (error) {
+                    *error = "invalid " + key + " value: " + value;
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "gamepad_run_threshold" ||
+            key == "gamepad_fast_run_threshold" ||
+            key == "gamepad_camera_sensitivity") {
+            char* end = nullptr;
+            const float parsed = std::strtof(value.c_str(), &end);
+            if (!end || end == value.c_str() || *end != '\0' || !std::isfinite(parsed)) {
+                if (error) {
+                    *error = "invalid " + key + " value: " + value;
+                }
+                return false;
+            }
+            if (key == "gamepad_run_threshold") {
+                out->gamepad_run_threshold = std::clamp(parsed, 0.05F, 0.95F);
+            } else if (key == "gamepad_fast_run_threshold") {
+                out->gamepad_fast_run_threshold = std::clamp(parsed, 0.06F, 1.0F);
+            } else {
+                out->gamepad_camera_sensitivity =
+                    std::clamp(parsed, 20.0F, 360.0F);
+            }
+            continue;
+        }
+        constexpr std::string_view kGamepadBindingPrefix = "gamepad.binding.";
+        if (key.rfind(kGamepadBindingPrefix, 0) == 0) {
+            Xbox360Button button{};
+            GamepadAction action{};
+            if (!TryParseXbox360Button(
+                    std::string_view(key).substr(kGamepadBindingPrefix.size()),
+                    &button)) {
+                if (error) {
+                    *error = "unknown gamepad button in settings: " + key;
+                }
+                return false;
+            }
+            if (!TryParseGamepadAction(value, &action)) {
+                if (error) {
+                    *error = "invalid gamepad action value: " + value;
+                }
+                return false;
+            }
+            SetGamepadBinding(&out->gamepad_mapping, button, action);
+            continue;
+        }
         if (key == "borderless_window") {
             if (value == "1" || value == "true" || value == "on") {
                 out->borderless_window = true;
@@ -213,6 +321,38 @@ bool ParseInjectPersistedSettings(
         }
         return false;
     }
+
+    // Version 9 adds the camera-distance action. Preserve explicit custom R3
+    // bindings, but upgrade the old default (none) so existing users receive it.
+    if (version > 0 && version < 9 &&
+        GetGamepadBinding(out->gamepad_mapping, Xbox360Button::right_thumb) ==
+            GamepadAction::none) {
+        SetGamepadBinding(
+            &out->gamepad_mapping,
+            Xbox360Button::right_thumb,
+            GamepadAction::camera_distance_cycle);
+    }
+
+    // Version 10 assigns L3 to the stock Tab leader-switch action. Upgrade
+    // either historical movement shortcut while preserving other custom maps.
+    const auto left_thumb_action = GetGamepadBinding(
+        out->gamepad_mapping,
+        Xbox360Button::left_thumb);
+    if (version > 0 && version < 10 &&
+        (left_thumb_action == GamepadAction::auto_forward ||
+         left_thumb_action == GamepadAction::run_toggle)) {
+        SetGamepadBinding(
+            &out->gamepad_mapping,
+            Xbox360Button::left_thumb,
+            GamepadAction::switch_leader);
+    }
+
+    out->gamepad_run_threshold =
+        std::clamp(out->gamepad_run_threshold, 0.05F, 0.95F);
+    out->gamepad_fast_run_threshold = std::clamp(
+        out->gamepad_fast_run_threshold,
+        out->gamepad_run_threshold + 0.01F,
+        1.0F);
 
     for (const auto& [_, setting] : hooks) {
         out->hooks.push_back(setting);

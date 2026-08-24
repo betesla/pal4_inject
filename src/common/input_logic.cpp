@@ -33,6 +33,21 @@ bool ShouldSuppressMappedUiKey(const std::uint32_t mapped_key) noexcept {
     return false;
 }
 
+bool IsCapturedMouseRecenterPosition(
+    const int x,
+    const int y,
+    const int client_width,
+    const int client_height,
+    const int tolerance) noexcept {
+    if (client_width <= 0 || client_height <= 0 || tolerance < 0) {
+        return false;
+    }
+    const int center_x = client_width / 2;
+    const int center_y = client_height / 2;
+    return x >= center_x - tolerance && x <= center_x + tolerance &&
+           y >= center_y - tolerance && y <= center_y + tolerance;
+}
+
 UiInjectedPlan BuildUiInjectedPlan(
     const std::uint32_t message,
     const std::uint32_t mapped_key,
@@ -146,6 +161,8 @@ const char* DescribeWindowsMessage(const std::uint32_t message) noexcept {
         return "WM_NCMOUSEMOVE";
     case WM_MOUSELEAVE:
         return "WM_MOUSELEAVE";
+    case WM_SETCURSOR:
+        return "WM_SETCURSOR";
     default:
         return "WM_OTHER";
     }

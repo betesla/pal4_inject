@@ -103,6 +103,48 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     }
     cached.get_window_manager_singleton_ptr = reinterpret_cast<CeguiBindings::GetSingletonPtrFn>(proc);
 
+    if (!ResolveBinding(module, "?getSingletonPtr@MouseCursor@CEGUI@@SAPAV12@XZ", &proc, error)) {
+        return false;
+    }
+    cached.get_mouse_cursor_singleton_ptr =
+        reinterpret_cast<CeguiBindings::GetSingletonPtrFn>(proc);
+
+    if (!ResolveBinding(module, "?show@MouseCursor@CEGUI@@QAEXXZ", &proc, error)) {
+        return false;
+    }
+    cached.mouse_cursor_show =
+        reinterpret_cast<CeguiBindings::MouseCursorVisibilityFn>(proc);
+
+    if (!ResolveBinding(module, "?hide@MouseCursor@CEGUI@@QAEXXZ", &proc, error)) {
+        return false;
+    }
+    cached.mouse_cursor_hide =
+        reinterpret_cast<CeguiBindings::MouseCursorVisibilityFn>(proc);
+
+    if (!ResolveBinding(module, "?isVisible@MouseCursor@CEGUI@@QBE_NXZ", &proc, error)) {
+        return false;
+    }
+    cached.mouse_cursor_is_visible =
+        reinterpret_cast<CeguiBindings::MouseCursorIsVisibleFn>(proc);
+
+    if (!ResolveBinding(module, "??0WindowEventArgs@CEGUI@@QAE@PAVWindow@1@@Z", &proc, error)) {
+        return false;
+    }
+    cached.window_event_args_ctor =
+        reinterpret_cast<CeguiBindings::WindowEventArgsCtorFn>(proc);
+
+    if (!ResolveBinding(module, "??1WindowEventArgs@CEGUI@@UAE@XZ", &proc, error)) {
+        return false;
+    }
+    cached.window_event_args_dtor =
+        reinterpret_cast<CeguiBindings::WindowEventArgsDtorFn>(proc);
+
+    if (!ResolveBinding(module, "?onClicked@PushButton@CEGUI@@MAEXAAVWindowEventArgs@2@@Z", &proc, error)) {
+        return false;
+    }
+    cached.push_button_on_clicked =
+        reinterpret_cast<CeguiBindings::PushButtonOnClickedFn>(proc);
+
     if (!ResolveBinding(module, "?injectMouseButtonDown@System@CEGUI@@QAE_NW4MouseButton@2@@Z", &proc, error)) {
         return false;
     }
@@ -176,6 +218,12 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     }
     cached.window_get_child_at_index =
         reinterpret_cast<CeguiBindings::WindowGetChildAtIdxFn>(proc);
+
+    if (!ResolveBinding(module, "?getParent@Window@CEGUI@@QBEPAV12@XZ", &proc, error)) {
+        return false;
+    }
+    cached.window_get_parent =
+        reinterpret_cast<CeguiBindings::WindowGetParentFn>(proc);
 
     if (!ResolveBinding(module, "?getAbsoluteXPosition@Window@CEGUI@@QBEMXZ", &proc, error)) {
         return false;

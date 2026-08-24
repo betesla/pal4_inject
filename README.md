@@ -18,7 +18,7 @@
 - `tests`
   - 单元测试与可选的原始 EXE 集成测试
 - `docs`
-  - 架构、Hook inventory 与 launcher 说明文档
+  - 架构、Hook inventory、launcher 说明与第三方声明文档
 
 ## 构建
 必须使用 Win32/x86 生成器。
@@ -50,6 +50,8 @@ cmake --build I:\PAL4\projects\pal4_inject\build --config Debug
   - 双击 `PAL4_inject.exe` 后由 GUI 选择 `CS` 或 `CSB`
   - GUI 会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、普通窗口/无边框窗口/独占全屏、宽屏和垂直同步
   - 设置导航按 `游戏 / 视频 / 音频 / 控制 / 增强 / 高级` 分类；显示相关选项统一放在“视频”
+  - “音频”页可在 `0%–300%` 范围独立设置 `giTalk` 对白配音音量；游戏中按 `[` / `]` 可降低 / 提高 5%，屏幕顶部会短暂显示矢量喇叭、音波档位和百分比数字；只调整 `PALSOUND` 配音对象，不改变 BGM 或普通音效
+  - “控制”页支持 Xbox 360 / XInput 手柄按钮映射；现代控制模式使用左摇杆连续方向与推动幅度切换走/跑，右摇杆调整视角，并可实验性保持自由镜头模式
   - 自动检测全部显示器；无边框窗口可选择并记住所用显示器，D3D9 保持窗口呈现并覆盖其完整区域
   - 分辨率列表分为“常用分辨率”和“所选显示器支持”
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
@@ -167,7 +169,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -ReleaseNotesPath
   - `InitializeDirectInput`
   - `giTalk` 脚本执行入口
   - `giPlayMovie` 资源请求观测
-  - `AudioSystem_PlayMusic` 对白 MP3 打开结果观测
+  - `AudioSystem_PlayMusic`（兼容保留的旧 Hook ID，实际为 `AudioSystem_PlaySample`）对白 MP3 打开观测与对象级音量倍率
   - `BinkOpen` 包装层打开结果观测
   - `CEGUI_Renderer_Constructor_2` widescreen pillarbox patch
   - `SetupMinimapTexture` widescreen layout patch
@@ -228,6 +230,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - `last_crash_dump_path`
   - `last_crash_summary`
   - `borderless_window_enabled / borderless_monitor / borderless_window_applied / borderless_window_summary`
+  - `gi_talk_volume / gi_talk_volume_applied / gi_talk_volume_summary`
 - launcher 的“反馈 Bug”页会扫描上述最新文本报告，并在本地完成路径和敏感字段脱敏：
   - 游戏安装目录替换为 `<游戏目录>`
   - Windows 用户目录替换为 `<用户目录>`
@@ -238,10 +241,10 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
 ## Launcher 配置
 
 - 详细中文说明见 [docs/launcher_guide.md](I:/PAL4/projects/pal4_inject/docs/launcher_guide.md)。
-- “视频”页统一管理显示器、窗口模式、分辨率、宽屏、Bink 显示方式与 MSAA；“增强”页保留相机和资源覆盖等功能。
+- “视频”页统一管理显示器、窗口模式、分辨率、宽屏、Bink 显示方式与 MSAA；“音频”页提供独立对白语音音量；“增强”页保留相机和资源覆盖等功能。
 - 宽屏 UI、字体、小地图、战斗界面和 Bink 修正由所选分辨率自动控制：宽于 `4:3` 时开启，`4:3` 或更窄时关闭。
 - “高级调试”页仍可逐项设置 `HookMode` 和详细日志。
-- MSAA 和 Hook 选项在游戏启动前写入配置，runtime 在安装 Hook 前读取。
+- MSAA、对白语音音量和 Hook 选项在游戏启动前写入配置，runtime 在安装 Hook 前读取。
 
 ## 测试
 - `pal4_inject_tests.exe`

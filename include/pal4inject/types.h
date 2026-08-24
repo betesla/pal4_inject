@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "pal4inject/gamepad.h"
 #include "pal4inject/ui_coordinate_space.h"
 
 namespace pal4::inject {
@@ -61,6 +62,8 @@ enum class HookId : std::uint8_t {
     d3d9_set_present_parameters,
     pal4_main_wndproc,
     handle_player_input_events,
+    player_control_update,
+    set_camera_mode_script,
     combat_console_set_image_position,
     combat_console_set_image_position_2,
     ui_show_combat_result,
@@ -79,6 +82,7 @@ enum class HookId : std::uint8_t {
     crt_runtime_message,
     crt_message_box,
     movement_collision_check,
+    ui_frame_manager_set_cursor,
 };
 
 struct HookDescriptor {
@@ -120,6 +124,19 @@ struct RuntimeSnapshot {
     std::uintptr_t main_module_base = 0;
     MsaaLevel msaa_level = MsaaLevel::off;
     BinkScalingMode bink_scaling_mode = BinkScalingMode::fit;
+    float gi_talk_volume = 1.0F;
+    bool gi_talk_volume_applied = false;
+    std::string gi_talk_volume_summary;
+    bool gamepad_enabled = true;
+    bool gamepad_log_enabled = false;
+    bool gamepad_modern_controls = true;
+    bool gamepad_invert_camera_y = false;
+    bool gamepad_preserve_free_camera = false;
+    float gamepad_run_threshold = 0.62F;
+    float gamepad_fast_run_threshold = 0.88F;
+    float gamepad_camera_sensitivity = 120.0F;
+    bool gamepad_connected = false;
+    GamepadInputContext gamepad_context = GamepadInputContext::gameplay;
     bool borderless_window_enabled = false;
     bool borderless_window_applied = false;
     std::string borderless_monitor;

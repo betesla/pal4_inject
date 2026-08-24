@@ -653,6 +653,16 @@ pal4::inject::InjectPersistedSettings NormalizeInjectSettings(
     normalized.script_mode = loaded.script_mode;
     normalized.msaa_level = loaded.msaa_level;
     normalized.bink_scaling_mode = loaded.bink_scaling_mode;
+    normalized.gi_talk_volume = loaded.gi_talk_volume;
+    normalized.gamepad_enabled = loaded.gamepad_enabled;
+    normalized.gamepad_log_enabled = loaded.gamepad_log_enabled;
+    normalized.gamepad_modern_controls = loaded.gamepad_modern_controls;
+    normalized.gamepad_invert_camera_y = loaded.gamepad_invert_camera_y;
+    normalized.gamepad_preserve_free_camera = loaded.gamepad_preserve_free_camera;
+    normalized.gamepad_run_threshold = loaded.gamepad_run_threshold;
+    normalized.gamepad_fast_run_threshold = loaded.gamepad_fast_run_threshold;
+    normalized.gamepad_camera_sensitivity = loaded.gamepad_camera_sensitivity;
+    normalized.gamepad_mapping = loaded.gamepad_mapping;
     normalized.borderless_window = loaded.borderless_window;
     normalized.borderless_monitor = loaded.borderless_monitor;
     for (const auto& feature : pal4::inject::BuildInjectFeatureCatalog()) {
@@ -682,6 +692,21 @@ pal4::inject::InjectPersistedSettings NormalizeInjectSettings(
              present_hook->mode == pal4::inject::HookMode::mirror_compare)) {
             present_hook->mode = pal4::inject::HookMode::replace_with_fallback;
             present_hook->active_mode = present_hook->mode;
+        }
+    }
+    const auto process_inputs_hook = std::find_if(
+        normalized.hooks.begin(),
+        normalized.hooks.end(),
+        [](const pal4::inject::PersistedHookSetting& hook) {
+            return hook.id == pal4::inject::HookId::process_inputs;
+        });
+    if (process_inputs_hook != normalized.hooks.end()) {
+        if (normalized.gamepad_enabled) {
+            process_inputs_hook->mode = pal4::inject::HookMode::replace_with_fallback;
+            process_inputs_hook->active_mode = process_inputs_hook->mode;
+        } else if (process_inputs_hook->mode != pal4::inject::HookMode::observe_only) {
+            process_inputs_hook->active_mode = process_inputs_hook->mode;
+            process_inputs_hook->mode = pal4::inject::HookMode::observe_only;
         }
     }
     return normalized;

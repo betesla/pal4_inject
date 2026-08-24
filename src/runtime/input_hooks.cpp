@@ -9,6 +9,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <mmsystem.h>
 
 #include "battle_ui_layout_hooks.h"
 #include "bink_video_hooks.h"
@@ -18,6 +19,9 @@
 #include "cegui_bindings.h"
 #include "cegui_font_hooks.h"
 #include "d3d9_quality_hooks.h"
+#include "dialogue_voice_osd.h"
+#include "gamepad_runtime.h"
+#include "gamepad_control_hooks.h"
 #include "media_observation_hooks.h"
 #include "hud_layout_fixups.h"
 #include "hook_logging.h"
@@ -26,10 +30,12 @@
 #include "process_failure_hooks.h"
 #include "movement_collision_observation_hooks.h"
 #include "pal4inject/cegui_widescreen.h"
+#include "pal4inject/dialogue_voice_volume.h"
 #include "pal4inject/ida_addresses.h"
 #include "pal4inject/input_logic.h"
 #include "pal4inject/input_queue.h"
 #include "runtime_state.h"
+#include "runtime_preferences.h"
 
 namespace pal4::inject {
 namespace {
@@ -38,8 +44,12 @@ using ProcessUiEventFn = bool (__thiscall*)(void*, HWND, UINT, WPARAM, LPARAM);
 using HandleUiMessageAndProcessFn = char (__thiscall*)(void*, HWND, UINT, WPARAM, LPARAM);
 using SimulateKeyPressAndReleaseFn = bool (__thiscall*)(void*, WPARAM);
 using ProcessInputsFn = int (__cdecl*)();
+using GetInputManagerFn = void* (__cdecl*)();
 using UpdateInputDeviceStateFn = int (__thiscall*)(void*);
+using InputManagerGetKeyStateFn = SHORT (__thiscall*)(void*, int);
+using UpdateKeyTimingInfoFn = int (__thiscall*)(void*, int, int, int);
 using InitializeDirectInputFn = int (__thiscall*)(void*, HINSTANCE, int, int);
+using UiFrameManagerSetCursorFn = char (__thiscall*)(void*, const char*);
 using GiTalkFn = char (__cdecl*)(void*, void*);
 using MapVirtualKeyToUiKeyFn = int (__thiscall*)(void*, unsigned int);
 using EnableMouseCaptureFn = void (__thiscall*)(unsigned char*);
@@ -74,10 +84,12 @@ SimulateKeyPressAndReleaseFn g_original_simulate_key_press_and_release = nullptr
 ProcessInputsFn g_original_process_inputs = nullptr;
 UpdateInputDeviceStateFn g_original_update_input_device_state = nullptr;
 InitializeDirectInputFn g_original_initialize_direct_input = nullptr;
+UiFrameManagerSetCursorFn g_original_ui_frame_manager_set_cursor = nullptr;
 GiTalkFn g_original_gi_talk = nullptr;
 std::atomic<DWORD> g_process_inputs_thread_id{0};
 SynchronousUiMessageQueue g_main_thread_ui_queue;
 constexpr std::uint32_t kMainThreadUiDispatchTimeoutMs = 5000;
+constexpr int kInputManagerKeyCount = 163;
 
 constexpr unsigned char kInjectedTalkTextGbk[] = {
     0xD2, 0xD1, 0xD7, 0xA2, 0xC8, 0xEB, 0x00,
@@ -707,6 +719,64 @@ void LogLowLevelObserveOnlyHook(
     LogHookEvent(hook_id, out.str());
 }
 
+bool HandleGiTalkVolumeHotkeyMessage(
+    const UINT message,
+    const WPARAM wparam,
+    const LPARAM lparam) {
+    constexpr LPARAM kPreviousKeyStateMask = static_cast<LPARAM>(1) << 30;
+    const bool auto_repeat =
+        (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
+        (lparam & kPreviousKeyStateMask) != 0;
+    const auto decision = ResolveGiTalkVolumeHotkey(
+        message,
+        static_cast<std::uint32_t>(wparam),
+        auto_repeat);
+    if (!decision.consume) {
+        return false;
+    }
+    if (decision.step_direction == 0) {
+        return true;
+    }
+
+    auto& state = GetRuntimeState();
+    const float previous = state.GetGiTalkVolume();
+    const float requested = StepGiTalkVolume(previous, decision.step_direction);
+    if (requested != previous) {
+        ApplyGiTalkVolumePreference(requested, true, true);
+    }
+    ShowGiTalkVolumeOsd(requested);
+
+    std::string active_voice_error;
+    const bool active_voice_applied =
+        RefreshActiveGiTalkVoiceVolume(&active_voice_error);
+    std::ostringstream log;
+    log << "feature=gi_talk_volume event=hotkey"
+        << " key=" << (decision.step_direction < 0 ? "[" : "]")
+        << " previous=" << previous
+        << " current=" << requested
+        << " active_voice_applied=" << (active_voice_applied ? 1 : 0);
+    if (!active_voice_error.empty()) {
+        log << " active_voice_status=" << active_voice_error;
+    }
+    AppendCriticalHookEventLog(log.str());
+    return true;
+}
+
+void ObserveMouseMoveActivity(const HWND hwnd, const LPARAM lparam) {
+    RECT client{};
+    const int x = static_cast<short>(LOWORD(lparam));
+    const int y = static_cast<short>(HIWORD(lparam));
+    if (hwnd && GetClientRect(hwnd, &client) &&
+        IsCapturedMouseRecenterPosition(
+            x,
+            y,
+            client.right - client.left,
+            client.bottom - client.top)) {
+        return;
+    }
+    NotifyMouseInputActivity();
+}
+
 }  // namespace
 
 bool __fastcall Hook_ProcessUiEvent(
@@ -719,6 +789,15 @@ bool __fastcall Hook_ProcessUiEvent(
     auto& state = GetRuntimeState();
     state.IncrementHookCall(HookId::process_ui_event);
     state.SetUiDispatchReady(true);
+    if (msg == WM_MOUSEMOVE) {
+        ObserveMouseMoveActivity(hwnd, lparam);
+    } else if (msg == WM_SETCURSOR) {
+        ReassertGamepadCursorHidden();
+    }
+    if (HandleGiTalkVolumeHotkeyMessage(msg, wparam, lparam)) {
+        ReadCurrentPalivEntry();
+        return true;
+    }
     state.SetLastUiEvent(DescribeWindowsMessage(msg));
     const auto result = DispatchProcessUiEventShared(self, hwnd, msg, wparam, lparam);
     ReadCurrentPalivEntry();
@@ -736,6 +815,17 @@ char __fastcall Hook_HandleUiMessageAndProcess(
     auto& state = GetRuntimeState();
     state.IncrementHookCall(HookId::handle_ui_message);
     state.SetUiDispatchReady(true);
+    if (msg == WM_MOUSEMOVE) {
+        ObserveMouseMoveActivity(hwnd, lparam);
+    } else if (msg == WM_SETCURSOR) {
+        // PAL4_Main_WndProc sets the scene cursor immediately before calling
+        // this seam. Clear it again while gamepad input owns the cursor.
+        ReassertGamepadCursorHidden();
+    }
+    if (HandleGiTalkVolumeHotkeyMessage(msg, wparam, lparam)) {
+        ReadCurrentPalivEntry();
+        return 1;
+    }
     state.SetLastUiEvent(std::string("HandleUIMessageAndProcess:") + DescribeWindowsMessage(msg));
 
     const HookMode handle_mode = state.GetHookMode(HookId::handle_ui_message);
@@ -790,6 +880,26 @@ char __fastcall Hook_HandleUiMessageAndProcess(
     return *message_handled;
 }
 
+char __fastcall Hook_UiFrameManagerSetCursor(
+    void* self,
+    void*,
+    const char* cursor_name) {
+    auto& state = GetRuntimeState();
+    state.IncrementHookCall(HookId::ui_frame_manager_set_cursor);
+    const auto mode = state.GetHookMode(HookId::ui_frame_manager_set_cursor);
+    if ((mode == HookMode::replace_with_fallback ||
+         mode == HookMode::replace_strict) &&
+        ShouldSuppressNativeCursor()) {
+        // Suppress PAL4's native cursor while the gamepad owns input or CEGUI
+        // is already drawing its own UI cursor. This prevents two pointers.
+        SetCursor(nullptr);
+        return 0;
+    }
+    return g_original_ui_frame_manager_set_cursor
+        ? g_original_ui_frame_manager_set_cursor(self, cursor_name)
+        : 0;
+}
+
 bool __fastcall Hook_SimulateKeyPressAndRelease(
     void* self,
     void*,
@@ -819,13 +929,61 @@ bool __fastcall Hook_SimulateKeyPressAndRelease(
 
 int __cdecl Hook_ProcessInputs() {
     g_process_inputs_thread_id.store(GetCurrentThreadId(), std::memory_order_release);
-    GetRuntimeState().IncrementHookCall(HookId::process_inputs);
+    auto& state = GetRuntimeState();
+    state.IncrementHookCall(HookId::process_inputs);
     DrainMainThreadUiQueue();
     RefreshWidescreenHudLayoutFixups();
     LogLowLevelObserveOnlyHook(HookId::process_inputs, nullptr);
-    return g_original_process_inputs
-        ? g_original_process_inputs()
-        : 0;
+    const auto mode = state.GetHookMode(HookId::process_inputs);
+    if (!state.GamepadEnabled() || mode == HookMode::observe_only ||
+        mode == HookMode::mirror_compare) {
+        return g_original_process_inputs
+            ? g_original_process_inputs()
+            : 0;
+    }
+
+    const auto get_input_manager =
+        ResolveRuntimeFunction<GetInputManagerFn>(ida::kGetInputManager);
+    const auto update_input_device_state =
+        ResolveRuntimeFunction<UpdateInputDeviceStateFn>(ida::kUpdateInputDeviceState);
+    const auto get_key_state =
+        ResolveRuntimeFunction<InputManagerGetKeyStateFn>(ida::kInputManagerGetKeyState);
+    const auto update_key_timing_info =
+        ResolveRuntimeFunction<UpdateKeyTimingInfoFn>(ida::kUpdateKeyTimingInfo);
+    const auto* const key_code_table =
+        static_cast<const std::uint16_t*>(ResolveRuntimeData(ida::kKeyCodeTable));
+    if (!get_input_manager || !update_input_device_state || !get_key_state ||
+        !update_key_timing_info || !key_code_table) {
+        state.SetLastError("gamepad ProcessInputs helpers are unavailable");
+        return g_original_process_inputs
+            ? g_original_process_inputs()
+            : 0;
+    }
+
+    void* const input_manager = get_input_manager();
+    if (!input_manager) {
+        state.SetLastError("gamepad GetInputManager returned null in ProcessInputs");
+        return g_original_process_inputs
+            ? g_original_process_inputs()
+            : 0;
+    }
+
+    update_input_device_state(input_manager);
+    ReadCurrentPalivEntry();
+    TickGamepadInput();
+
+    int result = 0;
+    for (int index = 0; index < kInputManagerKeyCount; ++index) {
+        const int key_code = static_cast<int>(key_code_table[index]);
+        const SHORT key_state = get_key_state(input_manager, key_code);
+        const int pressed = (key_state == 1 || key_state == 3) ? 1 : 0;
+        result = update_key_timing_info(
+            input_manager,
+            static_cast<int>(timeGetTime()),
+            index,
+            pressed);
+    }
+    return result;
 }
 
 int __fastcall Hook_UpdateInputDeviceState(void* self, void*) {
@@ -854,6 +1012,14 @@ int __fastcall Hook_InitializeDirectInput(
         : 0;
 }
 
+char CallOriginalGiTalk(void* const text_arg, void* const voice_key_arg) {
+    if (!g_original_gi_talk) {
+        return 0;
+    }
+    ScopedGiTalkVoiceRequest voice_request;
+    return g_original_gi_talk(text_arg, voice_key_arg);
+}
+
 char __cdecl Hook_GiTalk(void* text_arg, void* voice_key_arg) {
     auto& state = GetRuntimeState();
     state.IncrementHookCall(HookId::gi_talk);
@@ -868,9 +1034,7 @@ char __cdecl Hook_GiTalk(void* text_arg, void* voice_key_arg) {
 
     const HookMode mode = state.GetHookMode(HookId::gi_talk);
     if (mode == HookMode::observe_only || mode == HookMode::mirror_compare) {
-        return g_original_gi_talk
-            ? g_original_gi_talk(text_arg, voice_key_arg)
-            : 0;
+        return CallOriginalGiTalk(text_arg, voice_key_arg);
     }
 
     std::ostringstream out;
@@ -887,7 +1051,7 @@ char __cdecl Hook_GiTalk(void* text_arg, void* voice_key_arg) {
         return 0;
     }
 
-    return g_original_gi_talk(
+    return CallOriginalGiTalk(
         &g_injected_gi_talk_arg,
         voice_key_arg);
 }
@@ -898,6 +1062,8 @@ void* GetReplacementForHook(const HookId id) {
         return reinterpret_cast<void*>(&Hook_ProcessUiEvent);
     case HookId::handle_ui_message:
         return reinterpret_cast<void*>(&Hook_HandleUiMessageAndProcess);
+    case HookId::ui_frame_manager_set_cursor:
+        return reinterpret_cast<void*>(&Hook_UiFrameManagerSetCursor);
     case HookId::simulate_key_press_and_release:
         return reinterpret_cast<void*>(&Hook_SimulateKeyPressAndRelease);
     case HookId::process_inputs:
@@ -909,6 +1075,9 @@ void* GetReplacementForHook(const HookId id) {
     case HookId::gi_talk:
         return reinterpret_cast<void*>(&Hook_GiTalk);
     default:
+        if (void* replacement = GetGamepadControlReplacementForHook(id)) {
+            return replacement;
+        }
         if (void* replacement = GetCeguiRendererReplacementForHook(id)) {
             return replacement;
         }
@@ -954,6 +1123,10 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
     case HookId::handle_ui_message:
         g_original_handle_ui_message = reinterpret_cast<HandleUiMessageAndProcessFn>(trampoline);
         break;
+    case HookId::ui_frame_manager_set_cursor:
+        g_original_ui_frame_manager_set_cursor =
+            reinterpret_cast<UiFrameManagerSetCursorFn>(trampoline);
+        break;
     case HookId::simulate_key_press_and_release:
         g_original_simulate_key_press_and_release =
             reinterpret_cast<SimulateKeyPressAndReleaseFn>(trampoline);
@@ -985,6 +1158,7 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
         SetProcessFailureOriginalTrampoline(id, trampoline);
         SetMovementCollisionOriginalTrampoline(id, trampoline);
         SetCameraOriginalTrampoline(id, trampoline);
+        SetGamepadControlOriginalTrampoline(id, trampoline);
         break;
     }
 }

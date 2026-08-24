@@ -116,6 +116,111 @@ const char* DisplayModeLabel(const LauncherUiState& state) {
     return state.display.fullscreen != 0 ? "独占全屏" : "普通窗口";
 }
 
+const char* Xbox360ButtonLabel(const Xbox360Button button) {
+    switch (button) {
+    case Xbox360Button::a:
+        return "A";
+    case Xbox360Button::b:
+        return "B";
+    case Xbox360Button::x:
+        return "X";
+    case Xbox360Button::y:
+        return "Y";
+    case Xbox360Button::left_shoulder:
+        return "LB";
+    case Xbox360Button::right_shoulder:
+        return "RB";
+    case Xbox360Button::left_trigger:
+        return "LT";
+    case Xbox360Button::right_trigger:
+        return "RT";
+    case Xbox360Button::back:
+        return "Back";
+    case Xbox360Button::start:
+        return "Start";
+    case Xbox360Button::left_thumb:
+        return "L3";
+    case Xbox360Button::right_thumb:
+        return "R3";
+    case Xbox360Button::count:
+        break;
+    }
+    return "?";
+}
+
+const char* GamepadActionLabel(const GamepadAction action) {
+    switch (action) {
+    case GamepadAction::none:
+        return "无";
+    case GamepadAction::confirm:
+        return "确认 / 交互";
+    case GamepadAction::cancel:
+        return "返回 / 取消";
+    case GamepadAction::mouse_left:
+        return "按住鼠标左键";
+    case GamepadAction::run_toggle:
+        return "切换走 / 跑";
+    case GamepadAction::auto_forward:
+        return "自动前进";
+    case GamepadAction::map:
+        return "小地图";
+    case GamepadAction::switch_leader:
+        return "切换领队";
+    case GamepadAction::camera_distance_cycle:
+        return "切换镜头距离";
+    case GamepadAction::system_menu:
+        return "系统菜单";
+    case GamepadAction::main_page_previous:
+        return "上一主分页";
+    case GamepadAction::main_page_next:
+        return "下一主分页";
+    case GamepadAction::sub_page_previous:
+        return "上一子分页";
+    case GamepadAction::sub_page_next:
+        return "下一子分页";
+    }
+    return "无";
+}
+
+void DrawGamepadBindingCombo(
+    Xbox360GamepadMapping* const mapping,
+    const Xbox360Button button) {
+    if (!mapping) {
+        return;
+    }
+    constexpr std::array actions{
+        GamepadAction::none,
+        GamepadAction::confirm,
+        GamepadAction::cancel,
+        GamepadAction::mouse_left,
+        GamepadAction::run_toggle,
+        GamepadAction::auto_forward,
+        GamepadAction::map,
+        GamepadAction::switch_leader,
+        GamepadAction::camera_distance_cycle,
+        GamepadAction::system_menu,
+        GamepadAction::main_page_previous,
+        GamepadAction::main_page_next,
+        GamepadAction::sub_page_previous,
+        GamepadAction::sub_page_next,
+    };
+    const auto selected_action = GetGamepadBinding(*mapping, button);
+    const std::string id = std::string("##gamepad_binding_") + ToString(button);
+    ImGui::SetNextItemWidth(-1.0F);
+    if (ImGui::BeginCombo(id.c_str(), GamepadActionLabel(selected_action))) {
+        for (const auto action : actions) {
+            const bool selected = action == selected_action;
+            if (ImGui::Selectable(GamepadActionLabel(action), selected)) {
+                SetGamepadBinding(mapping, button, action);
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+}
+
 void DrawPathRow(const char* const label, const std::filesystem::path& path) {
     ImGui::TextDisabled("%s", label);
     ImGui::SameLine(105.0F);
@@ -444,26 +549,135 @@ void DrawVideoPage(LauncherUiState* const state) {
     DrawMsaaSetting(state);
 }
 
-void DrawAudioPage() {
+void DrawAudioPage(LauncherUiState* const state) {
     ImGui::TextUnformatted("音频");
     ImGui::TextDisabled("声音输出与音量控制。");
     ImGui::Separator();
-    ImGui::BeginChild("audio_status", ImVec2(0.0F, 120.0F), ImGuiChildFlags_Borders);
-    ImGui::TextUnformatted("沿用原游戏音频设置");
-    ImGui::TextDisabled("当前版本尚未接管音乐、语音和音效音量；此页为后续音频功能保留。");
+    ImGui::BeginChild("audio_settings", ImVec2(0.0F, 155.0F), ImGuiChildFlags_Borders);
+    ImGui::TextUnformatted("对白语音音量");
+    ImGui::SameLine(180.0F);
+    ImGui::SetNextItemWidth(260.0F);
+    float volume_percent = state->inject_settings.gi_talk_volume * 100.0F;
+    if (ImGui::SliderFloat(
+            "##gi_talk_volume", &volume_percent, 0.0F, 300.0F, "%.0f%%")) {
+        state->inject_settings.gi_talk_volume = volume_percent / 100.0F;
+    }
+    ImGui::TextDisabled("只调整 giTalk 播放的 PALSOUND 对白配音。背景音乐和普通音效仍沿用原游戏设置。");
+    ImGui::TextDisabled("游戏内快捷键：[ 降低 5%，] 提高 5%。");
+    ImGui::TextDisabled("超过 100% 会放大原始配音，部分音频可能出现削波或失真。");
+    ImGui::Spacing();
+    ImGui::TextUnformatted("其他音频");
+    ImGui::TextDisabled("音乐、普通音效及输出设备仍由原游戏配置控制。");
     ImGui::EndChild();
 }
 
-void DrawControlsPage() {
+void DrawControlsPage(LauncherUiState* const state) {
     ImGui::TextUnformatted("控制");
-    ImGui::TextDisabled("键盘、鼠标与输入兼容设置。");
+    ImGui::TextDisabled("Xbox 360 手柄与输入兼容设置。");
     ImGui::Separator();
-    ImGui::BeginChild("controls_status", ImVec2(0.0F, 145.0F), ImGuiChildFlags_Borders);
-    ImGui::TextUnformatted("沿用原游戏键位");
-    ImGui::TextDisabled("当前版本保留原版 DirectInput 行为，暂不提供玩家键位重映射。");
+
+    bool enabled = state->inject_settings.gamepad_enabled;
+    if (ImGui::Checkbox("启用 Xbox 360 / XInput 手柄", &enabled)) {
+        state->inject_settings.gamepad_enabled = enabled;
+        ToggleFeature(
+            FindHookSetting(&state->inject_settings, HookId::process_inputs),
+            enabled);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("恢复默认映射")) {
+        state->inject_settings.gamepad_mapping = DefaultXbox360GamepadMapping();
+    }
+    ImGui::TextDisabled("十字键固定用于菜单方向导航；下列实体按钮可以自由映射。");
+
+    ImGui::BeginDisabled(!state->inject_settings.gamepad_enabled);
+    ImGui::Checkbox(
+        "现代摇杆控制",
+        &state->inject_settings.gamepad_modern_controls);
+    ImGui::TextDisabled("左摇杆按推动幅度切换走/跑/快跑；右摇杆旋转自由视角。关闭后左摇杆退回 W/A/S/D。 ");
+    ImGui::BeginDisabled(!state->inject_settings.gamepad_modern_controls);
+    float run_threshold_percent =
+        state->inject_settings.gamepad_run_threshold * 100.0F;
+    ImGui::SetNextItemWidth(260.0F);
+    if (ImGui::SliderFloat(
+            "跑步触发幅度",
+            &run_threshold_percent,
+            20.0F,
+            90.0F,
+            "%.0f%%")) {
+        state->inject_settings.gamepad_run_threshold =
+            run_threshold_percent / 100.0F;
+        state->inject_settings.gamepad_fast_run_threshold = std::max(
+            state->inject_settings.gamepad_fast_run_threshold,
+            state->inject_settings.gamepad_run_threshold + 0.01F);
+    }
+    float fast_run_threshold_percent =
+        state->inject_settings.gamepad_fast_run_threshold * 100.0F;
+    ImGui::SetNextItemWidth(260.0F);
+    if (ImGui::SliderFloat(
+            "快跑触发幅度",
+            &fast_run_threshold_percent,
+            run_threshold_percent + 1.0F,
+            100.0F,
+            "%.0f%%")) {
+        state->inject_settings.gamepad_fast_run_threshold =
+            fast_run_threshold_percent / 100.0F;
+    }
+    ImGui::SetNextItemWidth(260.0F);
+    ImGui::SliderFloat(
+        "右摇杆灵敏度",
+        &state->inject_settings.gamepad_camera_sensitivity,
+        20.0F,
+        360.0F,
+        "%.0f 度/秒");
+    ImGui::Checkbox(
+        "反转右摇杆纵向",
+        &state->inject_settings.gamepad_invert_camera_y);
+    ImGui::Checkbox(
+        "保持当前自由镜头（忽略脚本模式切换）",
+        &state->inject_settings.gamepad_preserve_free_camera);
+    ImGui::TextDisabled("实验选项：进入小场景时恢复切换前的镜头模式；可能影响剧情演出镜头。遇到异常请关闭。");
+    ImGui::EndDisabled();
+    ImGui::SeparatorText("Xbox 360 按钮映射");
+    constexpr std::array buttons{
+        Xbox360Button::a,
+        Xbox360Button::b,
+        Xbox360Button::x,
+        Xbox360Button::y,
+        Xbox360Button::left_shoulder,
+        Xbox360Button::right_shoulder,
+        Xbox360Button::left_trigger,
+        Xbox360Button::right_trigger,
+        Xbox360Button::back,
+        Xbox360Button::start,
+        Xbox360Button::left_thumb,
+        Xbox360Button::right_thumb,
+    };
+    if (ImGui::BeginTable(
+            "gamepad_bindings",
+            4,
+            ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("按键", ImGuiTableColumnFlags_WidthFixed, 52.0F);
+        ImGui::TableSetupColumn("动作", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("按键", ImGuiTableColumnFlags_WidthFixed, 52.0F);
+        ImGui::TableSetupColumn("动作", ImGuiTableColumnFlags_WidthStretch);
+        for (std::size_t row = 0; row < buttons.size() / 2; ++row) {
+            ImGui::TableNextRow();
+            for (std::size_t pair = 0; pair < 2; ++pair) {
+                const auto button = buttons[row + pair * (buttons.size() / 2)];
+                ImGui::TableSetColumnIndex(static_cast<int>(pair * 2));
+                ImGui::TextUnformatted(Xbox360ButtonLabel(button));
+                ImGui::TableSetColumnIndex(static_cast<int>(pair * 2 + 1));
+                DrawGamepadBindingCombo(&state->inject_settings.gamepad_mapping, button);
+            }
+        }
+        ImGui::EndTable();
+    }
     ImGui::Spacing();
-    ImGui::TextDisabled("调试用输入注入和自动化仍保留在 CLI 与高级调试能力中。");
-    ImGui::EndChild();
+    ImGui::Checkbox(
+        "记录手柄连接与上下文事件",
+        &state->inject_settings.gamepad_log_enabled);
+    ImGui::EndDisabled();
+    ImGui::TextDisabled("当前仅轮询 0 号 XInput 设备；暂不支持震动和其他手柄布局。");
 }
 
 void ToggleFeature(PersistedHookSetting* const setting, const bool enabled) {
@@ -739,10 +953,10 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
         DrawVideoPage(view->launcher);
         break;
     case LauncherPage::audio:
-        DrawAudioPage();
+        DrawAudioPage(view->launcher);
         break;
     case LauncherPage::controls:
-        DrawControlsPage();
+        DrawControlsPage(view->launcher);
         break;
     case LauncherPage::enhancements:
         DrawEnhancementsPage(view->launcher);

@@ -3,6 +3,7 @@
 #include "cegui_renderer_hooks.h"
 #include "d3d9_quality_hooks.h"
 #include "pal4inject/inject_settings.h"
+#include "pal4inject/dialogue_voice_volume.h"
 #include "runtime_state.h"
 
 namespace pal4::inject {
@@ -39,6 +40,19 @@ bool SavePersistedRuntimePreferences(std::string* error) {
     }
     settings.msaa_level = GetRuntimeState().GetMsaaLevel();
     settings.bink_scaling_mode = GetRuntimeState().GetBinkScalingMode();
+    settings.gi_talk_volume = GetRuntimeState().GetGiTalkVolume();
+    settings.gamepad_enabled = GetRuntimeState().GamepadEnabled();
+    settings.gamepad_log_enabled = GetRuntimeState().GamepadLogEnabled();
+    settings.gamepad_modern_controls = GetRuntimeState().GamepadModernControls();
+    settings.gamepad_invert_camera_y = GetRuntimeState().GamepadInvertCameraY();
+    settings.gamepad_preserve_free_camera =
+        GetRuntimeState().GamepadPreserveFreeCamera();
+    settings.gamepad_run_threshold = GetRuntimeState().GamepadRunThreshold();
+    settings.gamepad_fast_run_threshold =
+        GetRuntimeState().GamepadFastRunThreshold();
+    settings.gamepad_camera_sensitivity =
+        GetRuntimeState().GamepadCameraSensitivity();
+    settings.gamepad_mapping = GetRuntimeState().GetGamepadMapping();
     settings.borderless_window = GetRuntimeState().BorderlessWindowEnabled();
     settings.borderless_monitor = GetRuntimeState().BorderlessMonitor();
     settings.hooks.clear();
@@ -114,6 +128,26 @@ void ApplyMsaaPreference(
     }
 }
 
+void ApplyGiTalkVolumePreference(
+    const float volume,
+    const bool persist,
+    const bool update_last_ui_event) {
+    auto& state = GetRuntimeState();
+    const float normalized = ClampGiTalkVolume(volume);
+    state.SetGiTalkVolume(normalized);
+    if (update_last_ui_event) {
+        state.SetLastUiEvent(
+            std::string("runtime_preferences:gi_talk_volume=") +
+            std::to_string(normalized));
+    }
+    if (persist) {
+        std::string error;
+        if (!SavePersistedRuntimePreferences(&error)) {
+            RecordPersistenceError(error);
+        }
+    }
+}
+
 void ApplyHookLogPreference(
     const HookId id,
     const bool enabled,
@@ -149,7 +183,27 @@ bool LoadPersistedRuntimePreferences(std::string* error) {
         GetRuntimeState().SetHookLogEnabled(hook.id, hook.log_enabled);
         ApplyHookModePreference(hook.id, hook.mode, false, false);
     }
+    ApplyHookModePreference(
+        HookId::process_inputs,
+        settings.gamepad_enabled
+            ? HookMode::replace_with_fallback
+            : HookMode::observe_only,
+        false,
+        false);
     GetRuntimeState().SetBinkScalingMode(settings.bink_scaling_mode);
+    GetRuntimeState().SetGiTalkVolume(settings.gi_talk_volume);
+    GetRuntimeState().SetGamepadMapping(settings.gamepad_mapping);
+    GetRuntimeState().SetGamepadLogEnabled(settings.gamepad_log_enabled);
+    GetRuntimeState().SetGamepadModernControls(settings.gamepad_modern_controls);
+    GetRuntimeState().SetGamepadInvertCameraY(settings.gamepad_invert_camera_y);
+    GetRuntimeState().SetGamepadPreserveFreeCamera(
+        settings.gamepad_preserve_free_camera);
+    GetRuntimeState().SetGamepadRunThreshold(settings.gamepad_run_threshold);
+    GetRuntimeState().SetGamepadFastRunThreshold(
+        settings.gamepad_fast_run_threshold);
+    GetRuntimeState().SetGamepadCameraSensitivity(
+        settings.gamepad_camera_sensitivity);
+    GetRuntimeState().SetGamepadEnabled(settings.gamepad_enabled);
     GetRuntimeState().SetBorderlessWindowEnabled(settings.borderless_window);
     GetRuntimeState().SetBorderlessMonitor(settings.borderless_monitor);
     ApplyMsaaPreference(settings.msaa_level, false, false);

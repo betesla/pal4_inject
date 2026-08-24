@@ -12,6 +12,7 @@ InjectFeatureCategory BuildCategory(const HookId id) {
     case HookId::update_input_device_state:
     case HookId::initialize_direct_input:
     case HookId::handle_player_input_events:
+    case HookId::player_control_update:
         return InjectFeatureCategory::input_ui;
     case HookId::gi_talk:
     case HookId::load_font_file:
@@ -27,6 +28,7 @@ InjectFeatureCategory BuildCategory(const HookId id) {
     case HookId::d3d9_set_present_parameters:
         return InjectFeatureCategory::render_visual;
     case HookId::camera_update_matrix:
+    case HookId::set_camera_mode_script:
         return InjectFeatureCategory::camera;
     case HookId::loose_file_overlay:
     case HookId::loose_text_script_overlay:
