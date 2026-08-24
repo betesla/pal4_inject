@@ -448,6 +448,7 @@ pal4::inject::InjectPersistedSettings NormalizeInjectSettings(
     normalized.script_mode = loaded.script_mode;
     normalized.msaa_level = loaded.msaa_level;
     normalized.bink_scaling_mode = loaded.bink_scaling_mode;
+    normalized.borderless_window = loaded.borderless_window;
     for (const auto& feature : pal4::inject::BuildInjectFeatureCatalog()) {
         if (const auto* persisted = FindPersistedHook(loaded, feature.id)) {
             normalized.hooks.push_back(*persisted);
@@ -462,6 +463,20 @@ pal4::inject::InjectPersistedSettings NormalizeInjectSettings(
                 : mode,
             false,
         });
+    }
+    if (normalized.borderless_window) {
+        const auto present_hook = std::find_if(
+            normalized.hooks.begin(),
+            normalized.hooks.end(),
+            [](const pal4::inject::PersistedHookSetting& hook) {
+                return hook.id == pal4::inject::HookId::d3d9_set_present_parameters;
+            });
+        if (present_hook != normalized.hooks.end() &&
+            (present_hook->mode == pal4::inject::HookMode::observe_only ||
+             present_hook->mode == pal4::inject::HookMode::mirror_compare)) {
+            present_hook->mode = pal4::inject::HookMode::replace_with_fallback;
+            present_hook->active_mode = present_hook->mode;
+        }
     }
     return normalized;
 }

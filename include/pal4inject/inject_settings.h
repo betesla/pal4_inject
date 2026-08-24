@@ -20,6 +20,7 @@ struct InjectPersistedSettings {
     ScriptMode script_mode = ScriptMode::csb;
     MsaaLevel msaa_level = MsaaLevel::off;
     BinkScalingMode bink_scaling_mode = BinkScalingMode::fit;
+    bool borderless_window = false;
     std::vector<PersistedHookSetting> hooks;
 };
 

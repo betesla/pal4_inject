@@ -8,7 +8,9 @@
 #endif
 #include <windows.h>
 
+#include "borderless_window_runtime.h"
 #include "hook_logging.h"
+#include "pal4inject/borderless_window.h"
 #include "pal4inject/ida_addresses.h"
 #include "runtime_state.h"
 
@@ -194,7 +196,10 @@ int __cdecl Hook_D3d9SetPresentParameters(
 
     const HookMode mode = state.GetHookMode(HookId::d3d9_set_present_parameters);
     const MsaaLevel level = state.GetMsaaLevel();
-    if (mode != HookMode::observe_only && mode != HookMode::mirror_compare) {
+    const bool replacement_enabled =
+        mode != HookMode::observe_only && mode != HookMode::mirror_compare;
+    const bool borderless_requested = state.BorderlessWindowEnabled();
+    if (replacement_enabled) {
         std::string error;
         if (!ApplyRequestedMsaaLevel(level, &error)) {
             state.SetHookError(HookId::d3d9_set_present_parameters, error);
@@ -204,9 +209,13 @@ int __cdecl Hook_D3d9SetPresentParameters(
         }
     }
 
+    const int effective_fullscreen = ResolveBorderlessPresentFullscreenFlag(
+        fullscreen,
+        borderless_requested,
+        replacement_enabled);
     const int result =
-        g_original_d3d9_set_present_parameters(display_mode, fullscreen, format);
-    if (mode != HookMode::observe_only && mode != HookMode::mirror_compare) {
+        g_original_d3d9_set_present_parameters(display_mode, effective_fullscreen, format);
+    if (replacement_enabled) {
         std::string error;
         if (!ForcePresentParametersMsaa(level, &error)) {
             state.SetHookError(HookId::d3d9_set_present_parameters, error);
@@ -214,6 +223,25 @@ int __cdecl Hook_D3d9SetPresentParameters(
         } else {
             state.ClearHookError(HookId::d3d9_set_present_parameters);
         }
+    }
+    if (replacement_enabled && borderless_requested) {
+        std::string summary;
+        const bool applied = ApplyBorderlessWindowToCurrentProcess(&summary);
+        state.SetBorderlessWindowApplied(applied, summary);
+        AppendCriticalHookEventLog(
+            std::string("borderless_window desired=1 applied=") +
+            (applied ? "1" : "0") +
+            " original_fullscreen=" + std::to_string(fullscreen) +
+            " effective_fullscreen=" + std::to_string(effective_fullscreen) +
+            " " + summary);
+        if (!applied) {
+            state.SetHookError(HookId::d3d9_set_present_parameters, summary);
+            state.SetLastError("borderless window apply failed: " + summary);
+        }
+    } else {
+        state.SetBorderlessWindowApplied(false, borderless_requested
+            ? "D3D9 present-parameter replacement is disabled"
+            : "disabled");
     }
     LogMsaaEvent(level, mode, result);
     return result;

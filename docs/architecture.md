@@ -121,7 +121,9 @@
     - `fit` 保留完整画面；`fill_width_crop` 按屏幕宽度等比放大并居中裁剪上下区域
     - 两种模式都不改变视频宽高比，选项由 launcher 写入配置
   - `d3d9_quality_hooks.cpp`
-    - `D3D9SetPresentParameters` seam
+  - `D3D9SetPresentParameters` seam
+    - 无边框模式下把原游戏独占全屏请求改为窗口呈现，并在参数应用后将游戏主窗口改为目标显示器大小的 `WS_POPUP`
+    - runtime state 分别记录期望状态、实际应用状态和窗口/显示器摘要
     - 通过原始多重采样探测路径接入 `MSAA` 请求值
   - `minimap_hooks.cpp`
     - `SetupMinimapTexture` widescreen remap so minimap image follows the centered UI frame

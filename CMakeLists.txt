@@ -81,6 +81,7 @@ add_custom_target(pal4_inject_build_info ALL
 
 add_library(pal4_inject_common STATIC
     src/common/aspect_ratio_layout.cpp
+    src/common/borderless_window.cpp
     src/common/camera_pitch_guard.cpp
     src/common/camera_unlock_patch.cpp
     src/common/cegui_font_resync.cpp
@@ -114,6 +115,7 @@ add_dependencies(pal4_inject_common pal4_inject_build_info)
 
 add_library(pal4_inject_runtime_core STATIC
     src/runtime/background_window_hooks.cpp
+    src/runtime/borderless_window_runtime.cpp
     src/runtime/battle_ui_layout_hooks.cpp
     src/runtime/bink_video_hooks.cpp
     src/runtime/bootstrap.cpp

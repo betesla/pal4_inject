@@ -217,6 +217,30 @@ BinkScalingMode RuntimeState::GetBinkScalingMode() const {
     return bink_scaling_mode_;
 }
 
+void RuntimeState::SetBorderlessWindowEnabled(const bool enabled) {
+    std::scoped_lock lock(mutex_);
+    borderless_window_enabled_ = enabled;
+    if (!enabled) {
+        borderless_window_applied_ = false;
+        borderless_window_summary_.clear();
+    }
+    state_cv_.notify_all();
+}
+
+bool RuntimeState::BorderlessWindowEnabled() const {
+    std::scoped_lock lock(mutex_);
+    return borderless_window_enabled_;
+}
+
+void RuntimeState::SetBorderlessWindowApplied(
+    const bool applied,
+    const std::string_view summary) {
+    std::scoped_lock lock(mutex_);
+    borderless_window_applied_ = applied;
+    borderless_window_summary_ = summary;
+    state_cv_.notify_all();
+}
+
 void RuntimeState::SetActiveUiProfile(const UiProfile profile) {
     std::scoped_lock lock(mutex_);
     active_ui_profile_ = profile;
@@ -320,6 +344,9 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.main_module_base = main_module_base_;
     snapshot.msaa_level = msaa_level_;
     snapshot.bink_scaling_mode = bink_scaling_mode_;
+    snapshot.borderless_window_enabled = borderless_window_enabled_;
+    snapshot.borderless_window_applied = borderless_window_applied_;
+    snapshot.borderless_window_summary = borderless_window_summary_;
     snapshot.active_ui_profile = active_ui_profile_;
     snapshot.current_paliv_entry = current_paliv_entry;
     snapshot.last_paliv_entry_observed = last_paliv_entry_observed_;

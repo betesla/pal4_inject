@@ -26,6 +26,7 @@
 
 #include "pal4inject/hook_inventory.h"
 #include "pal4inject/aspect_ratio_layout.h"
+#include "pal4inject/borderless_window.h"
 #include "pal4inject/ida_addresses.h"
 #include "pal4inject/dpi_awareness.h"
 #include "pal4inject/inject_feature_catalog.h"
@@ -1114,6 +1115,7 @@ void TestInjectSettingsRoundTrip() {
     settings.script_mode = pal4::inject::ScriptMode::cs;
     settings.msaa_level = pal4::inject::MsaaLevel::x4;
     settings.bink_scaling_mode = pal4::inject::BinkScalingMode::fill_width_crop;
+    settings.borderless_window = true;
     settings.hooks.push_back({
         HookId::process_ui_event,
         pal4::inject::HookMode::replace_with_fallback,
@@ -1141,6 +1143,7 @@ void TestInjectSettingsRoundTrip() {
     assert(parsed.msaa_level == pal4::inject::MsaaLevel::x4);
     assert(parsed.bink_scaling_mode ==
            pal4::inject::BinkScalingMode::fill_width_crop);
+    assert(parsed.borderless_window);
     assert(parsed.hooks.size() == 3);
     const auto find_hook =
         [&parsed](const HookId id) -> const pal4::inject::PersistedHookSetting* {
@@ -1172,6 +1175,7 @@ void TestInjectSettingsRoundTrip() {
     assert(loaded.msaa_level == pal4::inject::MsaaLevel::x4);
     assert(loaded.bink_scaling_mode ==
            pal4::inject::BinkScalingMode::fill_width_crop);
+    assert(loaded.borderless_window);
     std::filesystem::remove(temp_path);
 
     pal4::inject::InjectPersistedSettings legacy{};
@@ -1181,6 +1185,7 @@ void TestInjectSettingsRoundTrip() {
         &error));
     assert(legacy.script_mode == pal4::inject::ScriptMode::csb);
     assert(legacy.bink_scaling_mode == pal4::inject::BinkScalingMode::fit);
+    assert(!legacy.borderless_window);
 
     pal4::inject::InjectPersistedSettings invalid{};
     assert(!pal4::inject::ParseInjectPersistedSettings(
@@ -1188,6 +1193,39 @@ void TestInjectSettingsRoundTrip() {
         &invalid,
         &error));
     assert(error.find("invalid script_mode") != std::string::npos);
+}
+
+void TestBorderlessWindowPlan() {
+    constexpr std::uint32_t kCaptionedWindowStyle =
+        0x00CF0000U | 0x10000000U | 0x02000000U;
+    constexpr std::uint32_t kFramedExtendedStyle =
+        0x00000100U | 0x00000200U | 0x00000008U;
+    const auto plan = pal4::inject::BuildBorderlessWindowPlan(
+        kCaptionedWindowStyle,
+        kFramedExtendedStyle,
+        -1920,
+        0,
+        0,
+        1080);
+    assert((plan.style & 0x80000000U) != 0);
+    assert((plan.style & 0x00C00000U) == 0);
+    assert((plan.style & 0x10000000U) != 0);
+    assert((plan.style & 0x02000000U) != 0);
+    assert((plan.extended_style & 0x00000100U) == 0);
+    assert((plan.extended_style & 0x00000200U) == 0);
+    assert((plan.extended_style & 0x00000008U) == 0);
+    assert((plan.extended_style & 0x00040000U) != 0);
+    assert(plan.x == -1920);
+    assert(plan.y == 0);
+    assert(plan.width == 1920);
+    assert(plan.height == 1080);
+
+    const auto empty = pal4::inject::BuildBorderlessWindowPlan(0, 0, 10, 20, 5, 15);
+    assert(empty.width == 0);
+    assert(empty.height == 0);
+    assert(pal4::inject::ResolveBorderlessPresentFullscreenFlag(1, true, true) == 0);
+    assert(pal4::inject::ResolveBorderlessPresentFullscreenFlag(1, true, false) == 1);
+    assert(pal4::inject::ResolveBorderlessPresentFullscreenFlag(1, false, true) == 1);
 }
 
 void TestInputLogic() {
@@ -1268,6 +1306,8 @@ void TestRuntimeEventLog() {
     assert(!state.GetHookLogEnabled(HookId::load_font_file));
     state.SetMsaaLevel(pal4::inject::MsaaLevel::x2);
     state.SetBinkScalingMode(pal4::inject::BinkScalingMode::fill_width_crop);
+    state.SetBorderlessWindowEnabled(true);
+    state.SetBorderlessWindowApplied(true, "monitor=0,0 1920x1080");
     state.AppendEventLog("event-1");
     state.AppendEventLog("event-2");
     state.SetCrashHandlerReady(true);
@@ -1285,6 +1325,9 @@ void TestRuntimeEventLog() {
     assert(snapshot.msaa_level == pal4::inject::MsaaLevel::x2);
     assert(snapshot.bink_scaling_mode ==
            pal4::inject::BinkScalingMode::fill_width_crop);
+    assert(snapshot.borderless_window_enabled);
+    assert(snapshot.borderless_window_applied);
+    assert(snapshot.borderless_window_summary == "monitor=0,0 1920x1080");
     assert(snapshot.active_ui_profile == pal4::inject::UiProfile::centered_800x600);
     assert(snapshot.last_crash_summary == "summary");
     assert(snapshot.last_crash_report_path == "report.txt");
@@ -2283,6 +2326,7 @@ int main() {
     TestInheritedScriptModeOverride();
     TestInjectFeatureCatalog();
     TestInjectSettingsRoundTrip();
+    TestBorderlessWindowPlan();
     TestProtocolRoundTrip();
     TestUiSnapshotSerialization();
     TestUiInputPlan();

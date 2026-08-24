@@ -96,6 +96,13 @@ const char* BinkScalingModeLabel(const BinkScalingMode mode) {
     return "完整显示（保持全画面）";
 }
 
+const char* DisplayModeLabel(const LauncherUiState& state) {
+    if (state.inject_settings.borderless_window) {
+        return "无边框窗口（推荐）";
+    }
+    return state.display.fullscreen != 0 ? "独占全屏" : "普通窗口";
+}
+
 void DrawPathRow(const char* const label, const std::filesystem::path& path) {
     ImGui::TextDisabled("%s", label);
     ImGui::SameLine(105.0F);
@@ -135,6 +142,49 @@ void DrawResolutionCombo(
     }
 }
 
+void ToggleFeature(PersistedHookSetting* setting, bool enabled);
+
+void DrawDisplayModeSetting(LauncherUiState* const state) {
+    ImGui::TextUnformatted("显示模式");
+    ImGui::SameLine(105.0F);
+    ImGui::SetNextItemWidth(240.0F);
+    if (ImGui::BeginCombo("##display_mode", DisplayModeLabel(*state))) {
+        const bool windowed =
+            !state->inject_settings.borderless_window && state->display.fullscreen == 0;
+        if (ImGui::Selectable("普通窗口", windowed)) {
+            state->inject_settings.borderless_window = false;
+            state->display.fullscreen = 0;
+        }
+
+        const bool borderless = state->inject_settings.borderless_window;
+        if (ImGui::Selectable("无边框窗口（推荐）", borderless)) {
+            state->inject_settings.borderless_window = true;
+            state->display.fullscreen = 0;
+            const int desktop_width = GetSystemMetrics(SM_CXSCREEN);
+            const int desktop_height = GetSystemMetrics(SM_CYSCREEN);
+            if (desktop_width > 0 && desktop_height > 0) {
+                state->display.width = desktop_width;
+                state->display.height = desktop_height;
+            }
+            ToggleFeature(
+                FindHookSetting(
+                    &state->inject_settings,
+                    HookId::d3d9_set_present_parameters),
+                true);
+        }
+
+        const bool exclusive =
+            !state->inject_settings.borderless_window && state->display.fullscreen != 0;
+        if (ImGui::Selectable("独占全屏", exclusive)) {
+            state->inject_settings.borderless_window = false;
+            state->display.fullscreen = 1;
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::TextDisabled(
+        "无边框模式保持桌面显示模式，并在选择时同步桌面分辨率，可减少切换黑屏。 ");
+}
+
 void DrawGamePage(LauncherUiState* const state) {
     ImGui::TextUnformatted("游戏设置");
     ImGui::TextDisabled("这些选项写入游戏 config.cfg，并在启动前生效。");
@@ -162,13 +212,9 @@ void DrawGamePage(LauncherUiState* const state) {
     state->display.width = std::clamp(state->display.width, 320, 20000);
     state->display.height = std::clamp(state->display.height, 240, 20000);
 
-    bool fullscreen = state->display.fullscreen != 0;
     bool widescreen = state->display.widescreen != 0;
     bool vsync = state->display.sync != 0;
-    if (ImGui::Checkbox("全屏运行", &fullscreen)) {
-        state->display.fullscreen = fullscreen ? 1 : 0;
-    }
-    ImGui::SameLine();
+    DrawDisplayModeSetting(state);
     if (ImGui::Checkbox("启用宽屏", &widescreen)) {
         state->display.widescreen = widescreen ? 1 : 0;
         ApplyWidescreenFeaturePreset(&state->inject_settings, widescreen);
@@ -185,8 +231,6 @@ void DrawGamePage(LauncherUiState* const state) {
     DrawPathRow("运行库", state->runtime_dll);
     ImGui::EndChild();
 }
-
-void ToggleFeature(PersistedHookSetting* setting, bool enabled);
 
 void DrawBinkScalingSetting(LauncherUiState* const state) {
     ImGui::TextUnformatted("过场视频显示");

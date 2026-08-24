@@ -12,9 +12,9 @@
 namespace pal4::inject {
 namespace {
 
-constexpr int kSettingsVersion = 3;
+constexpr int kSettingsVersion = 4;
 constexpr int kMinSupportedSettingsVersion = 1;
-constexpr int kMaxSupportedSettingsVersion = 3;
+constexpr int kMaxSupportedSettingsVersion = 4;
 
 std::string TrimAscii(const std::string_view text) {
     std::size_t begin = 0;
@@ -50,6 +50,7 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
     out << "script_mode=" << ToString(settings.script_mode) << '\n';
     out << "msaa_level=" << ToString(settings.msaa_level) << '\n';
     out << "bink_scaling_mode=" << ToString(settings.bink_scaling_mode) << '\n';
+    out << "borderless_window=" << (settings.borderless_window ? "1" : "0") << '\n';
 
     std::map<int, PersistedHookSetting> sorted_hooks;
     for (const auto& hook : settings.hooks) {
@@ -129,6 +130,19 @@ bool ParseInjectPersistedSettings(
             if (!TryParseBinkScalingMode(value, &out->bink_scaling_mode)) {
                 if (error) {
                     *error = "invalid bink_scaling_mode value: " + value;
+                }
+                return false;
+            }
+            continue;
+        }
+        if (key == "borderless_window") {
+            if (value == "1" || value == "true" || value == "on") {
+                out->borderless_window = true;
+            } else if (value == "0" || value == "false" || value == "off") {
+                out->borderless_window = false;
+            } else {
+                if (error) {
+                    *error = "invalid borderless_window value: " + value;
                 }
                 return false;
             }

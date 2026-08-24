@@ -168,6 +168,9 @@ std::string BuildCrashReportText(
         << "last_error=" << runtime_snapshot->last_error << "\n"
         << "last_font_sync_ok=" << (runtime_snapshot->last_font_sync_ok ? 1 : 0) << "\n"
         << "last_font_sync_summary=" << runtime_snapshot->last_font_sync_summary << "\n"
+        << "borderless_window_enabled=" << (runtime_snapshot->borderless_window_enabled ? 1 : 0) << "\n"
+        << "borderless_window_applied=" << (runtime_snapshot->borderless_window_applied ? 1 : 0) << "\n"
+        << "borderless_window_summary=" << runtime_snapshot->borderless_window_summary << "\n"
         << "hooks=" << BuildHookSummary(*runtime_snapshot) << "\n"
         << "event_log_tail=\n" << runtime_snapshot->event_log_tail << "\n";
     return out.str();

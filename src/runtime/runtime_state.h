@@ -47,6 +47,9 @@ public:
     MsaaLevel GetMsaaLevel() const;
     void SetBinkScalingMode(BinkScalingMode mode);
     BinkScalingMode GetBinkScalingMode() const;
+    void SetBorderlessWindowEnabled(bool enabled);
+    bool BorderlessWindowEnabled() const;
+    void SetBorderlessWindowApplied(bool applied, std::string_view summary);
     void SetActiveUiProfile(UiProfile profile);
     UiProfile GetActiveUiProfile() const;
 
@@ -93,6 +96,9 @@ private:
     std::vector<HookStatus> hook_statuses_;
     MsaaLevel msaa_level_ = MsaaLevel::off;
     BinkScalingMode bink_scaling_mode_ = BinkScalingMode::fit;
+    bool borderless_window_enabled_ = false;
+    bool borderless_window_applied_ = false;
+    std::string borderless_window_summary_;
     UiProfile active_ui_profile_ = UiProfile::centered_800x600;
     std::uint32_t last_paliv_entry_observed_ = 0;
     std::string last_ui_event_;

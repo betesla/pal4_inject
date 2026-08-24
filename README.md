@@ -48,7 +48,8 @@ cmake --build I:\PAL4\projects\pal4_inject\build --config Debug
   - 注入相关文件放在游戏目录下的 `pal4_inject` 子目录，便于后续覆盖更新
   - 注入配置、runtime log、crash report / dump 等运行产物也统一放在 `pal4_inject` 子目录
   - 双击 `PAL4_inject.exe` 后由 GUI 选择 `CS` 或 `CSB`
-  - GUI 会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、全屏/窗口化、宽屏和垂直同步
+  - GUI 会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、普通窗口/无边框窗口/独占全屏、宽屏和垂直同步
+  - 无边框窗口模式让 D3D9 保持窗口呈现，并把游戏窗口覆盖到目标显示器，可减少显示模式切换造成的黑屏和闪屏
   - 分辨率列表分为“常用分辨率”和“主显示器支持”两个页签
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
   - GUI 右上角显示当前版本和作者信息，点击 `B站 @北风7P` 可打开作者主页
@@ -223,6 +224,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - `last_crash_report_path`
   - `last_crash_dump_path`
   - `last_crash_summary`
+  - `borderless_window_enabled / borderless_window_applied / borderless_window_summary`
 
 ## Launcher 配置
 

@@ -8,7 +8,11 @@
 - `CSB 原始脚本`：适合普通游玩和回归验证，首次启动默认选中。
 - launcher 会把上次启动时选择的 `CS / CSB` 写入 `inject_settings.ini`，下次打开自动恢复。
 - `常用分辨率 / 显示器支持`：选择预设分辨率，也可以直接输入宽高。
-- `全屏运行 / 启用宽屏 / 垂直同步`：写入游戏目录的 `config.cfg`。
+- `显示模式`提供三种选择：
+  - `普通窗口`：使用原游戏的窗口边框。
+  - `无边框窗口（推荐）`：D3D9 保持窗口呈现，窗口覆盖目标显示器；选择该模式时会同步当前桌面分辨率，之后仍可手动调整。它可减少启动、Alt+Tab 和返回桌面时由显示模式切换造成的黑屏。
+  - `独占全屏`：保留原游戏全屏行为，作为兼容性回退。
+- `启用宽屏 / 垂直同步`：写入游戏目录的 `config.cfg`。
 - 保存 `config.cfg` 前会保留一份 `config.cfg.bak`。
 
 ## 增强功能
@@ -47,6 +51,7 @@
 - 新配置文件：`pal4_inject\inject_settings.ini`
 - 脚本选择使用 `script_mode=cs|csb` 持久化；旧配置缺省该项时使用 `csb`。
 - Bink 显示模式使用 `bink_scaling_mode=fit|fill_width_crop` 持久化；旧配置缺省该项时使用“完整显示”。
+- 无边框窗口使用 `borderless_window=0|1` 持久化；旧配置缺省该项时沿用 `config.cfg` 的普通窗口或独占全屏设置。
 - 旧版 `pal4_inject\inject_panel_settings.ini` 会被兼容读取，并在下次从 launcher 启动时迁移到新文件名。
 - runtime 会在 Hook 安装前加载配置。
 - 游戏运行期间如需改变 HookMode，底层 IPC 协议仍保留 `set_hook_mode`；普通 CLI 主要用于状态和事件日志观察。
@@ -55,6 +60,7 @@
   - `gamepatch\loose_file_load.log`（CPK / CS 松散文件覆盖、CS 必需文件缺失与 CPK 回退，UTF-8 JSON Lines）
   - `cli.exe --pid <pid> state`
   - `cli.exe --pid <pid> event-log`
+- `state` 中的 `borderless_window_enabled` 表示期望配置，`borderless_window_applied` 和 `borderless_window_summary` 表示本次实际应用结果。
 
 ## 故障排查
 

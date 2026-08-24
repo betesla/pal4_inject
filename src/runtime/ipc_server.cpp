@@ -144,6 +144,11 @@ ProtocolResponse BuildSnapshotResponse() {
         HexValue(static_cast<std::uint32_t>(snapshot.main_module_base));
     response.fields["msaa_level"] = ToString(snapshot.msaa_level);
     response.fields["bink_scaling_mode"] = ToString(snapshot.bink_scaling_mode);
+    response.fields["borderless_window_enabled"] =
+        snapshot.borderless_window_enabled ? "1" : "0";
+    response.fields["borderless_window_applied"] =
+        snapshot.borderless_window_applied ? "1" : "0";
+    response.fields["borderless_window_summary"] = snapshot.borderless_window_summary;
     response.fields["active_ui_profile"] = ToString(snapshot.active_ui_profile);
     response.fields["current_paliv_entry"] =
         HexValue(snapshot.last_paliv_entry_observed);
