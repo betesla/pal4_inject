@@ -369,6 +369,13 @@ void DrawGamePage(LauncherUiState* const state) {
 
 void DrawBinkScalingSetting(LauncherUiState* const state) {
     ImGui::TextUnformatted("过场视频显示");
+    ImGui::SameLine(0.0F, 6.0F);
+    DrawHelpMarker(
+        "?##bink_scaling_help",
+        "完整显示（保持全画面）\n"
+        "保持视频原始比例，完整显示全部画面，不拉伸也不裁剪。视频比例为 4:3 而屏幕为宽屏时，左右会保留黑边。\n\n"
+        "宽屏铺满（上下裁剪）\n"
+        "保持视频原始比例并放大到铺满屏幕宽度，不会横向拉伸；超出屏幕的上下画面会被裁剪。");
     ImGui::SameLine(180.0F);
     ImGui::SetNextItemWidth(240.0F);
     if (ImGui::BeginCombo(
@@ -394,8 +401,6 @@ void DrawBinkScalingSetting(LauncherUiState* const state) {
         }
         ImGui::EndCombo();
     }
-    ImGui::TextDisabled(
-        "完整显示会保留全部画面；宽屏铺满保持比例并裁掉超出屏幕的上下部分。");
 }
 
 void DrawMsaaSetting(LauncherUiState* const state) {
@@ -435,13 +440,6 @@ void DrawVideoPage(LauncherUiState* const state) {
 
     ImGui::Spacing();
     ImGui::TextUnformatted("渲染与过场");
-    const bool widescreen_enabled = state->display.widescreen != 0;
-    ImGui::SameLine(180.0F);
-    ImGui::TextColored(
-        widescreen_enabled
-            ? ImVec4(0.36F, 0.82F, 0.48F, 1.0F)
-            : ImVec4(0.66F, 0.66F, 0.66F, 1.0F),
-        widescreen_enabled ? "自动宽屏修正已启用" : "自动宽屏修正未启用");
     DrawBinkScalingSetting(state);
     DrawMsaaSetting(state);
 }
