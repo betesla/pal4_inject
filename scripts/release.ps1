@@ -201,7 +201,7 @@ function Get-ReleaseNotes {
     )
 
     if ($ReleaseNotesPath) {
-        return Get-Content -LiteralPath $ReleaseNotesPath -Raw
+        return Get-Content -LiteralPath $ReleaseNotesPath -Raw -Encoding UTF8
     }
 
     $installGuide = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(
