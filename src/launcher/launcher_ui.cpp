@@ -195,6 +195,26 @@ void SelectMonitor(LauncherUiState* const state, const std::size_t index) {
     }
 }
 
+void DrawHelpMarker(const char* const id, const char* const text) {
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5.0F, 1.0F));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18F, 0.21F, 0.27F, 1.0F));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28F, 0.34F, 0.44F, 1.0F));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.34F, 0.42F, 0.54F, 1.0F));
+    ImGui::SmallButton(id);
+    const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort);
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(2);
+
+    if (hovered) {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 34.0F);
+        ImGui::TextUnformatted(text);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
 void DrawMonitorSetting(LauncherUiState* const state) {
     ImGui::TextUnformatted("目标显示器");
     ImGui::SameLine(135.0F);
@@ -227,6 +247,15 @@ void DrawMonitorSetting(LauncherUiState* const state) {
 
 void DrawDisplayModeSetting(LauncherUiState* const state) {
     ImGui::TextUnformatted("显示模式");
+    ImGui::SameLine(0.0F, 6.0F);
+    DrawHelpMarker(
+        "?##display_mode_help",
+        "普通窗口\n"
+        "保留系统窗口边框，不切换桌面显示模式；可以手动拖到其他显示器，适合需要同时操作桌面程序的场景。\n\n"
+        "无边框窗口（推荐）\n"
+        "以窗口模式渲染并覆盖所选显示器，外观接近全屏。Alt+Tab 更快，也能减少老游戏切换显示模式时的黑屏和闪屏。\n\n"
+        "独占全屏\n"
+        "由原游戏独占显示设备并切换显示模式。Alt+Tab 可能较慢或出现闪屏；当前版本沿用游戏默认适配器，因此不能选择目标显示器。");
     ImGui::SameLine(135.0F);
     ImGui::SetNextItemWidth(520.0F);
     if (ImGui::BeginCombo("##display_mode", DisplayModeLabel(*state))) {
