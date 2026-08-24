@@ -43,7 +43,7 @@ constexpr std::array<EnumName<ScriptMode>, 3> kScriptModes{{
     {ScriptMode::csb, "csb"},
 }};
 
-constexpr std::array<EnumName<HookId>, 22> kHookIds{{
+constexpr std::array<EnumName<HookId>, 34> kHookIds{{
     {HookId::process_ui_event, "process_ui_event"},
     {HookId::handle_ui_message, "handle_ui_message"},
     {HookId::simulate_key_press_and_release, "simulate_key_press_and_release"},
@@ -55,6 +55,8 @@ constexpr std::array<EnumName<HookId>, 22> kHookIds{{
     {HookId::cegui_system_initialize, "cegui_system_initialize"},
     {HookId::load_font_file, "load_font_file"},
     {HookId::setup_minimap_texture, "setup_minimap_texture"},
+    {HookId::camera_prepare, "camera_prepare"},
+    {HookId::camera_run_single, "camera_run_single"},
     {HookId::camera_update_matrix, "camera_update_matrix"},
     {HookId::d3d9_set_present_parameters, "d3d9_set_present_parameters"},
     {HookId::pal4_main_wndproc, "pal4_main_wndproc"},
@@ -63,9 +65,19 @@ constexpr std::array<EnumName<HookId>, 22> kHookIds{{
     {HookId::combat_console_set_image_position_2, "combat_console_set_image_position_2"},
     {HookId::ui_show_combat_result, "ui_show_combat_result"},
     {HookId::render_text_and_image, "render_text_and_image"},
+    {HookId::audio_system_play_music, "audio_system_play_music"},
+    {HookId::gi_play_movie, "gi_play_movie"},
+    {HookId::bink_player_open_video, "bink_player_open_video"},
     {HookId::bink_player_update_and_render, "bink_player_update_and_render"},
     {HookId::loose_file_overlay, "loose_file_overlay"},
     {HookId::loose_text_script_overlay, "loose_text_script_overlay"},
+    {HookId::combat_handle_action, "combat_handle_action"},
+    {HookId::combat_create_stunt_action, "combat_create_stunt_action"},
+    {HookId::combat_execute_stunt, "combat_execute_stunt"},
+    {HookId::combat_skill_damage, "combat_skill_damage"},
+    {HookId::combat_system_end, "combat_system_end"},
+    {HookId::crt_runtime_message, "crt_runtime_message"},
+    {HookId::crt_message_box, "crt_message_box"},
 }};
 
 template <typename Enum, std::size_t N>

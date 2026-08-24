@@ -1,5 +1,6 @@
 #include "input_hooks.h"
 
+#include <atomic>
 #include <cstdint>
 #include <sstream>
 #include <string>
@@ -13,16 +14,20 @@
 #include "bink_video_hooks.h"
 #include "cegui_renderer_hooks.h"
 #include "camera_hooks.h"
+#include "combat_observation_hooks.h"
 #include "cegui_bindings.h"
 #include "cegui_font_hooks.h"
 #include "d3d9_quality_hooks.h"
+#include "media_observation_hooks.h"
 #include "hud_layout_fixups.h"
 #include "hook_logging.h"
 #include "loose_file_hooks.h"
 #include "minimap_hooks.h"
+#include "process_failure_hooks.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
 #include "pal4inject/input_logic.h"
+#include "pal4inject/input_queue.h"
 #include "runtime_state.h"
 
 namespace pal4::inject {
@@ -69,6 +74,9 @@ ProcessInputsFn g_original_process_inputs = nullptr;
 UpdateInputDeviceStateFn g_original_update_input_device_state = nullptr;
 InitializeDirectInputFn g_original_initialize_direct_input = nullptr;
 GiTalkFn g_original_gi_talk = nullptr;
+std::atomic<DWORD> g_process_inputs_thread_id{0};
+SynchronousUiMessageQueue g_main_thread_ui_queue;
+constexpr std::uint32_t kMainThreadUiDispatchTimeoutMs = 5000;
 
 constexpr unsigned char kInjectedTalkTextGbk[] = {
     0xD2, 0xD1, 0xD7, 0xA2, 0xC8, 0xEB, 0x00,
@@ -83,6 +91,41 @@ GiTalkStringArg g_injected_gi_talk_arg = {
     0,
     reinterpret_cast<const char*>(kInjectedTalkTextGbk),
 };
+
+std::string ReadGiTalkStringArg(void* argument) {
+    if (!argument) {
+        return {};
+    }
+    GiTalkStringArg value{};
+    SIZE_T bytes_read = 0;
+    if (!ReadProcessMemory(
+            GetCurrentProcess(),
+            argument,
+            &value,
+            sizeof(value),
+            &bytes_read) ||
+        bytes_read != sizeof(value) || !value.text) {
+        return {};
+    }
+    std::string text;
+    text.reserve(32);
+    for (std::size_t index = 0; index < 255; ++index) {
+        char character = 0;
+        bytes_read = 0;
+        if (!ReadProcessMemory(
+                GetCurrentProcess(),
+                value.text + index,
+                &character,
+                1,
+                &bytes_read) ||
+            bytes_read != 1 || character == '\0') {
+            break;
+        }
+        const unsigned char byte = static_cast<unsigned char>(character);
+        text.push_back(byte >= 0x20U && byte <= 0x7EU ? character : '?');
+    }
+    return text;
+}
 
 std::string FormatWindowsError(const DWORD code) {
     char* buffer = nullptr;
@@ -579,6 +622,74 @@ bool SimulateKeyPressMirror(
     return key_up.handled;
 }
 
+bool DispatchUiMessageOnGameThread(
+    const UiMessageCommand& command,
+    std::string* error,
+    bool* out_message_handled) {
+    if (out_message_handled) {
+        *out_message_handled = false;
+    }
+    const auto get_ui_frame_manager = ResolveRuntimeFunction<UiFrameManagerGetInstanceFn>(
+        ida::kUiFrameManagerGetInstance);
+    const auto handle_ui_message = ResolveRuntimeFunction<HandleUiMessageAndProcessFn>(
+        ida::kHandleUiMessageAndProcess);
+    if (!get_ui_frame_manager || !handle_ui_message) {
+        if (error) {
+            *error = "UI dispatch helpers are unavailable";
+        }
+        return false;
+    }
+
+    void* ui_frame_manager = get_ui_frame_manager();
+    if (!ui_frame_manager) {
+        if (error) {
+            *error = "UIFrameManager_GetInstance returned null";
+        }
+        return false;
+    }
+
+    const char handled = handle_ui_message(
+        ui_frame_manager,
+        nullptr,
+        static_cast<UINT>(command.msg),
+        static_cast<WPARAM>(command.wparam),
+        static_cast<LPARAM>(command.lparam));
+    if (out_message_handled) {
+        *out_message_handled = handled != 0;
+    }
+    if (error) {
+        error->clear();
+    }
+    ReadCurrentPalivEntry();
+    GetRuntimeState().SetLastUiEvent(std::string("dispatch:") + DescribeWindowsMessage(command.msg));
+    LogHookEvent(
+        HookId::handle_ui_message,
+        std::string("dispatch_ui_message path=main_thread_seam msg=") +
+        DescribeWindowsMessage(command.msg) +
+        " handled=" + std::to_string(handled != 0));
+    return true;
+}
+
+void DrainMainThreadUiQueue() {
+    SynchronousUiMessageQueue::Ticket ticket;
+    while (g_main_thread_ui_queue.TryPop(&ticket)) {
+        if (g_main_thread_ui_queue.IsCanceled(ticket)) {
+            continue;
+        }
+        bool message_handled = false;
+        std::string error;
+        const bool delivered = DispatchUiMessageOnGameThread(
+            ticket->command,
+            &error,
+            &message_handled);
+        g_main_thread_ui_queue.Complete(
+            ticket,
+            delivered,
+            message_handled,
+            std::move(error));
+    }
+}
+
 void LogLowLevelObserveOnlyHook(
     const HookId hook_id,
     const void* self,
@@ -706,7 +817,9 @@ bool __fastcall Hook_SimulateKeyPressAndRelease(
 }
 
 int __cdecl Hook_ProcessInputs() {
+    g_process_inputs_thread_id.store(GetCurrentThreadId(), std::memory_order_release);
     GetRuntimeState().IncrementHookCall(HookId::process_inputs);
+    DrainMainThreadUiQueue();
     RefreshWidescreenHudLayoutFixups();
     LogLowLevelObserveOnlyHook(HookId::process_inputs, nullptr);
     return g_original_process_inputs
@@ -745,12 +858,15 @@ char __cdecl Hook_GiTalk(void* text_arg, void* voice_key_arg) {
     state.IncrementHookCall(HookId::gi_talk);
     state.SetLastUiEvent("giTalk");
 
+    const auto voice_key = ReadGiTalkStringArg(voice_key_arg);
+    std::ostringstream observed;
+    observed << "hook=gi_talk media=voice event=requested"
+             << " voice_key=" << (voice_key.empty() ? "unknown" : voice_key)
+             << " text_arg=" << FormatPointer(text_arg);
+    LogHookEvent(HookId::gi_talk, observed.str());
+
     const HookMode mode = state.GetHookMode(HookId::gi_talk);
     if (mode == HookMode::observe_only || mode == HookMode::mirror_compare) {
-    LogHookEvent(
-        HookId::gi_talk,
-        std::string("hook=gi_talk mode=") + ToString(mode) +
-        " path=fallback_original");
         return g_original_gi_talk
             ? g_original_gi_talk(text_arg, voice_key_arg)
             : 0;
@@ -813,6 +929,15 @@ void* GetReplacementForHook(const HookId id) {
         if (void* replacement = GetLooseFileReplacementForHook(id)) {
             return replacement;
         }
+        if (void* replacement = GetMediaObservationReplacementForHook(id)) {
+            return replacement;
+        }
+        if (void* replacement = GetCombatObservationReplacementForHook(id)) {
+            return replacement;
+        }
+        if (void* replacement = GetProcessFailureReplacementForHook(id)) {
+            return replacement;
+        }
         return GetCameraReplacementForHook(id);
     }
 }
@@ -851,12 +976,21 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
         SetBattleUiLayoutOriginalTrampoline(id, trampoline);
         SetBinkVideoOriginalTrampoline(id, trampoline);
         SetLooseFileOriginalTrampoline(id, trampoline);
+        SetMediaObservationOriginalTrampoline(id, trampoline);
+        SetCombatObservationOriginalTrampoline(id, trampoline);
+        SetProcessFailureOriginalTrampoline(id, trampoline);
         SetCameraOriginalTrampoline(id, trampoline);
         break;
     }
 }
 
-bool DispatchUiMessageCommand(const UiMessageCommand& command, std::string* error) {
+bool DispatchUiMessageCommand(
+    const UiMessageCommand& command,
+    std::string* error,
+    bool* out_message_handled) {
+    if (out_message_handled) {
+        *out_message_handled = false;
+    }
     if (!command.bypass_os_queue) {
         HWND hwnd = FindCurrentProcessWindow();
         if (!hwnd) {
@@ -895,52 +1029,38 @@ bool DispatchUiMessageCommand(const UiMessageCommand& command, std::string* erro
         return false;
     }
 
-    const auto get_ui_frame_manager = ResolveRuntimeFunction<UiFrameManagerGetInstanceFn>(
-        ida::kUiFrameManagerGetInstance);
-    const auto handle_ui_message = ResolveRuntimeFunction<HandleUiMessageAndProcessFn>(
-        ida::kHandleUiMessageAndProcess);
-    if (!get_ui_frame_manager || !handle_ui_message) {
-        if (error) {
-            *error = "UI dispatch helpers are unavailable";
-        }
-        return false;
+    const DWORD game_thread_id =
+        g_process_inputs_thread_id.load(std::memory_order_acquire);
+    if (game_thread_id != 0 && game_thread_id == GetCurrentThreadId()) {
+        return DispatchUiMessageOnGameThread(command, error, out_message_handled);
     }
 
-    void* ui_frame_manager = get_ui_frame_manager();
-    if (!ui_frame_manager) {
-        if (error) {
-            *error = "UIFrameManager_GetInstance returned null";
-        }
-        return false;
+    const auto ticket = g_main_thread_ui_queue.Push(command);
+    // PAL4's menu loop can block in WaitMessage after it becomes idle. A
+    // benign window message wakes that loop so Hook_ProcessInputs can drain
+    // the queued command on the game thread without injecting OS input.
+    if (const HWND window = FindCurrentProcessWindow()) {
+        PostMessageA(window, WM_NULL, 0, 0);
     }
-
-    const char handled = handle_ui_message(
-        ui_frame_manager,
-        nullptr,
-        static_cast<UINT>(command.msg),
-        static_cast<WPARAM>(command.wparam),
-        static_cast<LPARAM>(command.lparam));
-    ReadCurrentPalivEntry();
-    GetRuntimeState().SetLastUiEvent(std::string("dispatch:") + DescribeWindowsMessage(command.msg));
-    LogHookEvent(
-        HookId::handle_ui_message,
-        std::string("dispatch_ui_message path=seam msg=") +
-        DescribeWindowsMessage(command.msg) +
-        " handled=" + std::to_string(handled != 0));
-    return handled != 0;
+    return g_main_thread_ui_queue.Wait(
+        ticket,
+        kMainThreadUiDispatchTimeoutMs,
+        out_message_handled,
+        error);
 }
 
 bool DispatchSimulatedKey(
     const std::uint32_t virtual_key,
     const bool key_up,
     const bool bypass_os_queue,
-    std::string* error) {
+    std::string* error,
+    bool* out_message_handled) {
     UiMessageCommand command{};
     command.msg = key_up ? WM_KEYUP : WM_KEYDOWN;
     command.wparam = virtual_key;
     command.lparam = 0;
     command.bypass_os_queue = bypass_os_queue;
-    return DispatchUiMessageCommand(command, error);
+    return DispatchUiMessageCommand(command, error, out_message_handled);
 }
 
 bool RefreshUiDispatchReady(std::string* reason) {

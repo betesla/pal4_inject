@@ -17,6 +17,7 @@
 #include "pal4inject/memory_debug.h"
 #include "pal4inject/protocol.h"
 #include "pal4inject/ui_coordinate_space.h"
+#include "pal4inject/ui_input_plan.h"
 #include "pal4inject/ui_snapshot.h"
 
 namespace {
@@ -41,21 +42,29 @@ void PrintUsage() {
         << "Commands:\n"
         << "  snapshot\n"
         << "  snapshot-raw\n"
-        << "  click <ref>\n"
-        << "  click-pt <x> <y> [--os-queue]\n"
-        << "  click-logical <x> <y> [--os-queue]\n"
+        << "  click <ref> [--direct-seam]\n"
+        << "  click-path <window-path> [--direct-seam]\n"
+        << "  click-pt <x> <y> [--direct-seam]\n"
+        << "  click-logical <x> <y> [--direct-seam]\n"
         << "  fill <ref> <text>\n"
         << "  type <text>\n"
-        << "  press <key> [--os-queue]\n"
+        << "  press <key> [--direct-seam]\n"
+        << "  hold <key> <duration-ms> [--repeat-ms=N] [--direct-seam]\n"
         << "  state\n"
+        << "  paliv\n"
         << "  event-log\n"
         << "  wait-path <window-path> [timeout-ms]\n"
         << "  wait-text <substring> [timeout-ms]\n"
+        << "  wait-event <substring> [timeout-ms]\n"
+        << "  wait-state <field> <value> [timeout-ms]\n"
+        << "  wait-paliv <entry> [timeout-ms]\n"
+        << "  wait-hook <hook-id> <minimum-count> [timeout-ms]\n"
         << "  mem-query (--ida|--va) <addr>\n"
         << "  mem-read (--ida|--va) <addr> --size <n>\n"
         << "  mem-read-scalar (--ida|--va) <addr> --type <type>\n"
         << "  mem-write-bytes (--ida|--va) <addr> <hex> [--unsafe-code-write]\n"
-        << "  mem-write-scalar (--ida|--va) <addr> --type <type> <value> [--unsafe-code-write]\n";
+        << "  mem-write-scalar (--ida|--va) <addr> --type <type> <value> [--unsafe-code-write]\n"
+        << "\nInput uses the Windows OS queue by default. --os-queue remains accepted.\n";
 }
 
 std::string JoinArguments(
@@ -522,22 +531,162 @@ pal4::inject::UiProfile ParseUiProfileField(const ProtocolResponse& response) {
     return pal4::inject::UiProfile::centered_800x600;
 }
 
+bool ParseInputDispatchMode(
+    const std::vector<std::string>& args,
+    const std::size_t required_size,
+    pal4::inject::UiInputDispatchMode* mode,
+    std::string* error) {
+    if (!mode) {
+        if (error) {
+            *error = "input dispatch mode output pointer is null";
+        }
+        return false;
+    }
+    *mode = pal4::inject::UiInputDispatchMode::os_queue;
+    if (args.size() == required_size) {
+        return true;
+    }
+    if (args.size() != required_size + 1 ||
+        !pal4::inject::TryParseUiInputDispatchOption(args.back(), mode)) {
+        if (error) {
+            *error = "expected --os-queue or --direct-seam";
+        }
+        return false;
+    }
+    return true;
+}
+
 int HandleClick(
     const CliOptions& options,
     const std::vector<std::string>& args,
     std::string* error) {
-    if (args.size() != 2) {
-        *error = "usage: click <ref>";
+    pal4::inject::UiInputDispatchMode dispatch_mode{};
+    if (args.size() < 2 ||
+        !ParseInputDispatchMode(args, 2, &dispatch_mode, error)) {
+        if (error && error->empty()) {
+            *error = "usage: click <ref> [--direct-seam]";
+        }
         return 1;
     }
-    ProtocolCommand command{};
-    command.kind = ProtocolCommandKind::click_ui_ref;
-    command.ui_ref = args[1];
-    ProtocolResponse response{};
-    if (!ExpectOkResponse(options, command, &response, error)) {
+
+    UiSnapshotTree tree{};
+    if (!ReadSnapshotTree(options, &tree, error)) {
         return 1;
     }
-    PrintFieldMap(response);
+
+    int projection_width = tree.root.rect.right - tree.root.rect.left;
+    int projection_height = tree.root.rect.bottom - tree.root.rect.top;
+    if (projection_width <= 0 || projection_height <= 0) {
+        *error = "snapshot root rect is invalid";
+        return 1;
+    }
+    if (dispatch_mode == pal4::inject::UiInputDispatchMode::os_queue) {
+        TryGetTargetClientSize(options, &projection_width, &projection_height);
+    }
+
+    ProtocolCommand state_command{};
+    state_command.kind = ProtocolCommandKind::read_ui_state;
+    ProtocolResponse state_response{};
+    if (!ExpectOkResponse(options, state_command, &state_response, error)) {
+        return 1;
+    }
+    const auto profile = ParseUiProfileField(state_response);
+    const auto viewport =
+        pal4::inject::BuildUiViewportPlan(projection_width, projection_height, profile);
+    pal4::inject::UiRefClickPlan click{};
+    if (!pal4::inject::BuildUiRefClickPlan(tree, args[1], viewport, &click, error)) {
+        return 1;
+    }
+
+    if (dispatch_mode == pal4::inject::UiInputDispatchMode::direct_seam) {
+        // Let the runtime convert the stable logical ref center into the
+        // current physical viewport. Sending logical coordinates as raw
+        // WM_* points breaks at widescreen resolutions.
+        ProtocolCommand command{};
+        command.kind = ProtocolCommandKind::click_ui_ref;
+        command.ui_ref = args[1];
+        if (!ExpectOkResponse(options, command, nullptr, error)) {
+            return 1;
+        }
+    } else if (!SendSyntheticMouseClick(
+                   options,
+                   click.client_x,
+                   click.client_y,
+                   false,
+                   error)) {
+        return 1;
+    }
+
+    std::cout
+        << "ref=" << args[1]
+        << " logical=" << click.logical_x << "," << click.logical_y
+        << " clicked=" << click.client_x << "," << click.client_y
+        << " dispatch=" << pal4::inject::ToString(dispatch_mode)
+        << "\n";
+    return 0;
+}
+
+int HandleClickPath(
+    const CliOptions& options,
+    const std::vector<std::string>& args,
+    std::string* error) {
+    pal4::inject::UiInputDispatchMode dispatch_mode{};
+    if (args.size() < 2 ||
+        !ParseInputDispatchMode(args, 2, &dispatch_mode, error)) {
+        if (error && error->empty()) {
+            *error = "usage: click-path <window-path> [--direct-seam]";
+        }
+        return 1;
+    }
+    UiSnapshotTree tree{};
+    if (!ReadSnapshotTree(options, &tree, error)) {
+        return 1;
+    }
+    const auto* node =
+        pal4::inject::FindUniqueUiSnapshotNodeByPathSuffix(tree, args[1]);
+    if (!node) {
+        *error = "snapshot path was not found or its suffix is ambiguous";
+        return 1;
+    }
+
+    int projection_width = tree.root.rect.right - tree.root.rect.left;
+    int projection_height = tree.root.rect.bottom - tree.root.rect.top;
+    if (projection_width <= 0 || projection_height <= 0) {
+        *error = "snapshot root rect is invalid";
+        return 1;
+    }
+    if (dispatch_mode == pal4::inject::UiInputDispatchMode::os_queue) {
+        TryGetTargetClientSize(options, &projection_width, &projection_height);
+    }
+    ProtocolCommand state_command{};
+    state_command.kind = ProtocolCommandKind::read_ui_state;
+    ProtocolResponse state_response{};
+    if (!ExpectOkResponse(options, state_command, &state_response, error)) {
+        return 1;
+    }
+    const auto viewport = pal4::inject::BuildUiViewportPlan(
+        projection_width,
+        projection_height,
+        ParseUiProfileField(state_response));
+    pal4::inject::UiRefClickPlan click{};
+    if (!pal4::inject::BuildUiRefClickPlan(
+            tree, node->ref, viewport, &click, error)) {
+        return 1;
+    }
+    if (dispatch_mode == pal4::inject::UiInputDispatchMode::direct_seam) {
+        ProtocolCommand command{};
+        command.kind = ProtocolCommandKind::click_ui_ref;
+        command.ui_ref = node->ref;
+        if (!ExpectOkResponse(options, command, nullptr, error)) {
+            return 1;
+        }
+    } else if (!SendSyntheticMouseClick(
+                   options, click.client_x, click.client_y, false, error)) {
+        return 1;
+    }
+    std::cout << "path=" << args[1] << " ref=" << node->ref
+              << " clicked=" << click.client_x << "," << click.client_y
+              << " dispatch=" << pal4::inject::ToString(dispatch_mode) << "\n";
     return 0;
 }
 
@@ -546,7 +695,7 @@ int HandleClickPoint(
     const std::vector<std::string>& args,
     std::string* error) {
     if (args.size() < 3 || args.size() > 4) {
-        *error = "usage: click-pt <x> <y> [--os-queue]";
+        *error = "usage: click-pt <x> <y> [--direct-seam]";
         return 1;
     }
 
@@ -558,14 +707,12 @@ int HandleClickPoint(
         return 1;
     }
 
-    bool bypass_os_queue = true;
-    if (args.size() == 4) {
-        if (args[3] != "--os-queue") {
-            *error = "unexpected argument";
-            return 1;
-        }
-        bypass_os_queue = false;
+    pal4::inject::UiInputDispatchMode dispatch_mode{};
+    if (!ParseInputDispatchMode(args, 3, &dispatch_mode, error)) {
+        return 1;
     }
+    const bool bypass_os_queue =
+        dispatch_mode == pal4::inject::UiInputDispatchMode::direct_seam;
 
     if (!SendSyntheticMouseClick(options, x, y, bypass_os_queue, error)) {
         return 1;
@@ -573,7 +720,7 @@ int HandleClickPoint(
 
     std::cout
         << "clicked=" << x << "," << y
-        << " bypass_os_queue=" << (bypass_os_queue ? 1 : 0)
+        << " dispatch=" << pal4::inject::ToString(dispatch_mode)
         << "\n";
     return 0;
 }
@@ -583,7 +730,7 @@ int HandleClickLogicalPoint(
     const std::vector<std::string>& args,
     std::string* error) {
     if (args.size() < 3 || args.size() > 4) {
-        *error = "usage: click-logical <x> <y> [--os-queue]";
+        *error = "usage: click-logical <x> <y> [--direct-seam]";
         return 1;
     }
 
@@ -594,14 +741,12 @@ int HandleClickLogicalPoint(
         return 1;
     }
 
-    bool bypass_os_queue = true;
-    if (args.size() == 4) {
-        if (args[3] != "--os-queue") {
-            *error = "unexpected argument";
-            return 1;
-        }
-        bypass_os_queue = false;
+    pal4::inject::UiInputDispatchMode dispatch_mode{};
+    if (!ParseInputDispatchMode(args, 3, &dispatch_mode, error)) {
+        return 1;
     }
+    const bool bypass_os_queue =
+        dispatch_mode == pal4::inject::UiInputDispatchMode::direct_seam;
 
     UiSnapshotTree tree{};
     if (!ReadSnapshotTree(options, &tree, error)) {
@@ -656,7 +801,7 @@ int HandleClickLogicalPoint(
         << " ui_profile=" << pal4::inject::ToString(profile)
         << " scale=" << plan.uniform_scale
         << " origin=" << plan.physical_origin_x << "," << plan.physical_origin_y
-        << " bypass_os_queue=" << (bypass_os_queue ? 1 : 0)
+        << " dispatch=" << pal4::inject::ToString(dispatch_mode)
         << "\n";
     return 0;
 }
@@ -705,7 +850,7 @@ int HandlePress(
     const std::vector<std::string>& args,
     std::string* error) {
     if (args.size() < 2 || args.size() > 3) {
-        *error = "usage: press <key> [--os-queue]";
+        *error = "usage: press <key> [--direct-seam]";
         return 1;
     }
     std::uint32_t key = 0;
@@ -713,14 +858,12 @@ int HandlePress(
         return 1;
     }
 
-    bool bypass_os_queue = true;
-    if (args.size() == 3) {
-        if (args[2] != "--os-queue") {
-            *error = "unexpected argument";
-            return 1;
-        }
-        bypass_os_queue = false;
+    pal4::inject::UiInputDispatchMode dispatch_mode{};
+    if (!ParseInputDispatchMode(args, 2, &dispatch_mode, error)) {
+        return 1;
     }
+    const bool bypass_os_queue =
+        dispatch_mode == pal4::inject::UiInputDispatchMode::direct_seam;
 
     ProtocolCommand command{};
     command.kind = ProtocolCommandKind::simulate_key;
@@ -736,13 +879,108 @@ int HandlePress(
         return 1;
     }
 
-    std::cout << "pressed=" << args[1] << " vk=" << key << "\n";
+    std::cout
+        << "pressed=" << args[1]
+        << " vk=" << key
+        << " dispatch=" << pal4::inject::ToString(dispatch_mode)
+        << "\n";
+    return 0;
+}
+
+bool SendKeyState(
+    const CliOptions& options,
+    std::uint32_t key,
+    bool key_up,
+    bool bypass_os_queue,
+    std::string* error) {
+    ProtocolCommand command{};
+    command.kind = ProtocolCommandKind::simulate_key;
+    command.virtual_key = key;
+    command.key_up = key_up;
+    command.ui_message.bypass_os_queue = bypass_os_queue;
+    return ExpectOkResponse(options, command, nullptr, error);
+}
+
+int HandleHold(
+    const CliOptions& options,
+    const std::vector<std::string>& args,
+    std::string* error) {
+    if (args.size() < 3 || args.size() > 5) {
+        *error =
+            "usage: hold <key> <duration-ms> [--repeat-ms=N] [--direct-seam]";
+        return 1;
+    }
+    std::uint32_t key = 0;
+    std::uint32_t duration_ms = 0;
+    if (!ParseVirtualKey(args[1], &key, error) ||
+        !pal4::inject::ParseAddressValue(args[2], &duration_ms) ||
+        duration_ms == 0 || duration_ms > 60000U) {
+        if (error->empty()) {
+            *error = "hold duration must be in range 1..60000 ms";
+        }
+        return 1;
+    }
+    std::uint32_t repeat_ms = 50;
+    bool bypass_os_queue = false;
+    for (std::size_t index = 3; index < args.size(); ++index) {
+        if (args[index] == "--direct-seam") {
+            bypass_os_queue = true;
+            continue;
+        }
+        constexpr std::string_view prefix = "--repeat-ms=";
+        if (std::string_view(args[index]).starts_with(prefix) &&
+            pal4::inject::ParseAddressValue(
+                std::string_view(args[index]).substr(prefix.size()),
+                &repeat_ms) &&
+            repeat_ms >= 10U && repeat_ms <= 1000U) {
+            continue;
+        }
+        *error = "hold expects --repeat-ms=10..1000 or --direct-seam";
+        return 1;
+    }
+    if (!SendKeyState(options, key, false, bypass_os_queue, error)) {
+        return 1;
+    }
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(duration_ms);
+    while (std::chrono::steady_clock::now() < deadline) {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now());
+        std::this_thread::sleep_for(std::min(
+            remaining,
+            std::chrono::milliseconds(repeat_ms)));
+        if (std::chrono::steady_clock::now() < deadline &&
+            !SendKeyState(options, key, false, bypass_os_queue, error)) {
+            std::string release_error;
+            SendKeyState(options, key, true, bypass_os_queue, &release_error);
+            return 1;
+        }
+    }
+    if (!SendKeyState(options, key, true, bypass_os_queue, error)) {
+        return 1;
+    }
+    std::cout << "held=" << args[1] << " vk=" << key
+              << " duration_ms=" << duration_ms
+              << " repeat_ms=" << repeat_ms
+              << " dispatch=" << (bypass_os_queue ? "direct_seam" : "os_queue")
+              << "\n";
     return 0;
 }
 
 int HandleState(const CliOptions& options, std::string* error) {
     ProtocolCommand command{};
     command.kind = ProtocolCommandKind::read_ui_state;
+    ProtocolResponse response{};
+    if (!ExpectOkResponse(options, command, &response, error)) {
+        return 1;
+    }
+    PrintFieldMap(response);
+    return 0;
+}
+
+int HandlePaliv(const CliOptions& options, std::string* error) {
+    ProtocolCommand command{};
+    command.kind = ProtocolCommandKind::read_paliv_state;
     ProtocolResponse response{};
     if (!ExpectOkResponse(options, command, &response, error)) {
         return 1;
@@ -780,7 +1018,8 @@ int HandleWaitPath(
         UiSnapshotTree tree{};
         std::string snapshot_error;
         if (ReadSnapshotTree(options, &tree, &snapshot_error)) {
-            if (pal4::inject::FindUiSnapshotNodeByPath(tree, target_path)) {
+            if (pal4::inject::FindUniqueUiSnapshotNodeByPathSuffix(
+                    tree, target_path)) {
                 std::cout << "path=" << target_path << "\n";
                 return 0;
             }
@@ -817,6 +1056,132 @@ int HandleWaitText(
 
     *error = "timed out waiting for text";
     return 1;
+}
+
+int HandleWaitEvent(
+    const CliOptions& options,
+    const std::vector<std::string>& args,
+    std::string* error) {
+    std::string target_text;
+    DWORD timeout_ms = 0;
+    if (!TryParseTrailingTimeout(args, 1, &target_text, &timeout_ms, error)) {
+        return 1;
+    }
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(timeout_ms);
+    while (std::chrono::steady_clock::now() < deadline) {
+        ProtocolCommand command{};
+        command.kind = ProtocolCommandKind::read_event_log;
+        ProtocolResponse response{};
+        std::string command_error;
+        if (ExpectOkResponse(options, command, &response, &command_error)) {
+            const auto it = response.fields.find("event_log_tail");
+            if (it != response.fields.end() &&
+                it->second.find(target_text) != std::string::npos) {
+                std::cout << "event=" << target_text << "\n";
+                return 0;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    *error = "timed out waiting for event log text";
+    return 1;
+}
+
+int HandleWaitState(
+    const CliOptions& options,
+    const std::vector<std::string>& args,
+    std::string* error) {
+    if (args.size() < 3 || args.size() > 4) {
+        *error = "usage: wait-state <field> <value> [timeout-ms]";
+        return 1;
+    }
+    DWORD timeout_ms = 5000;
+    if (args.size() == 4) {
+        std::uint32_t parsed = 0;
+        if (!pal4::inject::ParseAddressValue(args[3], &parsed)) {
+            *error = "invalid wait-state timeout";
+            return 1;
+        }
+        timeout_ms = parsed;
+    }
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(timeout_ms);
+    while (std::chrono::steady_clock::now() < deadline) {
+        ProtocolCommand command{};
+        command.kind = ProtocolCommandKind::read_ui_state;
+        ProtocolResponse response{};
+        std::string command_error;
+        if (ExpectOkResponse(options, command, &response, &command_error)) {
+            const auto it = response.fields.find(args[1]);
+            if (it != response.fields.end() && it->second == args[2]) {
+                std::cout << args[1] << "=" << args[2] << "\n";
+                return 0;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    *error = "timed out waiting for runtime state field";
+    return 1;
+}
+
+int HandleWaitPaliv(
+    const CliOptions& options,
+    const std::vector<std::string>& args,
+    std::string* error) {
+    if (args.size() < 2 || args.size() > 3) {
+        *error = "usage: wait-paliv <entry> [timeout-ms]";
+        return 1;
+    }
+    std::uint32_t entry = 0;
+    std::uint32_t timeout_ms = 5000;
+    if (!pal4::inject::ParseAddressValue(args[1], &entry) ||
+        (args.size() == 3 &&
+         !pal4::inject::ParseAddressValue(args[2], &timeout_ms))) {
+        *error = "invalid PALIV entry or timeout";
+        return 1;
+    }
+    ProtocolCommand command{};
+    command.kind = ProtocolCommandKind::wait_for_paliv_state;
+    command.expected_paliv_entry = entry;
+    command.timeout_ms = timeout_ms;
+    ProtocolResponse response{};
+    if (!ExpectOkResponse(options, command, &response, error)) {
+        return 1;
+    }
+    PrintFieldMap(response);
+    return 0;
+}
+
+int HandleWaitHook(
+    const CliOptions& options,
+    const std::vector<std::string>& args,
+    std::string* error) {
+    if (args.size() < 3 || args.size() > 4) {
+        *error = "usage: wait-hook <hook-id> <minimum-count> [timeout-ms]";
+        return 1;
+    }
+    pal4::inject::HookId hook{};
+    std::uint32_t count = 0;
+    std::uint32_t timeout_ms = 5000;
+    if (!pal4::inject::TryParseHookId(args[1], &hook) ||
+        !pal4::inject::ParseAddressValue(args[2], &count) ||
+        (args.size() == 4 &&
+         !pal4::inject::ParseAddressValue(args[3], &timeout_ms))) {
+        *error = "invalid hook id, count, or timeout";
+        return 1;
+    }
+    ProtocolCommand command{};
+    command.kind = ProtocolCommandKind::wait_for_hook_calls;
+    command.hook_id = hook;
+    command.expected_call_count = count;
+    command.timeout_ms = timeout_ms;
+    ProtocolResponse response{};
+    if (!ExpectOkResponse(options, command, &response, error)) {
+        return 1;
+    }
+    PrintFieldMap(response);
+    return 0;
 }
 
 int HandleMemQuery(
@@ -1058,6 +1423,8 @@ int main(int argc, char** argv) {
         exit_code = HandleSnapshotRaw(options, &error);
     } else if (command == "click") {
         exit_code = HandleClick(options, options.args, &error);
+    } else if (command == "click-path") {
+        exit_code = HandleClickPath(options, options.args, &error);
     } else if (command == "click-pt") {
         exit_code = HandleClickPoint(options, options.args, &error);
     } else if (command == "click-logical") {
@@ -1068,14 +1435,26 @@ int main(int argc, char** argv) {
         exit_code = HandleType(options, options.args, &error);
     } else if (command == "press") {
         exit_code = HandlePress(options, options.args, &error);
+    } else if (command == "hold") {
+        exit_code = HandleHold(options, options.args, &error);
     } else if (command == "state") {
         exit_code = HandleState(options, &error);
+    } else if (command == "paliv") {
+        exit_code = HandlePaliv(options, &error);
     } else if (command == "event-log") {
         exit_code = HandleEventLog(options, &error);
     } else if (command == "wait-path") {
         exit_code = HandleWaitPath(options, options.args, &error);
     } else if (command == "wait-text") {
         exit_code = HandleWaitText(options, options.args, &error);
+    } else if (command == "wait-event") {
+        exit_code = HandleWaitEvent(options, options.args, &error);
+    } else if (command == "wait-state") {
+        exit_code = HandleWaitState(options, options.args, &error);
+    } else if (command == "wait-paliv") {
+        exit_code = HandleWaitPaliv(options, options.args, &error);
+    } else if (command == "wait-hook") {
+        exit_code = HandleWaitHook(options, options.args, &error);
     } else if (command == "mem-query") {
         exit_code = HandleMemQuery(options, options.args, &error);
     } else if (command == "mem-read") {

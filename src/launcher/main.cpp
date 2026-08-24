@@ -67,7 +67,8 @@ std::filesystem::path DefaultRuntimeDllPath() {
 void PrintUsage() {
     std::cout
         << "Usage: PAL4_inject (--game-root <path> | --exe <path>) "
-        << "[--dll <path>] [--script-mode cs|csb] [--ready-timeout-ms <ms>] [--no-resume]\n";
+        << "[--dll <path>] [--script-mode cs|csb] [--ready-timeout-ms <ms>] "
+           "[--no-resume] [--background]\n";
 }
 
 void ShowGuiError(const std::wstring& error) {
@@ -578,6 +579,8 @@ int main(int argc, char** argv) {
                 options.ready_timeout_ms = static_cast<DWORD>(std::stoul(argv[++index]));
             } else if (argument == "--no-resume") {
                 options.resume_after_ready = false;
+            } else if (argument == "--background" || argument == "--minimized") {
+                options.background_window = true;
             } else if (argument == "--arg" && index + 1 < argc) {
                 options.child_args.push_back(argv[++index]);
             } else {
@@ -607,6 +610,7 @@ int main(int argc, char** argv) {
         << " ready_event=" << result.ready_event_name
         << " script_mode=" << pal4::inject::ToString(result.script_mode)
         << " resumed=" << (options.resume_after_ready ? 1 : 0)
+        << " background=" << (options.background_window ? 1 : 0)
         << '\n';
     process.Close();
     return 0;

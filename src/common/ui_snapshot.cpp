@@ -203,6 +203,26 @@ const UiSnapshotNode* FindUiSnapshotNodeByPathRecursive(
     return nullptr;
 }
 
+void FindUiSnapshotNodesByPathSuffixRecursive(
+    const UiSnapshotNode& node,
+    const std::string_view path_or_suffix,
+    const UiSnapshotNode** match,
+    std::size_t* match_count) noexcept {
+    const bool exact = node.path == path_or_suffix;
+    const bool slash_suffix =
+        node.path.size() > path_or_suffix.size() &&
+        node.path.ends_with(path_or_suffix) &&
+        node.path[node.path.size() - path_or_suffix.size() - 1] == '/';
+    if (exact || slash_suffix) {
+        *match = &node;
+        ++(*match_count);
+    }
+    for (const auto& child : node.children) {
+        FindUiSnapshotNodesByPathSuffixRecursive(
+            child, path_or_suffix, match, match_count);
+    }
+}
+
 bool UiSnapshotTreeContainsTextRecursive(
     const UiSnapshotNode& node,
     const std::string_view text_substring) noexcept {
@@ -355,6 +375,22 @@ const UiSnapshotNode* FindUiSnapshotNodeByPath(
     const UiSnapshotTree& tree,
     const std::string_view path) noexcept {
     return FindUiSnapshotNodeByPathRecursive(tree.root, path);
+}
+
+const UiSnapshotNode* FindUniqueUiSnapshotNodeByPathSuffix(
+    const UiSnapshotTree& tree,
+    const std::string_view path_or_suffix) noexcept {
+    if (path_or_suffix.empty()) {
+        return nullptr;
+    }
+    if (const auto* exact = FindUiSnapshotNodeByPath(tree, path_or_suffix)) {
+        return exact;
+    }
+    const UiSnapshotNode* match = nullptr;
+    std::size_t match_count = 0;
+    FindUiSnapshotNodesByPathSuffixRecursive(
+        tree.root, path_or_suffix, &match, &match_count);
+    return match_count == 1 ? match : nullptr;
 }
 
 bool UiSnapshotTreeContainsText(

@@ -98,6 +98,8 @@ bool CopyRelocatingX86Bytes(
         case 0x68:
         case 0xA1:
             return remaining >= prefix_len + 5 ? prefix_len + 5 : 0;
+        case 0x33:
+        case 0x39:
         case 0x8A:
         case 0x8B:
         case 0x8D: {

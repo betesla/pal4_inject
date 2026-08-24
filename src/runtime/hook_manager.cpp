@@ -113,11 +113,24 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::combat_console_set_image_position_2:
         case HookId::ui_show_combat_result:
         case HookId::render_text_and_image:
+        case HookId::camera_prepare:
+        case HookId::camera_run_single:
         case HookId::camera_update_matrix:
         case HookId::d3d9_set_present_parameters:
+        case HookId::audio_system_play_music:
+        case HookId::gi_play_movie:
+        case HookId::bink_player_open_video:
         case HookId::bink_player_update_and_render:
         case HookId::loose_file_overlay:
         case HookId::loose_text_script_overlay:
+        case HookId::combat_handle_action:
+        case HookId::combat_create_stunt_action:
+        case HookId::combat_execute_stunt:
+        case HookId::combat_skill_damage:
+        case HookId::combat_system_end:
+        case HookId::crt_runtime_message:
+        case HookId::crt_message_box:
+        case HookId::pal4_main_wndproc:
             registration.install_on_bootstrap = true;
             registration.descriptor.replacement = GetReplacementForHook(descriptor.id);
             if (!registration.descriptor.replacement) {

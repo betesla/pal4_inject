@@ -55,6 +55,8 @@ enum class HookId : std::uint8_t {
     cegui_system_initialize,
     load_font_file,
     setup_minimap_texture,
+    camera_prepare,
+    camera_run_single,
     camera_update_matrix,
     d3d9_set_present_parameters,
     pal4_main_wndproc,
@@ -63,9 +65,19 @@ enum class HookId : std::uint8_t {
     combat_console_set_image_position_2,
     ui_show_combat_result,
     render_text_and_image,
+    audio_system_play_music,
+    gi_play_movie,
+    bink_player_open_video,
     bink_player_update_and_render,
     loose_file_overlay,
     loose_text_script_overlay,
+    combat_handle_action,
+    combat_create_stunt_action,
+    combat_execute_stunt,
+    combat_skill_damage,
+    combat_system_end,
+    crt_runtime_message,
+    crt_message_box,
 };
 
 struct HookDescriptor {
