@@ -130,7 +130,6 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::combat_system_end:
         case HookId::crt_runtime_message:
         case HookId::crt_message_box:
-        case HookId::pal4_main_wndproc:
         case HookId::movement_collision_check:
             registration.install_on_bootstrap = true;
             registration.descriptor.replacement = GetReplacementForHook(descriptor.id);

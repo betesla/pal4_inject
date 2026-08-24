@@ -82,6 +82,7 @@
   - `hook_manager.cpp`
     - x86 inline detour、prologue 校验、卸载
     - bootstrap hook 按稳定优先级排序安装；实验性 hook 可后置且失败不阻断主链
+    - 测试直接初始化 HookManager，保证每个 bootstrap Hook 都能解析到 replacement；已移除实现不存在的旧 `pal4_main_wndproc` inventory 项
   - `x86_trampoline.cpp`
     - trampoline 指令复制与相对分支重定位
     - 覆盖 PAL4 hook prologue 使用的 `0x81 / 0x83 / ModRM` 指令形态

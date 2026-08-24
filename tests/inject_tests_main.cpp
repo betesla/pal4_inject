@@ -47,6 +47,7 @@
 #include "pal4inject/script_mode_override.h"
 #include "pal4inject/ui_snapshot.h"
 #include "memory_debug_runtime.h"
+#include "hook_manager.h"
 #include "loose_file_load_log.h"
 #include "runtime_state.h"
 #include "x86_trampoline.h"
@@ -238,7 +239,7 @@ void TestLooseFileLoadLogFormatting() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 35);
+    assert(inventory.size() == 34);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -267,7 +268,6 @@ void TestHookInventory() {
     bool found_combat_system_end = false;
     bool found_crt_runtime_message = false;
     bool found_crt_message_box = false;
-    bool found_reserved_wndproc = false;
     bool found_movement_collision_check = false;
     for (const auto& hook : inventory) {
         assert(!hook.expected_prologue.empty());
@@ -462,11 +462,6 @@ void TestHookInventory() {
             assert(hook.bootstrap_order == 131);
             assert(!hook.bootstrap_required);
         }
-        if (hook.id == HookId::pal4_main_wndproc) {
-            found_reserved_wndproc = true;
-            assert(hook.patch_span == 8);
-            assert(hook.bootstrap_order < 900);
-        }
         if (hook.id == HookId::movement_collision_check) {
             found_movement_collision_check = true;
             assert(hook.mode == pal4::inject::HookMode::observe_only);
@@ -502,8 +497,13 @@ void TestHookInventory() {
     assert(found_combat_system_end);
     assert(found_crt_runtime_message);
     assert(found_crt_message_box);
-    assert(found_reserved_wndproc);
     assert(found_movement_collision_check);
+}
+
+void TestHookManagerBootstrapReplacementCoverage() {
+    std::string error;
+    assert(pal4::inject::GetHookManager().Initialize(&error));
+    assert(error.empty());
 }
 
 void TestAspectRatioLayoutMath() {
@@ -2275,6 +2275,7 @@ int main() {
     TestX86TrampolineCopiesTextScriptPrologue();
     TestLooseFileLoadLogFormatting();
     TestHookInventory();
+    TestHookManagerBootstrapReplacementCoverage();
     TestDpiAwarenessStrings();
     TestMsaaLevelStrings();
     TestBinkScalingModeStrings();
