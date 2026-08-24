@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(pal4_inject VERSION 0.1.8 LANGUAGES CXX)
+project(pal4_inject VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -137,6 +137,7 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/minimap_hooks.cpp
     src/runtime/mssrsx_abort_hook.cpp
     src/runtime/process_failure_hooks.cpp
+    src/runtime/movement_collision_observation_hooks.cpp
     src/runtime/runtime_preferences.cpp
     src/runtime/runtime_state.cpp
     src/runtime/system_message_box_hook.cpp

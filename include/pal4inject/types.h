@@ -78,6 +78,7 @@ enum class HookId : std::uint8_t {
     combat_system_end,
     crt_runtime_message,
     crt_message_box,
+    movement_collision_check,
 };
 
 struct HookDescriptor {

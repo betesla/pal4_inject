@@ -53,6 +53,7 @@ inline constexpr std::uint32_t kAiSelectStuntBegin = 0x5621C0;
 inline constexpr std::uint32_t kAiSelectStuntEnd = 0x562223;
 inline constexpr std::uint32_t kCrtRuntimeMessage = 0x744A95;
 inline constexpr std::uint32_t kCrtMessageBox = 0x748CD0;
+inline constexpr std::uint32_t kMovementCollisionCheck = 0x5FF680;
 
 inline constexpr std::uint32_t kMapVirtualKeyToUiKey = 0x412130;
 inline constexpr std::uint32_t kEnableMouseCapture = 0x4120D0;

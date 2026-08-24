@@ -238,7 +238,7 @@ void TestLooseFileLoadLogFormatting() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 34);
+    assert(inventory.size() == 35);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -268,6 +268,7 @@ void TestHookInventory() {
     bool found_crt_runtime_message = false;
     bool found_crt_message_box = false;
     bool found_reserved_wndproc = false;
+    bool found_movement_collision_check = false;
     for (const auto& hook : inventory) {
         assert(!hook.expected_prologue.empty());
         assert(hook.patch_span >= 5);
@@ -466,6 +467,12 @@ void TestHookInventory() {
             assert(hook.patch_span == 8);
             assert(hook.bootstrap_order < 900);
         }
+        if (hook.id == HookId::movement_collision_check) {
+            found_movement_collision_check = true;
+            assert(hook.mode == pal4::inject::HookMode::observe_only);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kMovementCollisionCheck);
+        }
     }
     assert(found_process_ui_event);
     assert(found_handle_ui_message);
@@ -496,6 +503,7 @@ void TestHookInventory() {
     assert(found_crt_runtime_message);
     assert(found_crt_message_box);
     assert(found_reserved_wndproc);
+    assert(found_movement_collision_check);
 }
 
 void TestAspectRatioLayoutMath() {

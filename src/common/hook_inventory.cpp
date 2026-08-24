@@ -443,6 +443,19 @@ std::vector<HookDescriptor> BuildHookInventorySkeleton() {
             1000,
             false,
         },
+        {
+            HookId::movement_collision_check,
+            ida::kMovementCollisionCheck,
+            CallingConvention::thiscall_call,
+            HookMode::observe_only,
+            {0x83, 0xEC, 0x58, 0x8B, 0x44, 0x24, 0x5C,
+             0x55, 0x33, 0xED, 0x89, 0x4C, 0x24, 0x04},
+            7,
+            nullptr,
+            nullptr,
+            1001,
+            false,
+        },
     };
 }
 

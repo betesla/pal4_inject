@@ -52,7 +52,7 @@ cmake --build I:\PAL4\projects\pal4_inject\build --config Debug
   - 分辨率列表分为“常用分辨率”和“主显示器支持”两个页签
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
   - GUI 右上角显示当前版本和作者信息，点击 `B站 @北风7P` 可打开作者主页
-  - 当前内置版本为 `v0.1.8`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
+  - 当前内置版本为 `v0.2.0`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
 
 示例：
 
@@ -110,7 +110,7 @@ CPK 资源不存在补丁或加载失败时仍可回退原 CPK。CS 模式不同
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1
 ```
 
-脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.1.8` 会生成 tag/release 版本 `v0.1.8`，产物为 `PAL4_inject_v0.1.8_win32.zip`。如只想本地打包、不发布 GitHub Release：
+脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.2.0` 会生成 tag/release 版本 `v0.2.0`，产物为 `PAL4_inject_v0.2.0_win32.zip`。如只想本地打包、不发布 GitHub Release：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubRelease -SkipGiteeRelease
@@ -123,7 +123,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
 如需显式附带发布说明，可传入：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -ReleaseNotesPath .\docs\release_notes_v0.1.8.md
+powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -ReleaseNotesPath .\docs\release_notes_v0.2.0.md
 ```
 
 如果 `dist\PAL4.exe` 已存在，脚本会在刷新 `dist` 时保留它，并把它一同打入发布 zip；不要把 `PAL4.exe` 提交进 git。

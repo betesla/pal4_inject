@@ -24,6 +24,7 @@
 #include "loose_file_hooks.h"
 #include "minimap_hooks.h"
 #include "process_failure_hooks.h"
+#include "movement_collision_observation_hooks.h"
 #include "pal4inject/cegui_widescreen.h"
 #include "pal4inject/ida_addresses.h"
 #include "pal4inject/input_logic.h"
@@ -938,6 +939,9 @@ void* GetReplacementForHook(const HookId id) {
         if (void* replacement = GetProcessFailureReplacementForHook(id)) {
             return replacement;
         }
+        if (void* replacement = GetMovementCollisionReplacementForHook(id)) {
+            return replacement;
+        }
         return GetCameraReplacementForHook(id);
     }
 }
@@ -979,6 +983,7 @@ void SetOriginalTrampoline(const HookId id, void* trampoline) {
         SetMediaObservationOriginalTrampoline(id, trampoline);
         SetCombatObservationOriginalTrampoline(id, trampoline);
         SetProcessFailureOriginalTrampoline(id, trampoline);
+        SetMovementCollisionOriginalTrampoline(id, trampoline);
         SetCameraOriginalTrampoline(id, trampoline);
         break;
     }
