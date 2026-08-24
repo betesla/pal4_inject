@@ -21,6 +21,7 @@ struct InjectPersistedSettings {
     MsaaLevel msaa_level = MsaaLevel::off;
     BinkScalingMode bink_scaling_mode = BinkScalingMode::fit;
     bool borderless_window = false;
+    std::string borderless_monitor;
     std::vector<PersistedHookSetting> hooks;
 };
 

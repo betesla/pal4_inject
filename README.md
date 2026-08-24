@@ -49,8 +49,9 @@ cmake --build I:\PAL4\projects\pal4_inject\build --config Debug
   - 注入配置、runtime log、crash report / dump 等运行产物也统一放在 `pal4_inject` 子目录
   - 双击 `PAL4_inject.exe` 后由 GUI 选择 `CS` 或 `CSB`
   - GUI 会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、普通窗口/无边框窗口/独占全屏、宽屏和垂直同步
-  - 无边框窗口模式让 D3D9 保持窗口呈现，并把游戏窗口覆盖到目标显示器，可减少显示模式切换造成的黑屏和闪屏
-  - 分辨率列表分为“常用分辨率”和“主显示器支持”两个页签
+  - 设置导航按 `游戏 / 视频 / 音频 / 控制 / 增强 / 高级` 分类；显示相关选项统一放在“视频”
+  - 自动检测全部显示器；无边框窗口可选择并记住所用显示器，D3D9 保持窗口呈现并覆盖其完整区域
+  - 分辨率列表分为“常用分辨率”和“所选显示器支持”
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
   - GUI 提供“反馈 Bug”页：检测最新崩溃文本，允许预览并选择附带脱敏后的崩溃报告或运行日志末尾；只有用户明确勾选授权后才会把诊断内容带到 Gitee 新建 Issue 页面
   - 第一版不会读取或上传 minidump，也不会在后台自动提交；完整正文会同时复制到剪贴板，最终由用户在 Gitee 页面检查并提交
@@ -97,7 +98,7 @@ CS 文本脚本使用同一规则，例如 `gamedata\editData\script\M10.cs` 放
 <游戏目录>\gamepatch\gamedata\editData\script\M10.cs
 ```
 
-CPK 资源不存在补丁或加载失败时仍可回退原 CPK。CS 模式不同：发行版不携带 `editData` 文本源码，启用松散文件补丁后只从 `gamepatch` 读取；缺少脚本或读取失败会直接报失败，不会尝试游戏目录原路径。“增强功能”页使用一个统一开关，所有覆盖、缺失、关闭绕过和 CPK 回退都会写入 `gamepatch\loose_file_load.log`（JSON Lines）。完整规则见 [docs/loose_file_overlay.md](docs/loose_file_overlay.md)。
+CPK 资源不存在补丁或加载失败时仍可回退原 CPK。CS 模式不同：发行版不携带 `editData` 文本源码，启用松散文件补丁后只从 `gamepatch` 读取；缺少脚本或读取失败会直接报失败，不会尝试游戏目录原路径。“增强”页使用一个统一开关，所有覆盖、缺失、关闭绕过和 CPK 回退都会写入 `gamepatch\loose_file_load.log`（JSON Lines）。完整规则见 [docs/loose_file_overlay.md](docs/loose_file_overlay.md)。
 
 ## 产物
 - `runtime.dll`
@@ -226,7 +227,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - `last_crash_report_path`
   - `last_crash_dump_path`
   - `last_crash_summary`
-  - `borderless_window_enabled / borderless_window_applied / borderless_window_summary`
+  - `borderless_window_enabled / borderless_monitor / borderless_window_applied / borderless_window_summary`
 - launcher 的“反馈 Bug”页会扫描上述最新文本报告，并在本地完成路径和敏感字段脱敏：
   - 游戏安装目录替换为 `<游戏目录>`
   - Windows 用户目录替换为 `<用户目录>`
@@ -237,8 +238,8 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
 ## Launcher 配置
 
 - 详细中文说明见 [docs/launcher_guide.md](I:/PAL4/projects/pal4_inject/docs/launcher_guide.md)。
-- “增强功能”页只保留宽屏总状态、Bink 显示方式、MSAA 和相机保护等面向玩家的选项。
-- 宽屏 UI、字体、小地图、战斗界面和 Bink 修正统一跟随游戏设置中的“启用宽屏”。
+- “视频”页统一管理显示器、窗口模式、分辨率、宽屏、Bink 显示方式与 MSAA；“增强”页保留相机和资源覆盖等功能。
+- 宽屏 UI、字体、小地图、战斗界面和 Bink 修正统一跟随“视频”中的“启用宽屏”。
 - “高级调试”页仍可逐项设置 `HookMode` 和详细日志。
 - MSAA 和 Hook 选项在游戏启动前写入配置，runtime 在安装 Hook 前读取。
 

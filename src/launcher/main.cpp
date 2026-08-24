@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -34,6 +35,7 @@ namespace {
 using Resolution = pal4::inject::launcher::Resolution;
 using GameConfig = pal4::inject::launcher::GameDisplayConfig;
 using LauncherUiState = pal4::inject::launcher::LauncherUiState;
+using MonitorDisplayInfo = pal4::inject::launcher::MonitorDisplayInfo;
 
 constexpr const wchar_t kGiteeLatestReleaseUrl[] =
     L"https://gitee.com/api/v5/repos/betesla/pal4_inject/releases/latest";
@@ -417,11 +419,11 @@ std::vector<Resolution> BuildCommonResolutions() {
     };
 }
 
-std::vector<Resolution> EnumeratePrimaryDisplayResolutions() {
+std::vector<Resolution> EnumerateDisplayResolutions(const wchar_t* const device_name) {
     std::set<Resolution> unique;
     DEVMODEW mode{};
     mode.dmSize = sizeof(mode);
-    for (DWORD index = 0; EnumDisplaySettingsW(nullptr, index, &mode); ++index) {
+    for (DWORD index = 0; EnumDisplaySettingsW(device_name, index, &mode); ++index) {
         const auto width = static_cast<int>(mode.dmPelsWidth);
         const auto height = static_cast<int>(mode.dmPelsHeight);
         if (width >= 800 && height >= 600) {
@@ -429,6 +431,79 @@ std::vector<Resolution> EnumeratePrimaryDisplayResolutions() {
         }
     }
     return {unique.begin(), unique.end()};
+}
+
+BOOL CALLBACK AppendMonitorDisplayInfo(
+    const HMONITOR monitor,
+    HDC,
+    LPRECT,
+    const LPARAM parameter) {
+    auto* monitors = reinterpret_cast<std::vector<MonitorDisplayInfo>*>(parameter);
+    if (!monitors) {
+        return FALSE;
+    }
+    MONITORINFOEXW info{};
+    info.cbSize = sizeof(info);
+    if (!GetMonitorInfoW(monitor, &info)) {
+        return TRUE;
+    }
+
+    DISPLAY_DEVICEW display{};
+    display.cb = sizeof(display);
+    const bool has_display_name =
+        EnumDisplayDevicesW(info.szDevice, 0, &display, 0) != FALSE;
+
+    MonitorDisplayInfo entry{};
+    entry.device_name = Utf8FromWide(info.szDevice);
+    entry.display_name = has_display_name
+        ? Utf8FromWide(display.DeviceString)
+        : entry.device_name;
+    entry.x = info.rcMonitor.left;
+    entry.y = info.rcMonitor.top;
+    entry.width = info.rcMonitor.right - info.rcMonitor.left;
+    entry.height = info.rcMonitor.bottom - info.rcMonitor.top;
+    entry.primary = (info.dwFlags & MONITORINFOF_PRIMARY) != 0;
+    entry.resolutions = EnumerateDisplayResolutions(info.szDevice);
+    monitors->push_back(std::move(entry));
+    return TRUE;
+}
+
+std::vector<MonitorDisplayInfo> EnumerateMonitorDisplays() {
+    std::vector<MonitorDisplayInfo> monitors;
+    EnumDisplayMonitors(
+        nullptr,
+        nullptr,
+        &AppendMonitorDisplayInfo,
+        reinterpret_cast<LPARAM>(&monitors));
+    std::stable_sort(
+        monitors.begin(),
+        monitors.end(),
+        [](const MonitorDisplayInfo& left, const MonitorDisplayInfo& right) {
+            if (left.primary != right.primary) {
+                return left.primary;
+            }
+            return left.x != right.x ? left.x < right.x : left.y < right.y;
+        });
+    return monitors;
+}
+
+const MonitorDisplayInfo* ResolveConfiguredMonitor(const LauncherUiState& state) {
+    const auto selected = std::find_if(
+        state.monitors.begin(),
+        state.monitors.end(),
+        [&state](const MonitorDisplayInfo& monitor) {
+            return monitor.device_name == state.inject_settings.borderless_monitor;
+        });
+    if (selected != state.monitors.end()) {
+        return &*selected;
+    }
+    const auto primary = std::find_if(
+        state.monitors.begin(),
+        state.monitors.end(),
+        [](const MonitorDisplayInfo& monitor) { return monitor.primary; });
+    return primary != state.monitors.end()
+        ? &*primary
+        : (state.monitors.empty() ? nullptr : &state.monitors.front());
 }
 
 std::optional<std::size_t> FindConfigValueOffset(
@@ -579,6 +654,7 @@ pal4::inject::InjectPersistedSettings NormalizeInjectSettings(
     normalized.msaa_level = loaded.msaa_level;
     normalized.bink_scaling_mode = loaded.bink_scaling_mode;
     normalized.borderless_window = loaded.borderless_window;
+    normalized.borderless_monitor = loaded.borderless_monitor;
     for (const auto& feature : pal4::inject::BuildInjectFeatureCatalog()) {
         if (const auto* persisted = FindPersistedHook(loaded, feature.id)) {
             normalized.hooks.push_back(*persisted);
@@ -637,10 +713,9 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* const options) {
         BuildBugReportRedactions(install_directory));
     state.display = LoadGameConfig(state.config_path);
     state.common_resolutions = BuildCommonResolutions();
-    state.display_resolutions = EnumeratePrimaryDisplayResolutions();
+    state.monitors = EnumerateMonitorDisplays();
     const Resolution current_resolution{state.display.width, state.display.height};
     AddCurrentResolution(&state.common_resolutions, current_resolution);
-    AddCurrentResolution(&state.display_resolutions, current_resolution);
 
     pal4::inject::InjectPersistedSettings loaded_settings{};
     std::string settings_error;
@@ -657,6 +732,11 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* const options) {
         return false;
     }
     state.inject_settings = NormalizeInjectSettings(loaded_settings);
+    if (const auto* monitor = ResolveConfiguredMonitor(state)) {
+        state.inject_settings.borderless_monitor = monitor->device_name;
+        state.display_resolutions = monitor->resolutions;
+    }
+    AddCurrentResolution(&state.display_resolutions, current_resolution);
     pal4::inject::ApplyWidescreenFeaturePreset(
         &state.inject_settings,
         state.display.widescreen != 0);

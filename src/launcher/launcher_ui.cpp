@@ -16,7 +16,10 @@ namespace {
 
 enum class LauncherPage {
     game = 0,
-    inject_features,
+    video,
+    audio,
+    controls,
+    enhancements,
     bug_report,
     advanced,
 };
@@ -129,12 +132,15 @@ void ApplyResolution(GameDisplayConfig* const config, const Resolution& resoluti
 
 void DrawResolutionCombo(
     const char* const label,
+    const char* const id,
     GameDisplayConfig* const config,
     const std::vector<Resolution>& resolutions) {
     const std::string preview =
         std::to_string(config->width) + " × " + std::to_string(config->height);
-    ImGui::SetNextItemWidth(240.0F);
-    if (ImGui::BeginCombo(label, preview.c_str())) {
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(135.0F);
+    ImGui::SetNextItemWidth(520.0F);
+    if (ImGui::BeginCombo(id, preview.c_str())) {
         for (const auto& resolution : resolutions) {
             const std::string item =
                 std::to_string(resolution.width) + " × " + std::to_string(resolution.height);
@@ -153,10 +159,76 @@ void DrawResolutionCombo(
 
 void ToggleFeature(PersistedHookSetting* setting, bool enabled);
 
+std::size_t SelectedMonitorIndex(const LauncherUiState& state) {
+    const auto selected = std::find_if(
+        state.monitors.begin(),
+        state.monitors.end(),
+        [&state](const MonitorDisplayInfo& monitor) {
+            return monitor.device_name == state.inject_settings.borderless_monitor;
+        });
+    return selected == state.monitors.end()
+        ? 0
+        : static_cast<std::size_t>(selected - state.monitors.begin());
+}
+
+std::string MonitorLabel(const MonitorDisplayInfo& monitor, const std::size_t index) {
+    std::string label = std::to_string(index + 1) + " · ";
+    label += monitor.display_name.empty() ? monitor.device_name : monitor.display_name;
+    label += " · " + std::to_string(monitor.width) + " × " +
+        std::to_string(monitor.height);
+    if (monitor.primary) {
+        label += "（主显示器）";
+    }
+    return label;
+}
+
+void SelectMonitor(LauncherUiState* const state, const std::size_t index) {
+    if (!state || index >= state->monitors.size()) {
+        return;
+    }
+    const auto& monitor = state->monitors[index];
+    state->inject_settings.borderless_monitor = monitor.device_name;
+    state->display_resolutions = monitor.resolutions;
+    if (monitor.width > 0 && monitor.height > 0) {
+        state->display.width = monitor.width;
+        state->display.height = monitor.height;
+    }
+}
+
+void DrawMonitorSetting(LauncherUiState* const state) {
+    ImGui::TextUnformatted("目标显示器");
+    ImGui::SameLine(135.0F);
+    const bool enabled = state->inject_settings.borderless_window;
+    if (!enabled) {
+        ImGui::BeginDisabled();
+    }
+    const std::size_t selected_index = SelectedMonitorIndex(*state);
+    const std::string preview = state->monitors.empty()
+        ? "未检测到显示器"
+        : MonitorLabel(state->monitors[selected_index], selected_index);
+    ImGui::SetNextItemWidth(520.0F);
+    if (ImGui::BeginCombo("##target_monitor", preview.c_str())) {
+        for (std::size_t index = 0; index < state->monitors.size(); ++index) {
+            const bool selected = index == selected_index;
+            const auto label = MonitorLabel(state->monitors[index], index);
+            if (ImGui::Selectable(label.c_str(), selected)) {
+                SelectMonitor(state, index);
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (!enabled) {
+        ImGui::EndDisabled();
+    }
+}
+
 void DrawDisplayModeSetting(LauncherUiState* const state) {
     ImGui::TextUnformatted("显示模式");
-    ImGui::SameLine(105.0F);
-    ImGui::SetNextItemWidth(240.0F);
+    ImGui::SameLine(135.0F);
+    ImGui::SetNextItemWidth(520.0F);
     if (ImGui::BeginCombo("##display_mode", DisplayModeLabel(*state))) {
         const bool windowed =
             !state->inject_settings.borderless_window && state->display.fullscreen == 0;
@@ -169,11 +241,8 @@ void DrawDisplayModeSetting(LauncherUiState* const state) {
         if (ImGui::Selectable("无边框窗口（推荐）", borderless)) {
             state->inject_settings.borderless_window = true;
             state->display.fullscreen = 0;
-            const int desktop_width = GetSystemMetrics(SM_CXSCREEN);
-            const int desktop_height = GetSystemMetrics(SM_CYSCREEN);
-            if (desktop_width > 0 && desktop_height > 0) {
-                state->display.width = desktop_width;
-                state->display.height = desktop_height;
+            if (!state->monitors.empty()) {
+                SelectMonitor(state, SelectedMonitorIndex(*state));
             }
             ToggleFeature(
                 FindHookSetting(
@@ -190,13 +259,58 @@ void DrawDisplayModeSetting(LauncherUiState* const state) {
         }
         ImGui::EndCombo();
     }
+}
+
+void DrawCustomResolution(LauncherUiState* const state) {
+    ImGui::TextUnformatted("自定义分辨率");
+    ImGui::SameLine(135.0F);
+    ImGui::SetNextItemWidth(140.0F);
+    ImGui::InputInt("##custom_width", &state->display.width, 0, 0);
+    ImGui::SameLine();
+    ImGui::TextUnformatted("×");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(140.0F);
+    ImGui::InputInt("##custom_height", &state->display.height, 0, 0);
+    state->display.width = std::clamp(state->display.width, 320, 20000);
+    state->display.height = std::clamp(state->display.height, 240, 20000);
+}
+
+void DrawVisualOptions(LauncherUiState* const state) {
+    bool widescreen = state->display.widescreen != 0;
+    bool vsync = state->display.sync != 0;
+    ImGui::TextUnformatted("画面选项");
+    ImGui::SameLine(135.0F);
+    if (ImGui::Checkbox("启用宽屏", &widescreen)) {
+        state->display.widescreen = widescreen ? 1 : 0;
+        ApplyWidescreenFeaturePreset(&state->inject_settings, widescreen);
+    }
+    ImGui::SameLine();
+    if (ImGui::Checkbox("垂直同步", &vsync)) {
+        state->display.sync = vsync ? 1 : 0;
+    }
+}
+
+void DrawDisplaySettings(LauncherUiState* const state) {
+    ImGui::BeginChild("display_settings", ImVec2(0.0F, 270.0F), ImGuiChildFlags_Borders);
+    DrawDisplayModeSetting(state);
+    DrawMonitorSetting(state);
+    DrawResolutionCombo(
+        "常用分辨率", "##common_resolution",
+        &state->display, state->common_resolutions);
+    DrawResolutionCombo(
+        "显示器支持", "##monitor_resolution",
+        &state->display, state->display_resolutions);
+    DrawCustomResolution(state);
+    DrawVisualOptions(state);
+    ImGui::Spacing();
     ImGui::TextDisabled(
-        "无边框模式保持桌面显示模式，并在选择时同步桌面分辨率，可减少切换黑屏。 ");
+        "无边框模式使用所选显示器的完整区域，并同步该显示器的当前分辨率。");
+    ImGui::EndChild();
 }
 
 void DrawGamePage(LauncherUiState* const state) {
-    ImGui::TextUnformatted("游戏设置");
-    ImGui::TextDisabled("这些选项写入游戏 config.cfg，并在启动前生效。");
+    ImGui::TextUnformatted("游戏");
+    ImGui::TextDisabled("游戏运行方式与本地文件位置。");
     ImGui::Separator();
 
     ImGui::TextUnformatted("脚本模式");
@@ -211,29 +325,7 @@ void DrawGamePage(LauncherUiState* const state) {
     ImGui::TextDisabled("CS 适合调试和快速迭代；普通游玩建议使用 CSB。");
 
     ImGui::Spacing();
-    ImGui::TextUnformatted("分辨率");
-    DrawResolutionCombo("常用分辨率", &state->display, state->common_resolutions);
-    DrawResolutionCombo("显示器支持", &state->display, state->display_resolutions);
-    ImGui::SetNextItemWidth(140.0F);
-    ImGui::InputInt("宽度", &state->display.width, 0, 0);
-    ImGui::SetNextItemWidth(140.0F);
-    ImGui::InputInt("高度", &state->display.height, 0, 0);
-    state->display.width = std::clamp(state->display.width, 320, 20000);
-    state->display.height = std::clamp(state->display.height, 240, 20000);
-
-    bool widescreen = state->display.widescreen != 0;
-    bool vsync = state->display.sync != 0;
-    DrawDisplayModeSetting(state);
-    if (ImGui::Checkbox("启用宽屏", &widescreen)) {
-        state->display.widescreen = widescreen ? 1 : 0;
-        ApplyWidescreenFeaturePreset(&state->inject_settings, widescreen);
-    }
-    ImGui::SameLine();
-    if (ImGui::Checkbox("垂直同步", &vsync)) {
-        state->display.sync = vsync ? 1 : 0;
-    }
-
-    ImGui::Spacing();
+    ImGui::TextUnformatted("运行文件");
     ImGui::BeginChild("game_paths", ImVec2(0.0F, 105.0F), ImGuiChildFlags_Borders);
     DrawPathRow("游戏程序", state->game_exe);
     DrawPathRow("游戏配置", state->config_path);
@@ -301,6 +393,47 @@ void DrawMsaaSetting(LauncherUiState* const state) {
     ImGui::TextDisabled("这里保存的是期望等级；实际应用结果以 runtime 日志或 CLI 状态为准。");
 }
 
+void DrawVideoPage(LauncherUiState* const state) {
+    ImGui::TextUnformatted("视频");
+    ImGui::TextDisabled("显示设备、窗口模式、分辨率与渲染质量。");
+    ImGui::Separator();
+    DrawDisplaySettings(state);
+
+    ImGui::Spacing();
+    ImGui::TextUnformatted("渲染与过场");
+    const bool widescreen_enabled = state->display.widescreen != 0;
+    ImGui::SameLine(180.0F);
+    ImGui::TextColored(
+        widescreen_enabled
+            ? ImVec4(0.36F, 0.82F, 0.48F, 1.0F)
+            : ImVec4(0.66F, 0.66F, 0.66F, 1.0F),
+        widescreen_enabled ? "宽屏修正已启用" : "宽屏修正未启用");
+    DrawBinkScalingSetting(state);
+    DrawMsaaSetting(state);
+}
+
+void DrawAudioPage() {
+    ImGui::TextUnformatted("音频");
+    ImGui::TextDisabled("声音输出与音量控制。");
+    ImGui::Separator();
+    ImGui::BeginChild("audio_status", ImVec2(0.0F, 120.0F), ImGuiChildFlags_Borders);
+    ImGui::TextUnformatted("沿用原游戏音频设置");
+    ImGui::TextDisabled("当前版本尚未接管音乐、语音和音效音量；此页为后续音频功能保留。");
+    ImGui::EndChild();
+}
+
+void DrawControlsPage() {
+    ImGui::TextUnformatted("控制");
+    ImGui::TextDisabled("键盘、鼠标与输入兼容设置。");
+    ImGui::Separator();
+    ImGui::BeginChild("controls_status", ImVec2(0.0F, 145.0F), ImGuiChildFlags_Borders);
+    ImGui::TextUnformatted("沿用原游戏键位");
+    ImGui::TextDisabled("当前版本保留原版 DirectInput 行为，暂不提供玩家键位重映射。");
+    ImGui::Spacing();
+    ImGui::TextDisabled("调试用输入注入和自动化仍保留在 CLI 与高级调试能力中。");
+    ImGui::EndChild();
+}
+
 void ToggleFeature(PersistedHookSetting* const setting, const bool enabled) {
     if (!setting) {
         return;
@@ -342,25 +475,10 @@ void DrawFeatureCard(
     ImGui::PopID();
 }
 
-void DrawPlayerEnhancements(LauncherUiState* const state) {
-    const bool widescreen_enabled = state->display.widescreen != 0;
-    ImGui::TextUnformatted("宽屏修正");
-    ImGui::SameLine(180.0F);
-    ImGui::TextColored(
-        widescreen_enabled
-            ? ImVec4(0.36F, 0.82F, 0.48F, 1.0F)
-            : ImVec4(0.66F, 0.66F, 0.66F, 1.0F),
-        widescreen_enabled ? "已跟随游戏设置启用" : "已跟随游戏设置关闭");
-    ImGui::TextDisabled(
-        "统一控制宽屏 UI、字体、小地图、战斗界面和 Bink 视频修正。");
-
-    ImGui::Spacing();
-    DrawBinkScalingSetting(state);
-    DrawMsaaSetting(state);
-
-    ImGui::Spacing();
+void DrawEnhancementsPage(LauncherUiState* const state) {
+    ImGui::TextUnformatted("增强");
+    ImGui::TextDisabled("不属于原游戏设置的兼容修正与资源覆盖功能。");
     ImGui::Separator();
-    ImGui::TextUnformatted("其他增强");
     const auto features = BuildInjectFeatureCatalog();
     for (const auto& feature : features) {
         if (feature.id == HookId::camera_update_matrix ||
@@ -523,11 +641,20 @@ void DrawSidebar(LauncherViewState* const view, const HWND owner) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    if (ImGui::Selectable("游戏设置", view->page == LauncherPage::game, 0, ImVec2(0.0F, 42.0F))) {
+    if (ImGui::Selectable("游戏", view->page == LauncherPage::game, 0, ImVec2(0.0F, 38.0F))) {
         view->page = LauncherPage::game;
     }
-    if (ImGui::Selectable("增强功能", view->page == LauncherPage::inject_features, 0, ImVec2(0.0F, 42.0F))) {
-        view->page = LauncherPage::inject_features;
+    if (ImGui::Selectable("视频", view->page == LauncherPage::video, 0, ImVec2(0.0F, 38.0F))) {
+        view->page = LauncherPage::video;
+    }
+    if (ImGui::Selectable("音频", view->page == LauncherPage::audio, 0, ImVec2(0.0F, 38.0F))) {
+        view->page = LauncherPage::audio;
+    }
+    if (ImGui::Selectable("控制", view->page == LauncherPage::controls, 0, ImVec2(0.0F, 38.0F))) {
+        view->page = LauncherPage::controls;
+    }
+    if (ImGui::Selectable("增强", view->page == LauncherPage::enhancements, 0, ImVec2(0.0F, 38.0F))) {
+        view->page = LauncherPage::enhancements;
     }
     const char* const bug_report_label = view->launcher->bug_report.HasCrashReport()
         ? "反馈 Bug（发现崩溃）"
@@ -536,10 +663,10 @@ void DrawSidebar(LauncherViewState* const view, const HWND owner) {
             bug_report_label,
             view->page == LauncherPage::bug_report,
             0,
-            ImVec2(0.0F, 42.0F))) {
+            ImVec2(0.0F, 38.0F))) {
         view->page = LauncherPage::bug_report;
     }
-    if (ImGui::Selectable("高级调试", view->page == LauncherPage::advanced, 0, ImVec2(0.0F, 42.0F))) {
+    if (ImGui::Selectable("高级", view->page == LauncherPage::advanced, 0, ImVec2(0.0F, 38.0F))) {
         view->page = LauncherPage::advanced;
     }
 
@@ -576,11 +703,17 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
     case LauncherPage::game:
         DrawGamePage(view->launcher);
         break;
-    case LauncherPage::inject_features:
-        ImGui::TextUnformatted("增强功能");
-        ImGui::TextDisabled("成熟宽屏修正统一跟随“启用宽屏”；逐项调试仍保留在高级页。");
-        ImGui::Separator();
-        DrawPlayerEnhancements(view->launcher);
+    case LauncherPage::video:
+        DrawVideoPage(view->launcher);
+        break;
+    case LauncherPage::audio:
+        DrawAudioPage();
+        break;
+    case LauncherPage::controls:
+        DrawControlsPage();
+        break;
+    case LauncherPage::enhancements:
+        DrawEnhancementsPage(view->launcher);
         break;
     case LauncherPage::bug_report:
         DrawBugReportPage(view, hwnd);

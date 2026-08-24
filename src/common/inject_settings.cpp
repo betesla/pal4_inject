@@ -12,9 +12,9 @@
 namespace pal4::inject {
 namespace {
 
-constexpr int kSettingsVersion = 4;
+constexpr int kSettingsVersion = 5;
 constexpr int kMinSupportedSettingsVersion = 1;
-constexpr int kMaxSupportedSettingsVersion = 4;
+constexpr int kMaxSupportedSettingsVersion = 5;
 
 std::string TrimAscii(const std::string_view text) {
     std::size_t begin = 0;
@@ -51,6 +51,7 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
     out << "msaa_level=" << ToString(settings.msaa_level) << '\n';
     out << "bink_scaling_mode=" << ToString(settings.bink_scaling_mode) << '\n';
     out << "borderless_window=" << (settings.borderless_window ? "1" : "0") << '\n';
+    out << "borderless_monitor=" << settings.borderless_monitor << '\n';
 
     std::map<int, PersistedHookSetting> sorted_hooks;
     for (const auto& hook : settings.hooks) {
@@ -146,6 +147,10 @@ bool ParseInjectPersistedSettings(
                 }
                 return false;
             }
+            continue;
+        }
+        if (key == "borderless_monitor") {
+            out->borderless_monitor = value;
             continue;
         }
         if (key.rfind("hook.", 0) != 0) {

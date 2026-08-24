@@ -148,6 +148,7 @@ ProtocolResponse BuildSnapshotResponse() {
         snapshot.borderless_window_enabled ? "1" : "0";
     response.fields["borderless_window_applied"] =
         snapshot.borderless_window_applied ? "1" : "0";
+    response.fields["borderless_monitor"] = snapshot.borderless_monitor;
     response.fields["borderless_window_summary"] = snapshot.borderless_window_summary;
     response.fields["active_ui_profile"] = ToString(snapshot.active_ui_profile);
     response.fields["current_paliv_entry"] =

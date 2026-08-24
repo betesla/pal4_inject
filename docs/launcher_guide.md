@@ -2,24 +2,36 @@
 
 双击 `PAL4_inject.exe` 会打开中文 launcher。所有常用配置都在游戏启动前保存，runtime DLL 不再创建游戏内控制面板。
 
-## 游戏设置
+launcher 左侧按现代游戏设置方式分为 `游戏 / 视频 / 音频 / 控制 / 增强 / 高级`。
+
+## 游戏
 
 - `CS 文本脚本`：适合脚本调试和快速迭代。
 - `CSB 原始脚本`：适合普通游玩和回归验证，首次启动默认选中。
 - launcher 会把上次启动时选择的 `CS / CSB` 写入 `inject_settings.ini`，下次打开自动恢复。
-- `常用分辨率 / 显示器支持`：选择预设分辨率，也可以直接输入宽高。
+
+## 视频
+
+- launcher 会枚举当前连接的全部显示器；无边框模式可选择目标显示器。
+- 目标显示器使用 Windows 设备名持久化，显示器断开或设备名失效时会回退到游戏窗口所在显示器，并在运行状态中标记 `fallback=1`。
+- `常用分辨率 / 显示器支持`：后者会随所选显示器更新，也可以直接输入宽高。
 - `显示模式`提供三种选择：
   - `普通窗口`：使用原游戏的窗口边框。
-  - `无边框窗口（推荐）`：D3D9 保持窗口呈现，窗口覆盖目标显示器；选择该模式时会同步当前桌面分辨率，之后仍可手动调整。它可减少启动、Alt+Tab 和返回桌面时由显示模式切换造成的黑屏。
+  - `无边框窗口（推荐）`：D3D9 保持窗口呈现，窗口覆盖目标显示器；选择显示器时会同步其当前分辨率，之后仍可手动调整。它可减少启动、Alt+Tab 和返回桌面时由显示模式切换造成的黑屏。
   - `独占全屏`：保留原游戏全屏行为，作为兼容性回退。
 - `启用宽屏 / 垂直同步`：写入游戏目录的 `config.cfg`。
 - 保存 `config.cfg` 前会保留一份 `config.cfg.bak`。
 
-## 增强功能
+## 音频与控制
+
+- 当前版本尚未接管音乐、语音、音效音量以及玩家键位重映射。
+- 两个独立页面先明确展示当前能力边界，为后续音频和输入设置保留稳定入口。
+
+## 增强
 
 该页只保留面向普通玩家的稳定选项，不再逐条展示底层 Hook。
 
-- 游戏设置中的“启用宽屏”是宽屏修正总开关，会统一启停：
+- “视频”中的“启用宽屏”是宽屏修正总开关，会统一启停：
   - 4:3 UI 居中与菜单黑边
   - 动态字体重同步
   - 小地图与 HUD 布局修正
@@ -63,6 +75,7 @@
 - 脚本选择使用 `script_mode=cs|csb` 持久化；旧配置缺省该项时使用 `csb`。
 - Bink 显示模式使用 `bink_scaling_mode=fit|fill_width_crop` 持久化；旧配置缺省该项时使用“完整显示”。
 - 无边框窗口使用 `borderless_window=0|1` 持久化；旧配置缺省该项时沿用 `config.cfg` 的普通窗口或独占全屏设置。
+- 无边框目标显示器使用 `borderless_monitor=\\.\DISPLAYn` 持久化；旧配置或无效设备名自动选择主显示器。
 - 旧版 `pal4_inject\inject_panel_settings.ini` 会被兼容读取，并在下次从 launcher 启动时迁移到新文件名。
 - runtime 会在 Hook 安装前加载配置。
 - 游戏运行期间如需改变 HookMode，底层 IPC 协议仍保留 `set_hook_mode`；普通 CLI 主要用于状态和事件日志观察。
@@ -71,7 +84,7 @@
   - `gamepatch\loose_file_load.log`（CPK / CS 松散文件覆盖、CS 必需文件缺失与 CPK 回退，UTF-8 JSON Lines）
   - `cli.exe --pid <pid> state`
   - `cli.exe --pid <pid> event-log`
-- `state` 中的 `borderless_window_enabled` 表示期望配置，`borderless_window_applied` 和 `borderless_window_summary` 表示本次实际应用结果。
+- `state` 中的 `borderless_window_enabled / borderless_monitor` 表示期望配置，`borderless_window_applied / borderless_window_summary` 表示本次实际应用结果。
 
 ## 故障排查
 

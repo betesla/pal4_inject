@@ -226,7 +226,10 @@ int __cdecl Hook_D3d9SetPresentParameters(
     }
     if (replacement_enabled && borderless_requested) {
         std::string summary;
-        const bool applied = ApplyBorderlessWindowToCurrentProcess(&summary);
+        const auto requested_monitor = state.BorderlessMonitor();
+        const bool applied = ApplyBorderlessWindowToCurrentProcess(
+            requested_monitor,
+            &summary);
         state.SetBorderlessWindowApplied(applied, summary);
         AppendCriticalHookEventLog(
             std::string("borderless_window desired=1 applied=") +

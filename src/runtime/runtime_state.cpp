@@ -232,6 +232,17 @@ bool RuntimeState::BorderlessWindowEnabled() const {
     return borderless_window_enabled_;
 }
 
+void RuntimeState::SetBorderlessMonitor(const std::string_view device_name) {
+    std::scoped_lock lock(mutex_);
+    borderless_monitor_ = device_name;
+    state_cv_.notify_all();
+}
+
+std::string RuntimeState::BorderlessMonitor() const {
+    std::scoped_lock lock(mutex_);
+    return borderless_monitor_;
+}
+
 void RuntimeState::SetBorderlessWindowApplied(
     const bool applied,
     const std::string_view summary) {
@@ -346,6 +357,7 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.bink_scaling_mode = bink_scaling_mode_;
     snapshot.borderless_window_enabled = borderless_window_enabled_;
     snapshot.borderless_window_applied = borderless_window_applied_;
+    snapshot.borderless_monitor = borderless_monitor_;
     snapshot.borderless_window_summary = borderless_window_summary_;
     snapshot.active_ui_profile = active_ui_profile_;
     snapshot.current_paliv_entry = current_paliv_entry;

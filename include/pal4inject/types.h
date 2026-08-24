@@ -122,6 +122,7 @@ struct RuntimeSnapshot {
     BinkScalingMode bink_scaling_mode = BinkScalingMode::fit;
     bool borderless_window_enabled = false;
     bool borderless_window_applied = false;
+    std::string borderless_monitor;
     std::string borderless_window_summary;
     UiProfile active_ui_profile = UiProfile::centered_800x600;
     HookStatus process_ui_event{};

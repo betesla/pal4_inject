@@ -37,6 +37,17 @@ struct GameDisplayConfig {
     std::vector<std::uint8_t> original_data;
 };
 
+struct MonitorDisplayInfo {
+    std::string device_name;
+    std::string display_name;
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    bool primary = false;
+    std::vector<Resolution> resolutions;
+};
+
 struct LauncherUiState {
     std::filesystem::path game_exe;
     std::filesystem::path runtime_dll;
@@ -46,6 +57,7 @@ struct LauncherUiState {
     GameDisplayConfig display;
     InjectPersistedSettings inject_settings;
     BugReportData bug_report;
+    std::vector<MonitorDisplayInfo> monitors;
     std::vector<Resolution> common_resolutions;
     std::vector<Resolution> display_resolutions;
     bool accepted = false;

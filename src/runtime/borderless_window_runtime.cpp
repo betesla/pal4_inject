@@ -1,6 +1,7 @@
 #include "borderless_window_runtime.h"
 
 #include <cstdint>
+#include <cstring>
 #include <sstream>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -16,6 +17,11 @@ namespace {
 struct WindowCandidate {
     HWND window = nullptr;
     long long client_area = -1;
+};
+
+struct MonitorCandidate {
+    std::string requested_device;
+    HMONITOR monitor = nullptr;
 };
 
 BOOL CALLBACK FindLargestProcessWindow(const HWND window, const LPARAM parameter) {
@@ -42,6 +48,25 @@ BOOL CALLBACK FindLargestProcessWindow(const HWND window, const LPARAM parameter
     return TRUE;
 }
 
+BOOL CALLBACK FindRequestedMonitor(
+    const HMONITOR monitor,
+    HDC,
+    LPRECT,
+    const LPARAM parameter) {
+    auto* candidate = reinterpret_cast<MonitorCandidate*>(parameter);
+    if (!candidate) {
+        return FALSE;
+    }
+    MONITORINFOEXA info{};
+    info.cbSize = sizeof(info);
+    if (GetMonitorInfoA(monitor, &info) &&
+        _stricmp(info.szDevice, candidate->requested_device.c_str()) == 0) {
+        candidate->monitor = monitor;
+        return FALSE;
+    }
+    return TRUE;
+}
+
 bool SetWindowStyleChecked(
     const HWND window,
     const int index,
@@ -63,7 +88,9 @@ bool SetWindowStyleChecked(
 
 }  // namespace
 
-bool ApplyBorderlessWindowToCurrentProcess(std::string* const summary) {
+bool ApplyBorderlessWindowToCurrentProcess(
+    const std::string_view requested_monitor,
+    std::string* const summary) {
     WindowCandidate candidate{};
     EnumWindows(&FindLargestProcessWindow, reinterpret_cast<LPARAM>(&candidate));
     if (!candidate.window) {
@@ -73,8 +100,20 @@ bool ApplyBorderlessWindowToCurrentProcess(std::string* const summary) {
         return false;
     }
 
-    const HMONITOR monitor = MonitorFromWindow(candidate.window, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO monitor_info{};
+    MonitorCandidate monitor_candidate{};
+    monitor_candidate.requested_device = requested_monitor;
+    if (!monitor_candidate.requested_device.empty()) {
+        EnumDisplayMonitors(
+            nullptr,
+            nullptr,
+            &FindRequestedMonitor,
+            reinterpret_cast<LPARAM>(&monitor_candidate));
+    }
+    const bool used_fallback = monitor_candidate.monitor == nullptr;
+    const HMONITOR monitor = monitor_candidate.monitor
+        ? monitor_candidate.monitor
+        : MonitorFromWindow(candidate.window, MONITOR_DEFAULTTONEAREST);
+    MONITORINFOEXA monitor_info{};
     monitor_info.cbSize = sizeof(monitor_info);
     if (!monitor || !GetMonitorInfoA(monitor, &monitor_info)) {
         if (summary) {
@@ -138,6 +177,10 @@ bool ApplyBorderlessWindowToCurrentProcess(std::string* const summary) {
     out << "hwnd=0x" << std::hex << std::uppercase
         << reinterpret_cast<std::uintptr_t>(candidate.window)
         << std::dec
+        << " requested_monitor="
+        << (requested_monitor.empty() ? "auto" : std::string(requested_monitor))
+        << " resolved_monitor=" << monitor_info.szDevice
+        << " fallback=" << (used_fallback ? 1 : 0)
         << " monitor=" << plan.x << ',' << plan.y
         << ' ' << plan.width << 'x' << plan.height
         << " applied=" << applied.left << ',' << applied.top

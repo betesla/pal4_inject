@@ -12,6 +12,7 @@
   - launcher 严格从 `pal4_inject\runtime.dll` 装载，不再回退到根目录 `runtime.dll`
 - `PAL4_inject.exe`
   - ImGui + Direct3D 9 launcher UI，在进程启动前保存游戏和 Hook 配置
+  - 设置页按游戏、视频、音频、控制、增强和高级分类；显示器枚举与分辨率列表集中在视频页
   - `CreateProcessA(..., CREATE_SUSPENDED)`
   - 若指定 `--script-mode cs|csb`，在恢复主线程前写入 `g_IsCSBMode @ 0x8C27FC`
   - 同时通过继承环境变量把请求模式传给子进程，供 injected runtime 在 bootstrap 期复核
@@ -126,7 +127,8 @@
     - 两种模式都不改变视频宽高比，选项由 launcher 写入配置
   - `d3d9_quality_hooks.cpp`
   - `D3D9SetPresentParameters` seam
-    - 无边框模式下把原游戏独占全屏请求改为窗口呈现，并在参数应用后将游戏主窗口改为目标显示器大小的 `WS_POPUP`
+    - 无边框模式下把原游戏独占全屏请求改为窗口呈现，并按持久化的 Windows 显示设备名将游戏主窗口改为目标显示器大小的 `WS_POPUP`
+    - 目标显示器不存在时回退到游戏窗口邻近显示器，并在摘要中记录 requested/resolved/fallback
     - runtime state 分别记录期望状态、实际应用状态和窗口/显示器摘要
     - 通过原始多重采样探测路径接入 `MSAA` 请求值
   - `minimap_hooks.cpp`

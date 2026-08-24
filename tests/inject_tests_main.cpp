@@ -1117,6 +1117,7 @@ void TestInjectSettingsRoundTrip() {
     settings.msaa_level = pal4::inject::MsaaLevel::x4;
     settings.bink_scaling_mode = pal4::inject::BinkScalingMode::fill_width_crop;
     settings.borderless_window = true;
+    settings.borderless_monitor = R"(\\.\DISPLAY2)";
     settings.hooks.push_back({
         HookId::process_ui_event,
         pal4::inject::HookMode::replace_with_fallback,
@@ -1145,6 +1146,7 @@ void TestInjectSettingsRoundTrip() {
     assert(parsed.bink_scaling_mode ==
            pal4::inject::BinkScalingMode::fill_width_crop);
     assert(parsed.borderless_window);
+    assert(parsed.borderless_monitor == R"(\\.\DISPLAY2)");
     assert(parsed.hooks.size() == 3);
     const auto find_hook =
         [&parsed](const HookId id) -> const pal4::inject::PersistedHookSetting* {
@@ -1177,6 +1179,7 @@ void TestInjectSettingsRoundTrip() {
     assert(loaded.bink_scaling_mode ==
            pal4::inject::BinkScalingMode::fill_width_crop);
     assert(loaded.borderless_window);
+    assert(loaded.borderless_monitor == R"(\\.\DISPLAY2)");
     std::filesystem::remove(temp_path);
 
     pal4::inject::InjectPersistedSettings legacy{};
@@ -1187,6 +1190,7 @@ void TestInjectSettingsRoundTrip() {
     assert(legacy.script_mode == pal4::inject::ScriptMode::csb);
     assert(legacy.bink_scaling_mode == pal4::inject::BinkScalingMode::fit);
     assert(!legacy.borderless_window);
+    assert(legacy.borderless_monitor.empty());
 
     pal4::inject::InjectPersistedSettings invalid{};
     assert(!pal4::inject::ParseInjectPersistedSettings(
@@ -1308,6 +1312,7 @@ void TestRuntimeEventLog() {
     state.SetMsaaLevel(pal4::inject::MsaaLevel::x2);
     state.SetBinkScalingMode(pal4::inject::BinkScalingMode::fill_width_crop);
     state.SetBorderlessWindowEnabled(true);
+    state.SetBorderlessMonitor(R"(\\.\DISPLAY2)");
     state.SetBorderlessWindowApplied(true, "monitor=0,0 1920x1080");
     state.AppendEventLog("event-1");
     state.AppendEventLog("event-2");
@@ -1328,6 +1333,7 @@ void TestRuntimeEventLog() {
            pal4::inject::BinkScalingMode::fill_width_crop);
     assert(snapshot.borderless_window_enabled);
     assert(snapshot.borderless_window_applied);
+    assert(snapshot.borderless_monitor == R"(\\.\DISPLAY2)");
     assert(snapshot.borderless_window_summary == "monitor=0,0 1920x1080");
     assert(snapshot.active_ui_profile == pal4::inject::UiProfile::centered_800x600);
     assert(snapshot.last_crash_summary == "summary");

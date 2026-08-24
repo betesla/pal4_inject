@@ -40,6 +40,7 @@ bool SavePersistedRuntimePreferences(std::string* error) {
     settings.msaa_level = GetRuntimeState().GetMsaaLevel();
     settings.bink_scaling_mode = GetRuntimeState().GetBinkScalingMode();
     settings.borderless_window = GetRuntimeState().BorderlessWindowEnabled();
+    settings.borderless_monitor = GetRuntimeState().BorderlessMonitor();
     settings.hooks.clear();
     for (const auto& status : GetRuntimeState().CopyHookStatuses()) {
         settings.hooks.push_back({
@@ -150,6 +151,7 @@ bool LoadPersistedRuntimePreferences(std::string* error) {
     }
     GetRuntimeState().SetBinkScalingMode(settings.bink_scaling_mode);
     GetRuntimeState().SetBorderlessWindowEnabled(settings.borderless_window);
+    GetRuntimeState().SetBorderlessMonitor(settings.borderless_monitor);
     ApplyMsaaPreference(settings.msaa_level, false, false);
     if (error) {
         error->clear();
