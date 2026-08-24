@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <string>
 #include <string_view>
 
@@ -16,14 +17,22 @@ namespace {
 enum class LauncherPage {
     game = 0,
     inject_features,
+    bug_report,
     advanced,
 };
 
 struct LauncherViewState {
     LauncherUiState* launcher = nullptr;
     CheckForUpdatesCallback check_for_updates = nullptr;
+    OpenBugReportCallback open_bug_report = nullptr;
     LauncherPage page = LauncherPage::game;
     bool keep_open = true;
+    std::array<char, 256> bug_title{};
+    std::array<char, 2048> bug_description{};
+    bool include_crash_report = false;
+    bool include_runtime_log = false;
+    bool diagnostics_consent = false;
+    std::string bug_report_status;
 };
 
 std::string Utf8FromWide(const std::wstring_view text) {
@@ -428,6 +437,85 @@ void DrawAdvancedPage(LauncherUiState* const state) {
     }
 }
 
+std::string BuildVisibleBugReportBody(const LauncherViewState& view) {
+    BugReportBodyOptions options{};
+    options.description = view.bug_description.data();
+    options.version = kPal4InjectVersion;
+    options.build_id = kPal4InjectBuildId;
+    options.include_crash_report = view.include_crash_report;
+    options.include_runtime_log = view.include_runtime_log;
+    return BuildBugReportBody(view.launcher->bug_report, options);
+}
+
+void DrawBugReportPage(LauncherViewState* const view, const HWND owner) {
+    auto& report = view->launcher->bug_report;
+    ImGui::TextUnformatted("反馈 Bug");
+    ImGui::TextDisabled("整理诊断信息并打开预填的 Gitee Issue；最终提交仍由你在网页中确认。");
+    ImGui::Separator();
+
+    ImGui::TextUnformatted("Issue 标题");
+    ImGui::SetNextItemWidth(-1.0F);
+    ImGui::InputText("##bug_title", view->bug_title.data(), view->bug_title.size());
+    ImGui::TextUnformatted("问题现象与复现步骤");
+    ImGui::InputTextMultiline(
+        "##bug_description",
+        view->bug_description.data(),
+        view->bug_description.size(),
+        ImVec2(-1.0F, 65.0F));
+
+    ImGui::Spacing();
+    ImGui::TextUnformatted("诊断信息（提交前可预览）");
+    if (report.HasCrashReport()) {
+        ImGui::Checkbox("附带最新崩溃文本（已脱敏）", &view->include_crash_report);
+        ImGui::TextDisabled("文件：%s", PathText(report.crash_report_path.filename()).c_str());
+    } else {
+        ImGui::TextDisabled("未检测到崩溃文本报告。");
+    }
+    if (report.HasRuntimeLog()) {
+        ImGui::Checkbox("附带运行日志末尾（已脱敏）", &view->include_runtime_log);
+    }
+    if (!report.crash_dump_path.empty()) {
+        ImGui::TextDisabled("检测到 minidump，但第一版不会读取或上传该文件。");
+    }
+
+    const bool includes_diagnostics = view->include_crash_report || view->include_runtime_log;
+    if (includes_diagnostics) {
+        ImGui::Checkbox(
+            "我已检查下方预览，并同意将勾选的诊断信息发送给 Gitee",
+            &view->diagnostics_consent);
+    } else {
+        view->diagnostics_consent = false;
+    }
+
+    const std::string body = BuildVisibleBugReportBody(*view);
+    ImGui::TextUnformatted("提交内容预览");
+    ImGui::BeginChild("bug_report_preview", ImVec2(0.0F, 60.0F), ImGuiChildFlags_Borders);
+    ImGui::TextWrapped("%s", body.c_str());
+    ImGui::EndChild();
+
+    const bool can_open = view->bug_title[0] != '\0' &&
+        (!includes_diagnostics || view->diagnostics_consent);
+    ImGui::BeginDisabled(!can_open);
+    if (ImGui::Button("复制内容并打开 Gitee", ImVec2(220.0F, 38.0F)) &&
+        view->open_bug_report) {
+        std::wstring error;
+        if (view->open_bug_report(owner, view->bug_title.data(), body, &error)) {
+            view->bug_report_status =
+                "已打开 Gitee，并把完整内容复制到剪贴板。请检查网页内容后手动提交。";
+        } else {
+            view->bug_report_status = "打开失败：" + Utf8FromWide(error);
+        }
+    }
+    ImGui::EndDisabled();
+    if (!can_open && includes_diagnostics) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("请先确认诊断信息授权");
+    }
+    if (!view->bug_report_status.empty()) {
+        ImGui::TextWrapped("%s", view->bug_report_status.c_str());
+    }
+}
+
 void DrawSidebar(LauncherViewState* const view, const HWND owner) {
     ImGui::TextUnformatted("PAL4 Inject");
     ImGui::TextDisabled("%s", kPal4InjectVersion);
@@ -440,6 +528,16 @@ void DrawSidebar(LauncherViewState* const view, const HWND owner) {
     }
     if (ImGui::Selectable("增强功能", view->page == LauncherPage::inject_features, 0, ImVec2(0.0F, 42.0F))) {
         view->page = LauncherPage::inject_features;
+    }
+    const char* const bug_report_label = view->launcher->bug_report.HasCrashReport()
+        ? "反馈 Bug（发现崩溃）"
+        : "反馈 Bug";
+    if (ImGui::Selectable(
+            bug_report_label,
+            view->page == LauncherPage::bug_report,
+            0,
+            ImVec2(0.0F, 42.0F))) {
+        view->page = LauncherPage::bug_report;
     }
     if (ImGui::Selectable("高级调试", view->page == LauncherPage::advanced, 0, ImVec2(0.0F, 42.0F))) {
         view->page = LauncherPage::advanced;
@@ -484,6 +582,9 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
         ImGui::Separator();
         DrawPlayerEnhancements(view->launcher);
         break;
+    case LauncherPage::bug_report:
+        DrawBugReportPage(view, hwnd);
+        break;
     case LauncherPage::advanced:
         DrawAdvancedPage(view->launcher);
         break;
@@ -511,6 +612,7 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
 bool RunLauncherUi(
     LauncherUiState* const state,
     const CheckForUpdatesCallback check_for_updates,
+    const OpenBugReportCallback open_bug_report,
     std::wstring* const error) {
     if (!state) {
         if (error) {
@@ -521,6 +623,14 @@ bool RunLauncherUi(
     LauncherViewState view{};
     view.launcher = state;
     view.check_for_updates = check_for_updates;
+    view.open_bug_report = open_bug_report;
+    view.page = LauncherPage::game;
+    view.include_crash_report = state->bug_report.HasCrashReport();
+    std::snprintf(
+        view.bug_title.data(),
+        view.bug_title.size(),
+        "[Bug] PAL4 Inject %s 崩溃反馈",
+        kPal4InjectVersion);
     return RunImGuiHost(
         L"PAL4 注入启动器",
         1060,

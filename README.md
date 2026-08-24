@@ -52,6 +52,8 @@ cmake --build I:\PAL4\projects\pal4_inject\build --config Debug
   - 无边框窗口模式让 D3D9 保持窗口呈现，并把游戏窗口覆盖到目标显示器，可减少显示模式切换造成的黑屏和闪屏
   - 分辨率列表分为“常用分辨率”和“主显示器支持”两个页签
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
+  - GUI 提供“反馈 Bug”页：检测最新崩溃文本，允许预览并选择附带脱敏后的崩溃报告或运行日志末尾；只有用户明确勾选授权后才会把诊断内容带到 Gitee 新建 Issue 页面
+  - 第一版不会读取或上传 minidump，也不会在后台自动提交；完整正文会同时复制到剪贴板，最终由用户在 Gitee 页面检查并提交
   - GUI 右上角显示当前版本和作者信息，点击 `B站 @北风7P` 可打开作者主页
   - 当前内置版本为 `v0.2.0`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
 
@@ -225,6 +227,12 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - `last_crash_dump_path`
   - `last_crash_summary`
   - `borderless_window_enabled / borderless_window_applied / borderless_window_summary`
+- launcher 的“反馈 Bug”页会扫描上述最新文本报告，并在本地完成路径和敏感字段脱敏：
+  - 游戏安装目录替换为 `<游戏目录>`
+  - Windows 用户目录替换为 `<用户目录>`
+  - `access_token / authorization / password / api_key / client_secret` 等字段值隐藏
+  - 崩溃文本和 runtime log 必须逐项勾选；存在诊断内容时还必须额外确认上传授权
+  - `.dmp` 只提示存在，第一版不读取、不复制、不上传
 
 ## Launcher 配置
 

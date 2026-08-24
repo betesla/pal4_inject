@@ -68,6 +68,10 @@
     - 继承脚本模式环境变量解析
   - `crash_capture.cpp`
     - 异常码筛选、crash summary 格式化、artifact 命名
+  - `bug_report.cpp`
+    - 查找最新 crash report、读取受限长度的 runtime log tail
+    - 在本地替换游戏/用户目录并隐藏常见令牌和密码字段
+    - 生成可预览的 Markdown 正文和受长度限制的 Gitee 新建 Issue URL
   - `inject_feature_catalog.cpp`
     - launcher 与配置共用的功能分组、标签与 mode 列表
     - 定义宽屏预设成员，并统一切换它们的 active / observe-only 模式
@@ -221,14 +225,19 @@
   - `inject_feature_catalog` 是 launcher 功能列表的唯一模型，避免 UI 层复制 Hook metadata
   - 普通界面用“启用宽屏”统一管理 renderer、font、minimap、battle overlay 和 Bink Hook；高级页仍可对当次启动逐项覆盖
   - `RuntimeState::SetHookMode` 仍作为 IPC 调试接口保留
+  - “反馈 Bug”页只消费 common 层已经脱敏的文本，不直接接触 minidump
+  - 诊断信息复选框与独立授权复选框组成提交门槛；未授权时不打开携带诊断数据的 URL
+  - 第一版通过浏览器打开预填 Issue，并复制完整正文作为长 URL 截断兜底，不持有或分发 Gitee access token
 - crash capture
   - 不尝试拦截并吞掉异常
   - 只负责在进程终止前写出 crash report / minidump
   - 默认 artifact 位置在发布目录的 `pal4_inject` 子目录，与注入配置和 runtime log 统一管理
+  - crash capture 只生产本地 artifact；是否反馈以及反馈哪些文本由下一次 launcher 会话中的用户决定
 
 ## Testing Strategy
 - 单元测试默认只跑纯逻辑与协议测试。
 - 还覆盖：
+  - Bug 反馈最新 artifact 选择、路径/令牌脱敏、正文开关和 Gitee URL 长度限制
   - UI snapshot 树序列化 / ref 查找
   - scalar / hex / address space helper
   - 进程内 scratch page 读写与 executable page unsafe gate

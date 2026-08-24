@@ -82,6 +82,7 @@ add_custom_target(pal4_inject_build_info ALL
 add_library(pal4_inject_common STATIC
     src/common/aspect_ratio_layout.cpp
     src/common/borderless_window.cpp
+    src/common/bug_report.cpp
     src/common/camera_pitch_guard.cpp
     src/common/camera_unlock_patch.cpp
     src/common/cegui_font_resync.cpp

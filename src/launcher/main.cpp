@@ -21,10 +21,12 @@
 #include <wininet.h>
 
 #include "launcher_ui.h"
+#include "pal4inject/bug_report.h"
 #include "pal4inject/hook_inventory.h"
 #include "pal4inject/inject_feature_catalog.h"
 #include "pal4inject/inject_settings.h"
 #include "pal4inject/launcher.h"
+#include "pal4inject/runtime_paths.h"
 #include "pal4inject_build_info.h"
 
 namespace {
@@ -41,6 +43,8 @@ constexpr const wchar_t kGitHubLatestReleaseUrl[] =
     L"https://api.github.com/repos/betesla/pal4_inject/releases/latest";
 constexpr const wchar_t kGitHubReleasePageUrl[] =
     L"https://github.com/betesla/pal4_inject/releases/latest";
+constexpr const char kGiteeNewIssueUrl[] =
+    "https://gitee.com/betesla/pal4_inject/issues/new";
 
 struct ReleaseInfo {
     std::string tag_name;
@@ -102,6 +106,132 @@ std::wstring WideFromUtf8(const std::string_view text) {
         result.data(),
         required);
     return result;
+}
+
+std::string Utf8FromWide(const std::wstring_view text) {
+    if (text.empty()) {
+        return {};
+    }
+    const int required = WideCharToMultiByte(
+        CP_UTF8,
+        0,
+        text.data(),
+        static_cast<int>(text.size()),
+        nullptr,
+        0,
+        nullptr,
+        nullptr);
+    if (required <= 0) {
+        return {};
+    }
+    std::string result(static_cast<std::size_t>(required), '\0');
+    WideCharToMultiByte(
+        CP_UTF8,
+        0,
+        text.data(),
+        static_cast<int>(text.size()),
+        result.data(),
+        required,
+        nullptr,
+        nullptr);
+    return result;
+}
+
+bool CopyUtf8TextToClipboard(
+    const HWND owner,
+    const std::string_view text,
+    std::wstring* const error) {
+    const std::wstring wide_text = WideFromUtf8(text);
+    if (!OpenClipboard(owner)) {
+        if (error) {
+            *error = L"无法打开剪贴板。";
+        }
+        return false;
+    }
+    EmptyClipboard();
+    const std::size_t bytes = (wide_text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!memory) {
+        CloseClipboard();
+        if (error) {
+            *error = L"无法分配剪贴板内存。";
+        }
+        return false;
+    }
+    void* const destination = GlobalLock(memory);
+    if (!destination) {
+        GlobalFree(memory);
+        CloseClipboard();
+        if (error) {
+            *error = L"无法写入剪贴板。";
+        }
+        return false;
+    }
+    std::memcpy(destination, wide_text.c_str(), bytes);
+    GlobalUnlock(memory);
+    if (!SetClipboardData(CF_UNICODETEXT, memory)) {
+        GlobalFree(memory);
+        CloseClipboard();
+        if (error) {
+            *error = L"无法保存剪贴板内容。";
+        }
+        return false;
+    }
+    CloseClipboard();
+    return true;
+}
+
+bool OpenBugReport(
+    const HWND owner,
+    const std::string& title,
+    const std::string& body,
+    std::wstring* const error) {
+    if (!CopyUtf8TextToClipboard(owner, body, error)) {
+        return false;
+    }
+    const std::string issue_url = pal4::inject::BuildGiteeNewIssueUrl(
+        kGiteeNewIssueUrl,
+        title,
+        body);
+    const auto shell_result = reinterpret_cast<std::intptr_t>(ShellExecuteW(
+        owner,
+        L"open",
+        WideFromUtf8(issue_url).c_str(),
+        nullptr,
+        nullptr,
+        SW_SHOWNORMAL));
+    if (shell_result <= 32) {
+        if (error) {
+            *error = L"无法打开 Gitee Issue 页面。完整报告仍保留在剪贴板中。";
+        }
+        return false;
+    }
+    return true;
+}
+
+std::vector<pal4::inject::BugReportRedaction> BuildBugReportRedactions(
+    const std::filesystem::path& install_directory) {
+    std::vector<pal4::inject::BugReportRedaction> redactions;
+    if (!install_directory.empty()) {
+        redactions.emplace_back(install_directory.string(), "<游戏目录>");
+    }
+    std::wstring user_profile(32768, L'\0');
+    const DWORD length = GetEnvironmentVariableW(
+        L"USERPROFILE",
+        user_profile.data(),
+        static_cast<DWORD>(user_profile.size()));
+    if (length != 0 && length < user_profile.size()) {
+        user_profile.resize(length);
+        const auto utf8_profile = Utf8FromWide(user_profile);
+        if (!utf8_profile.empty()) {
+            redactions.emplace_back(utf8_profile, "<用户目录>");
+        }
+        const auto native_profile = std::filesystem::path(user_profile).string();
+        if (!native_profile.empty() && native_profile != utf8_profile) {
+            redactions.emplace_back(native_profile, "<用户目录>");
+        }
+    }
+    return redactions;
 }
 
 std::optional<std::string> ExtractJsonStringField(
@@ -502,6 +632,9 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* const options) {
     state.runtime_dll = install_directory / "pal4_inject" / "runtime.dll";
     state.config_path = install_directory / "config.cfg";
     state.inject_settings_path = pal4::inject::DefaultInjectSettingsPath();
+    state.bug_report = pal4::inject::LoadLatestBugReportData(
+        pal4::inject::PackagedPayloadDirectory(install_directory),
+        BuildBugReportRedactions(install_directory));
     state.display = LoadGameConfig(state.config_path);
     state.common_resolutions = BuildCommonResolutions();
     state.display_resolutions = EnumeratePrimaryDisplayResolutions();
@@ -530,7 +663,11 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* const options) {
     state.script_mode = state.inject_settings.script_mode;
 
     std::wstring ui_error;
-    if (!pal4::inject::launcher::RunLauncherUi(&state, &CheckForUpdates, &ui_error)) {
+    if (!pal4::inject::launcher::RunLauncherUi(
+            &state,
+            &CheckForUpdates,
+            &OpenBugReport,
+            &ui_error)) {
         ShowGuiError(ui_error);
         return false;
     }

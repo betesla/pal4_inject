@@ -41,6 +41,7 @@
 #include "pal4inject/ui_coordinate_space.h"
 #include "pal4inject/ui_input_plan.h"
 #include "pal4inject/camera_unlock_patch.h"
+#include "pal4inject/bug_report.h"
 #include "pal4inject/crash_capture.h"
 #include "pal4inject/memory_debug.h"
 #include "pal4inject/protocol.h"
@@ -1740,6 +1741,73 @@ void TestCrashCaptureHelpers() {
     assert(summary.find("register_eip=0x401000") != std::string::npos);
 }
 
+void TestBugReportHelpers() {
+    const auto temp_root =
+        std::filesystem::temp_directory_path() / "pal4_inject_bug_report_unit_test";
+    std::error_code ignored;
+    std::filesystem::remove_all(temp_root, ignored);
+    std::filesystem::create_directories(temp_root);
+
+    const auto older_report = temp_root / "pal4_inject_crash_pid1_tid1_code0x1_tick1.txt";
+    const auto latest_report = temp_root / "pal4_inject_crash_pid2_tid2_code0x2_tick2.txt";
+    const auto latest_dump = temp_root / "pal4_inject_crash_pid2_tid2_code0x2_tick2.dmp";
+    const auto runtime_log = temp_root / "pal4_inject_runtime.log";
+    {
+        std::ofstream(older_report) << "exception_code=old\n";
+        std::ofstream(latest_report)
+            << "exception_code=0xC0000005\n"
+            << "file=C:\\Users\\Alice\\PAL4\\gamepatch\\asset.dds\n"
+            << "access_token=do-not-share\n";
+        std::ofstream(latest_dump, std::ios::binary) << "dump";
+        std::ofstream(runtime_log)
+            << "runtime path C:\\Users\\Alice\\PAL4\\runtime.dll\n"
+            << "last line\n";
+    }
+    const auto now = std::filesystem::file_time_type::clock::now();
+    std::filesystem::last_write_time(older_report, now - std::chrono::seconds(5));
+    std::filesystem::last_write_time(latest_report, now);
+
+    const auto data = pal4::inject::LoadLatestBugReportData(
+        temp_root,
+        {{"C:\\Users\\Alice\\PAL4", "<游戏目录>"}});
+    assert(data.crash_report_path == latest_report);
+    assert(data.crash_dump_path == latest_dump);
+    assert(data.runtime_log_path == runtime_log);
+    assert(data.HasCrashReport());
+    assert(data.HasRuntimeLog());
+    assert(data.sanitized_crash_report.find("<游戏目录>") != std::string::npos);
+    assert(data.sanitized_crash_report.find("Alice") == std::string::npos);
+    assert(data.sanitized_crash_report.find("do-not-share") == std::string::npos);
+    assert(data.sanitized_crash_report.find("access_token=<已隐藏>") != std::string::npos);
+
+    pal4::inject::BugReportBodyOptions options{};
+    options.description = "载入存档后闪退";
+    options.version = "v0.2.0";
+    options.build_id = "unit-test";
+    auto body = pal4::inject::BuildBugReportBody(data, options);
+    assert(body.find("载入存档后闪退") != std::string::npos);
+    assert(body.find("exception_code") == std::string::npos);
+    options.include_crash_report = true;
+    options.include_runtime_log = true;
+    body = pal4::inject::BuildBugReportBody(data, options);
+    assert(body.find("exception_code=0xC0000005") != std::string::npos);
+    assert(body.find("last line") != std::string::npos);
+    assert(body.find("未上传 minidump") != std::string::npos);
+
+    const auto url = pal4::inject::BuildGiteeNewIssueUrl(
+        "https://gitee.com/betesla/pal4_inject/issues/new",
+        "崩溃反馈",
+        body,
+        3000);
+    assert(url.starts_with("https://gitee.com/betesla/pal4_inject/issues/new?"));
+    assert(url.find("issue%5Btitle%5D=") != std::string::npos);
+    assert(url.find("issue%5Bdescription%5D=") != std::string::npos);
+    assert(url.size() <= 3000);
+    assert(url.find("do-not-share") == std::string::npos);
+
+    std::filesystem::remove_all(temp_root, ignored);
+}
+
 ProtocolResponse SendCommand(
     const std::string& pipe_name,
     const ProtocolCommand& command) {
@@ -2341,6 +2409,7 @@ int main() {
     TestCeguiWidescreenPlanMath();
     TestCeguiDynamicFontResyncMath();
     TestCrashCaptureHelpers();
+    TestBugReportHelpers();
     TestAspectRatioLayoutMath();
     MaybeRunIntegrationSmoke();
     std::cout << "pal4_inject_tests: ok\n";

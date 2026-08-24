@@ -10,6 +10,7 @@
 #endif
 #include <windows.h>
 
+#include "pal4inject/bug_report.h"
 #include "pal4inject/inject_settings.h"
 
 namespace pal4::inject::launcher {
@@ -44,16 +45,23 @@ struct LauncherUiState {
     ScriptMode script_mode = ScriptMode::csb;
     GameDisplayConfig display;
     InjectPersistedSettings inject_settings;
+    BugReportData bug_report;
     std::vector<Resolution> common_resolutions;
     std::vector<Resolution> display_resolutions;
     bool accepted = false;
 };
 
 using CheckForUpdatesCallback = void (*)(HWND owner, bool quiet_if_current_or_failed);
+using OpenBugReportCallback = bool (*)(
+    HWND owner,
+    const std::string& title,
+    const std::string& body,
+    std::wstring* error);
 
 bool RunLauncherUi(
     LauncherUiState* state,
     CheckForUpdatesCallback check_for_updates,
+    OpenBugReportCallback open_bug_report,
     std::wstring* error);
 
 }  // namespace pal4::inject::launcher
