@@ -2,6 +2,6 @@
 
 namespace pal4::inject {
 
-void RefreshWidescreenHudLayoutFixups();
+void RefreshWidescreenUiLayoutProfiles();
 
 }  // namespace pal4::inject

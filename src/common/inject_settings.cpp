@@ -15,9 +15,9 @@
 namespace pal4::inject {
 namespace {
 
-constexpr int kSettingsVersion = 10;
+constexpr int kSettingsVersion = 11;
 constexpr int kMinSupportedSettingsVersion = 1;
-constexpr int kMaxSupportedSettingsVersion = 10;
+constexpr int kMaxSupportedSettingsVersion = 11;
 
 std::string TrimAscii(const std::string_view text) {
     std::size_t begin = 0;
@@ -74,11 +74,6 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
         << '\n';
     out << "gamepad_camera_sensitivity=" << std::fixed << std::setprecision(1)
         << std::clamp(settings.gamepad_camera_sensitivity, 20.0F, 360.0F) << '\n';
-    for (std::size_t index = 0; index < kXbox360ButtonCount; ++index) {
-        const auto button = static_cast<Xbox360Button>(index);
-        out << "gamepad.binding." << ToString(button) << '='
-            << ToString(GetGamepadBinding(settings.gamepad_mapping, button)) << '\n';
-    }
     out << "borderless_window=" << (settings.borderless_window ? "1" : "0") << '\n';
     out << "borderless_monitor=" << settings.borderless_monitor << '\n';
 
@@ -322,30 +317,10 @@ bool ParseInjectPersistedSettings(
         return false;
     }
 
-    // Version 9 adds the camera-distance action. Preserve explicit custom R3
-    // bindings, but upgrade the old default (none) so existing users receive it.
-    if (version > 0 && version < 9 &&
-        GetGamepadBinding(out->gamepad_mapping, Xbox360Button::right_thumb) ==
-            GamepadAction::none) {
-        SetGamepadBinding(
-            &out->gamepad_mapping,
-            Xbox360Button::right_thumb,
-            GamepadAction::camera_distance_cycle);
-    }
-
-    // Version 10 assigns L3 to the stock Tab leader-switch action. Upgrade
-    // either historical movement shortcut while preserving other custom maps.
-    const auto left_thumb_action = GetGamepadBinding(
-        out->gamepad_mapping,
-        Xbox360Button::left_thumb);
-    if (version > 0 && version < 10 &&
-        (left_thumb_action == GamepadAction::auto_forward ||
-         left_thumb_action == GamepadAction::run_toggle)) {
-        SetGamepadBinding(
-            &out->gamepad_mapping,
-            Xbox360Button::left_thumb,
-            GamepadAction::switch_leader);
-    }
+    // Version 11 makes the documented Xbox 360 layout fixed and read-only.
+    // Continue accepting historical binding lines so old files load, but do
+    // not carry custom mappings into the runtime while editing is unsupported.
+    out->gamepad_mapping = DefaultXbox360GamepadMapping();
 
     out->gamepad_run_threshold =
         std::clamp(out->gamepad_run_threshold, 0.05F, 0.95F);

@@ -37,6 +37,7 @@ inline constexpr std::uint32_t kUiShowCombatResult = kUiShowCombatHint2;
 inline constexpr std::uint32_t kCameraPrepare = 0x5E4660;
 inline constexpr std::uint32_t kCameraRunSingle = 0x5E46B0;
 inline constexpr std::uint32_t kCameraUpdateMatrix = 0x5EA190;
+inline constexpr std::uint32_t kRwCameraBeginUpdate = 0x759E20;
 inline constexpr std::uint32_t kD3d9SetPresentParameters = 0x75F710;
 inline constexpr std::uint32_t kPal4MainWndProc = 0x40A170;
 inline constexpr std::uint32_t kHandlePlayerInputEvents = 0x4283B0;
@@ -91,6 +92,7 @@ inline constexpr std::uint32_t kD3d9PresentMultiSampleTypeGlobal = 0x97A4F0;
 inline constexpr std::uint32_t kD3d9PresentMultiSampleQualityGlobal = 0x97A4F4;
 inline constexpr std::uint32_t kRenderStateInterfaceGlobal = 0x950CD0;
 inline constexpr std::uint32_t kKeyCodeTable = 0x8A1790;
+inline constexpr std::uint32_t kMainMenuVersionText = 0x8B9494;
 
 inline constexpr std::ptrdiff_t kUiFrameManagerProcessUiEventThisOffset = 408;
 inline constexpr std::ptrdiff_t kUiFrameManagerMessageHandledByteOffset = 544;

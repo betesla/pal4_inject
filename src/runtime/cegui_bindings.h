@@ -56,6 +56,11 @@ struct CeguiBindings {
     using RequestRedrawFn = void (__thiscall*)(void*);
     using WindowGetWindowPositionFn = const CeguiUVector2* (__thiscall*)(void*);
     using WindowSetWindowPositionFn = void (__thiscall*)(void*, const CeguiUVector2&);
+    using WindowGetWindowMaxSizeFn = const CeguiUVector2* (__thiscall*)(const void*);
+    using WindowSetWindowMaxSizeFn = void (__thiscall*)(void*, const CeguiUVector2&);
+    using WindowSetWindowSizeFn = void (__thiscall*)(void*, const CeguiUVector2&);
+    using WindowIsClippedByParentFn = bool (__thiscall*)(const void*);
+    using WindowSetClippedByParentFn = void (__thiscall*)(void*, bool);
     using FontManagerGetFontFn = void* (__thiscall*)(void*, const void*);
     using FontNotifyScreenResolutionFn = void (__thiscall*)(void*, const CeguiSizeValue&);
     using FontSetNativeResolutionFn = void (__thiscall*)(void*, const CeguiSizeValue&);
@@ -106,6 +111,11 @@ struct CeguiBindings {
     RequestRedrawFn request_redraw = nullptr;
     WindowGetWindowPositionFn window_get_window_position = nullptr;
     WindowSetWindowPositionFn window_set_window_position = nullptr;
+    WindowGetWindowMaxSizeFn window_get_window_max_size = nullptr;
+    WindowSetWindowMaxSizeFn window_set_window_max_size = nullptr;
+    WindowSetWindowSizeFn window_set_window_size = nullptr;
+    WindowIsClippedByParentFn window_is_clipped_by_parent = nullptr;
+    WindowSetClippedByParentFn window_set_clipped_by_parent = nullptr;
     FontManagerGetFontFn font_manager_get_font = nullptr;
     FontNotifyScreenResolutionFn font_notify_screen_resolution = nullptr;
     FontSetNativeResolutionFn font_set_native_resolution = nullptr;

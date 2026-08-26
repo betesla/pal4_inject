@@ -15,6 +15,7 @@
 #include "pal4inject_build_info.h"
 #include "pal4inject/dpi_awareness.h"
 #include "ipc_server.h"
+#include "main_menu_branding_patch.h"
 #include "pal4inject/launcher.h"
 #include "pal4inject/runtime_paths.h"
 #include "pal4inject/script_mode_override.h"
@@ -134,6 +135,14 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
     VerifyInheritedScriptMode(state);
 
     std::string error;
+    const bool branding_patch_ok = ApplyMainMenuBrandingPatch(&error);
+    if (!branding_patch_ok) {
+        state.SetLastError(error);
+        AppendBootstrapLog(std::string("main_menu_branding_patch failed: ") + error);
+    } else {
+        AppendBootstrapLog("main_menu_branding_patch ok text=PAL V1.2.1");
+    }
+
     DpiAwarenessMode dpi_mode = DpiAwarenessMode::unknown;
     const bool dpi_ok = ApplyProcessDpiAwareness(&dpi_mode, &error);
     if (!dpi_ok) {
@@ -208,6 +217,7 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
     state.SetBootstrapReady(
         crash_capture_ok &&
         background_window_ok &&
+        branding_patch_ok &&
         init_ok &&
         pipe_ok &&
         hooks_ok &&

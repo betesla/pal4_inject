@@ -219,7 +219,9 @@ bool RunImGuiHost(
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     auto& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |=
+        ImGuiConfigFlags_NavEnableKeyboard |
+        ImGuiConfigFlags_NavEnableGamepad;
     io.IniFilename = nullptr;
     ConfigureStyle(dpi_scale);
     LoadLauncherFont(io);

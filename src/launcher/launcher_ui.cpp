@@ -5,8 +5,10 @@
 #include <cstdio>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_host.h"
 #include "pal4inject/inject_feature_catalog.h"
 #include "pal4inject/ui_coordinate_space.h"
@@ -25,11 +27,20 @@ enum class LauncherPage {
     advanced,
 };
 
+enum class LauncherNavigationRegion {
+    sidebar = 0,
+    content,
+};
+
 struct LauncherViewState {
     LauncherUiState* launcher = nullptr;
     CheckForUpdatesCallback check_for_updates = nullptr;
     OpenBugReportCallback open_bug_report = nullptr;
     LauncherPage page = LauncherPage::game;
+    LauncherNavigationRegion navigation_region =
+        LauncherNavigationRegion::sidebar;
+    bool focus_sidebar = false;
+    bool focus_content = false;
     bool keep_open = true;
     std::array<char, 256> bug_title{};
     std::array<char, 2048> bug_description{};
@@ -38,6 +49,111 @@ struct LauncherViewState {
     bool diagnostics_consent = false;
     std::string bug_report_status;
 };
+
+LauncherPage StepLauncherPage(
+    const LauncherPage page,
+    const int delta) noexcept {
+    constexpr int kPageCount =
+        static_cast<int>(LauncherPage::advanced) + 1;
+    int next = (static_cast<int>(page) + delta) % kPageCount;
+    if (next < 0) {
+        next += kPageCount;
+    }
+    return static_cast<LauncherPage>(next);
+}
+
+void FocusCurrentWindowFirstItem() {
+    auto* const window = ImGui::GetCurrentWindow();
+    ImGui::FocusWindow(window);
+    ImGui::NavInitWindow(window, true);
+    ImGui::SetNavCursorVisibleAfterMove();
+}
+
+void FocusLastSubmittedItem() {
+    auto& context = *GImGui;
+    if (context.LastItemData.ID == 0) {
+        return;
+    }
+    auto* const window = ImGui::GetCurrentWindow();
+    ImGui::SetNavWindow(window);
+    ImGui::SetNavID(
+        context.LastItemData.ID,
+        window->DC.NavLayerCurrent,
+        context.CurrentFocusScopeId,
+        ImGui::WindowRectAbsToRel(window, context.LastItemData.NavRect));
+    ImGui::SetNavCursorVisibleAfterMove();
+}
+
+void EnterLauncherContent(LauncherViewState* const view) {
+    if (!view) {
+        return;
+    }
+    view->navigation_region = LauncherNavigationRegion::content;
+    view->focus_content = true;
+    view->focus_sidebar = false;
+}
+
+void SelectLauncherSidebarPage(
+    LauncherViewState* const view,
+    const int delta) {
+    if (!view) {
+        return;
+    }
+    view->page = StepLauncherPage(view->page, delta);
+    view->navigation_region = LauncherNavigationRegion::sidebar;
+    view->focus_sidebar = true;
+    view->focus_content = false;
+}
+
+void UpdateLauncherGlobalGamepadActions(LauncherViewState* const view) {
+    if (!view || !view->launcher) {
+        return;
+    }
+    const bool popup_open = ImGui::IsPopupOpen(
+        nullptr,
+        ImGuiPopupFlags_AnyPopupId |
+            ImGuiPopupFlags_AnyPopupLevel);
+    if (popup_open) {
+        return;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_GamepadStart, false)) {
+        view->launcher->accepted = true;
+        view->keep_open = false;
+    } else if (ImGui::IsKeyPressed(ImGuiKey_GamepadBack, false)) {
+        view->keep_open = false;
+    }
+}
+
+void UpdateLauncherGamepadHierarchy(LauncherViewState* const view) {
+    if (!view) {
+        return;
+    }
+    if (view->navigation_region == LauncherNavigationRegion::content) {
+        const bool popup_open = ImGui::IsPopupOpen(
+            nullptr,
+            ImGuiPopupFlags_AnyPopupId |
+                ImGuiPopupFlags_AnyPopupLevel);
+        if (!popup_open &&
+            ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)) {
+            view->navigation_region = LauncherNavigationRegion::sidebar;
+            view->focus_sidebar = true;
+            view->focus_content = false;
+        }
+        return;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, false)) {
+        SelectLauncherSidebarPage(view, -1);
+    } else if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, false)) {
+        SelectLauncherSidebarPage(view, 1);
+    } else if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false)) {
+        EnterLauncherContent(view);
+    } else if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft, false) ||
+               ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight, false)) {
+        view->focus_sidebar = true;
+        view->focus_content = false;
+    }
+}
 
 std::string Utf8FromWide(const std::wstring_view text) {
     if (text.empty()) {
@@ -155,7 +271,7 @@ const char* GamepadActionLabel(const GamepadAction action) {
     case GamepadAction::confirm:
         return "确认 / 交互";
     case GamepadAction::cancel:
-        return "返回 / 取消";
+        return "Esc / 返回（UI / 战斗）";
     case GamepadAction::mouse_left:
         return "按住鼠标左键";
     case GamepadAction::run_toggle:
@@ -169,56 +285,35 @@ const char* GamepadActionLabel(const GamepadAction action) {
     case GamepadAction::camera_distance_cycle:
         return "切换镜头距离";
     case GamepadAction::system_menu:
-        return "系统菜单";
+        return "整层菜单开关（兼容）";
     case GamepadAction::main_page_previous:
-        return "上一主分页";
+        return "3D：M / UI：上一主分页";
     case GamepadAction::main_page_next:
         return "下一主分页";
     case GamepadAction::sub_page_previous:
         return "上一子分页";
     case GamepadAction::sub_page_next:
         return "下一子分页";
+    case GamepadAction::place_marker:
+        return "3D：V 路标 / 战斗：攻击";
+    case GamepadAction::maze_skill:
+        return "3D：C 迷宫技能 / 战斗：防御";
+    case GamepadAction::role_page:
+        return "F1 / 人物状态";
+    case GamepadAction::item_page:
+        return "F2 / 物品";
+    case GamepadAction::equipment_page:
+        return "F3 / 装备";
+    case GamepadAction::magic_page:
+        return "F4 / 仙术特技";
+    case GamepadAction::system_page:
+        return "3D：F7 / UI：无";
+    case GamepadAction::combat_attack:
+        return "战斗：攻击";
+    case GamepadAction::combat_defend:
+        return "战斗：防御";
     }
     return "无";
-}
-
-void DrawGamepadBindingCombo(
-    Xbox360GamepadMapping* const mapping,
-    const Xbox360Button button) {
-    if (!mapping) {
-        return;
-    }
-    constexpr std::array actions{
-        GamepadAction::none,
-        GamepadAction::confirm,
-        GamepadAction::cancel,
-        GamepadAction::mouse_left,
-        GamepadAction::run_toggle,
-        GamepadAction::auto_forward,
-        GamepadAction::map,
-        GamepadAction::switch_leader,
-        GamepadAction::camera_distance_cycle,
-        GamepadAction::system_menu,
-        GamepadAction::main_page_previous,
-        GamepadAction::main_page_next,
-        GamepadAction::sub_page_previous,
-        GamepadAction::sub_page_next,
-    };
-    const auto selected_action = GetGamepadBinding(*mapping, button);
-    const std::string id = std::string("##gamepad_binding_") + ToString(button);
-    ImGui::SetNextItemWidth(-1.0F);
-    if (ImGui::BeginCombo(id.c_str(), GamepadActionLabel(selected_action))) {
-        for (const auto action : actions) {
-            const bool selected = action == selected_action;
-            if (ImGui::Selectable(GamepadActionLabel(action), selected)) {
-                SetGamepadBinding(mapping, button, action);
-            }
-            if (selected) {
-                ImGui::SetItemDefaultFocus();
-            }
-        }
-        ImGui::EndCombo();
-    }
 }
 
 void DrawPathRow(const char* const label, const std::filesystem::path& path) {
@@ -429,7 +524,10 @@ void DrawVisualOptions(LauncherUiState* const state) {
 }
 
 void DrawDisplaySettings(LauncherUiState* const state) {
-    ImGui::BeginChild("display_settings", ImVec2(0.0F, 300.0F), ImGuiChildFlags_Borders);
+    ImGui::BeginChild(
+        "display_settings",
+        ImVec2(0.0F, 300.0F),
+        ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
     DrawDisplayModeSetting(state);
     DrawMonitorSetting(state);
     DrawResolutionCombo(
@@ -553,7 +651,10 @@ void DrawAudioPage(LauncherUiState* const state) {
     ImGui::TextUnformatted("音频");
     ImGui::TextDisabled("声音输出与音量控制。");
     ImGui::Separator();
-    ImGui::BeginChild("audio_settings", ImVec2(0.0F, 155.0F), ImGuiChildFlags_Borders);
+    ImGui::BeginChild(
+        "audio_settings",
+        ImVec2(0.0F, 155.0F),
+        ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
     ImGui::TextUnformatted("对白语音音量");
     ImGui::SameLine(180.0F);
     ImGui::SetNextItemWidth(260.0F);
@@ -583,11 +684,7 @@ void DrawControlsPage(LauncherUiState* const state) {
             FindHookSetting(&state->inject_settings, HookId::process_inputs),
             enabled);
     }
-    ImGui::SameLine();
-    if (ImGui::Button("恢复默认映射")) {
-        state->inject_settings.gamepad_mapping = DefaultXbox360GamepadMapping();
-    }
-    ImGui::TextDisabled("十字键固定用于菜单方向导航；下列实体按钮可以自由映射。");
+    ImGui::TextDisabled("按键映射暂时固定；下表仅展示当前默认布局，不提供修改入口。");
 
     ImGui::BeginDisabled(!state->inject_settings.gamepad_enabled);
     ImGui::Checkbox(
@@ -637,7 +734,7 @@ void DrawControlsPage(LauncherUiState* const state) {
         &state->inject_settings.gamepad_preserve_free_camera);
     ImGui::TextDisabled("实验选项：进入小场景时恢复切换前的镜头模式；可能影响剧情演出镜头。遇到异常请关闭。");
     ImGui::EndDisabled();
-    ImGui::SeparatorText("Xbox 360 按钮映射");
+    ImGui::SeparatorText("Xbox 360 按钮映射（只读）");
     constexpr std::array buttons{
         Xbox360Button::a,
         Xbox360Button::b,
@@ -652,6 +749,7 @@ void DrawControlsPage(LauncherUiState* const state) {
         Xbox360Button::left_thumb,
         Xbox360Button::right_thumb,
     };
+    const auto mapping = DefaultXbox360GamepadMapping();
     if (ImGui::BeginTable(
             "gamepad_bindings",
             4,
@@ -667,8 +765,34 @@ void DrawControlsPage(LauncherUiState* const state) {
                 ImGui::TableSetColumnIndex(static_cast<int>(pair * 2));
                 ImGui::TextUnformatted(Xbox360ButtonLabel(button));
                 ImGui::TableSetColumnIndex(static_cast<int>(pair * 2 + 1));
-                DrawGamepadBindingCombo(&state->inject_settings.gamepad_mapping, button);
+                ImGui::TextUnformatted(GamepadActionLabel(
+                    GetGamepadBinding(mapping, button)));
             }
+        }
+        ImGui::EndTable();
+    }
+    ImGui::SeparatorText("摇杆与十字键（只读）");
+    constexpr std::array directional_controls{
+        std::pair{"左摇杆", "3D：移动 / 战斗：行动轮，回中选攻击"},
+        std::pair{"右摇杆", "旋转镜头"},
+        std::pair{"十字键 上", "3D：F1 人物状态 / UI：向上"},
+        std::pair{"十字键 下", "3D：F4 仙术特技 / UI：向下"},
+        std::pair{"十字键 左", "3D：F2 物品 / UI：向左"},
+        std::pair{"十字键 右", "3D：F3 装备 / UI：向右"},
+    };
+    if (ImGui::BeginTable(
+            "gamepad_directional_controls",
+            2,
+            ImGuiTableFlags_BordersInnerV |
+                ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("输入", ImGuiTableColumnFlags_WidthFixed, 90.0F);
+        ImGui::TableSetupColumn("动作", ImGuiTableColumnFlags_WidthStretch);
+        for (const auto& [input, action] : directional_controls) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(input);
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextUnformatted(action);
         }
         ImGui::EndTable();
     }
@@ -708,7 +832,7 @@ void DrawFeatureCard(
     ImGui::BeginChild(
         "feature",
         ImVec2(0.0F, 86.0F),
-        ImGuiChildFlags_Borders,
+        ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     bool enabled = setting->mode != HookMode::observe_only;
     if (ImGui::Checkbox("##enabled", &enabled)) {
@@ -880,6 +1004,24 @@ void DrawBugReportPage(LauncherViewState* const view, const HWND owner) {
     }
 }
 
+void DrawSidebarPageItem(
+    LauncherViewState* const view,
+    const char* const label,
+    const LauncherPage page) {
+    if (ImGui::Selectable(
+            label,
+            view->page == page,
+            0,
+            ImVec2(0.0F, 38.0F))) {
+        view->page = page;
+        EnterLauncherContent(view);
+    }
+    if (view->focus_sidebar && view->page == page) {
+        FocusLastSubmittedItem();
+        view->focus_sidebar = false;
+    }
+}
+
 void DrawSidebar(LauncherViewState* const view, const HWND owner) {
     ImGui::TextUnformatted("PAL4 Inject");
     ImGui::TextDisabled("%s", kPal4InjectVersion);
@@ -887,34 +1029,16 @@ void DrawSidebar(LauncherViewState* const view, const HWND owner) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    if (ImGui::Selectable("游戏", view->page == LauncherPage::game, 0, ImVec2(0.0F, 38.0F))) {
-        view->page = LauncherPage::game;
-    }
-    if (ImGui::Selectable("视频", view->page == LauncherPage::video, 0, ImVec2(0.0F, 38.0F))) {
-        view->page = LauncherPage::video;
-    }
-    if (ImGui::Selectable("音频", view->page == LauncherPage::audio, 0, ImVec2(0.0F, 38.0F))) {
-        view->page = LauncherPage::audio;
-    }
-    if (ImGui::Selectable("控制", view->page == LauncherPage::controls, 0, ImVec2(0.0F, 38.0F))) {
-        view->page = LauncherPage::controls;
-    }
-    if (ImGui::Selectable("增强", view->page == LauncherPage::enhancements, 0, ImVec2(0.0F, 38.0F))) {
-        view->page = LauncherPage::enhancements;
-    }
+    DrawSidebarPageItem(view, "游戏", LauncherPage::game);
+    DrawSidebarPageItem(view, "视频", LauncherPage::video);
+    DrawSidebarPageItem(view, "音频", LauncherPage::audio);
+    DrawSidebarPageItem(view, "控制", LauncherPage::controls);
+    DrawSidebarPageItem(view, "增强", LauncherPage::enhancements);
     const char* const bug_report_label = view->launcher->bug_report.HasCrashReport()
         ? "反馈 Bug（发现崩溃）"
         : "反馈 Bug";
-    if (ImGui::Selectable(
-            bug_report_label,
-            view->page == LauncherPage::bug_report,
-            0,
-            ImVec2(0.0F, 38.0F))) {
-        view->page = LauncherPage::bug_report;
-    }
-    if (ImGui::Selectable("高级", view->page == LauncherPage::advanced, 0, ImVec2(0.0F, 38.0F))) {
-        view->page = LauncherPage::advanced;
-    }
+    DrawSidebarPageItem(view, bug_report_label, LauncherPage::bug_report);
+    DrawSidebarPageItem(view, "高级", LauncherPage::advanced);
 
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 86.0F);
     if (ImGui::Button("检查更新", ImVec2(-1.0F, 34.0F)) && view->check_for_updates) {
@@ -928,6 +1052,8 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
     if (!view || !view->launcher) {
         return false;
     }
+    UpdateLauncherGlobalGamepadActions(view);
+    UpdateLauncherGamepadHierarchy(view);
 
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -945,6 +1071,10 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
     ImGui::EndChild();
     ImGui::SameLine();
     ImGui::BeginChild("content", ImVec2(0.0F, -58.0F), ImGuiChildFlags_Borders);
+    if (view->focus_content) {
+        FocusCurrentWindowFirstItem();
+        view->focus_content = false;
+    }
     switch (view->page) {
     case LauncherPage::game:
         DrawGamePage(view->launcher);
@@ -973,12 +1103,12 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
     ImGui::Separator();
     const auto settings_path = PathText(view->launcher->inject_settings_path);
     ImGui::TextDisabled("配置：%s", settings_path.c_str());
-    ImGui::SameLine(ImGui::GetWindowWidth() - 250.0F);
-    if (ImGui::Button("退出", ImVec2(90.0F, 38.0F))) {
+    ImGui::SameLine(ImGui::GetWindowWidth() - 310.0F);
+    if (ImGui::Button("退出 [Back]", ImVec2(128.0F, 38.0F))) {
         view->keep_open = false;
     }
     ImGui::SameLine();
-    if (ImGui::Button("启动游戏", ImVec2(130.0F, 38.0F))) {
+    if (ImGui::Button("启动游戏 [Start]", ImVec2(164.0F, 38.0F))) {
         view->launcher->accepted = true;
         view->keep_open = false;
     }

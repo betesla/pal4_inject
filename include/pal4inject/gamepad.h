@@ -44,6 +44,37 @@ enum class GamepadAction : std::uint8_t {
     main_page_next,
     sub_page_previous,
     sub_page_next,
+    place_marker,
+    maze_skill,
+    role_page,
+    item_page,
+    equipment_page,
+    magic_page,
+    system_page,
+    combat_attack,
+    combat_defend,
+};
+
+enum class GamepadDpadDirection : std::uint8_t {
+    up = 0,
+    down,
+    left,
+    right,
+};
+
+enum class GamepadDpadNavigationMode : std::uint8_t {
+    gameplay_shortcuts = 0,
+    plain_ui,
+    system_menu,
+};
+
+enum class GamepadCombatWheelSector : std::uint8_t {
+    none = 0,
+    magic,
+    stunt,
+    flee,
+    defend,
+    article,
 };
 
 inline constexpr std::size_t kXbox360ButtonCount =
@@ -66,6 +97,12 @@ struct GamepadAnalogStick {
     float x = 0.0F;
     float y = 0.0F;
     float magnitude = 0.0F;
+};
+
+struct GamepadCameraVector3 {
+    float x = 0.0F;
+    float y = 0.0F;
+    float z = 0.0F;
 };
 
 struct GamepadMovementTuning {
@@ -91,16 +128,15 @@ struct GamepadKeyMirrorPlan {
     std::uint8_t release_updates = 0;
 };
 
+struct GamepadCombatWheelNavigationPlan {
+    std::array<GamepadDpadDirection, 5> directions{};
+    std::size_t count = 0;
+};
+
 enum class GamepadCursorPresentation : std::uint8_t {
     hide_all = 0,
     cegui_only,
     native_only,
-};
-
-enum class SystemMenuCancelAction : std::uint8_t {
-    none = 0,
-    close_root,
-    escape_nested,
 };
 
 const char* ToString(GamepadInputContext context) noexcept;
@@ -113,6 +149,12 @@ Xbox360GamepadMapping DefaultXbox360GamepadMapping() noexcept;
 GamepadAction GetGamepadBinding(
     const Xbox360GamepadMapping& mapping,
     Xbox360Button button) noexcept;
+GamepadAction ResolveGamepadActionForContext(
+    Xbox360Button button,
+    GamepadAction configured_action,
+    GamepadInputContext context,
+    bool combat_navigation_visible = false,
+    bool combat_action_wheel_visible = false) noexcept;
 bool IsMappedGamepadActionPressed(
     const Xbox360GamepadMapping& mapping,
     GamepadAction action,
@@ -128,6 +170,12 @@ void SetGamepadBinding(
 
 GamepadDigitalAxes BuildGamepadDigitalAxes(int x, int y, int deadzone) noexcept;
 GamepadAnalogStick BuildGamepadAnalogStick(int x, int y, int deadzone) noexcept;
+bool TryDeriveGamepadCameraOrbitFocus(
+    const GamepadCameraVector3& position,
+    const GamepadCameraVector3& forward,
+    float distance,
+    GamepadCameraVector3* out) noexcept;
+bool ShouldApplyGamepadBattleCamera(float right_stick_magnitude) noexcept;
 bool HasGamepadInputActivity(
     std::uint16_t buttons,
     std::uint8_t left_trigger,
@@ -158,6 +206,28 @@ float SelectNextGamepadCameraDistance(
     float current,
     float mode_default) noexcept;
 int WrapGamepadCycleIndex(int current, int delta, int item_count) noexcept;
+int FindNextAvailableGamepadPage(
+    int current,
+    int delta,
+    const bool* available,
+    int item_count) noexcept;
+GamepadAction SelectGameplayDpadAction(
+    GamepadDpadDirection direction) noexcept;
+bool ShouldDispatchGamepadCancel(GamepadInputContext context) noexcept;
+GamepadDpadNavigationMode SelectGamepadDpadNavigationMode(
+    GamepadInputContext context,
+    bool system_menu_visible,
+    bool menu_navigation_visible,
+    bool combat_navigation_visible) noexcept;
+GamepadCombatWheelSector SelectGamepadCombatWheelSector(
+    const GamepadAnalogStick& stick,
+    GamepadCombatWheelSector previous) noexcept;
+GamepadCombatWheelNavigationPlan BuildGamepadCombatWheelNavigationPlan(
+    GamepadCombatWheelSector sector) noexcept;
+bool ShouldCenterGamepadCombatWheel(
+    bool action_wheel_visible,
+    GamepadCombatWheelSector previous,
+    float stick_magnitude) noexcept;
 bool ConsumeGamepadRepeat(
     bool pressed,
     std::uint32_t now_ms,
@@ -167,7 +237,4 @@ bool ConsumeGamepadRepeat(
 GamepadCursorPresentation SelectGamepadCursorPresentation(
     bool gamepad_owns_input,
     bool cegui_cursor_visible) noexcept;
-SystemMenuCancelAction SelectSystemMenuCancelAction(
-    bool menu_visible,
-    bool page_visible) noexcept;
 }  // namespace pal4::inject

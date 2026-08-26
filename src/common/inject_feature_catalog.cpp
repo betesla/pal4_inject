@@ -28,6 +28,7 @@ InjectFeatureCategory BuildCategory(const HookId id) {
     case HookId::d3d9_set_present_parameters:
         return InjectFeatureCategory::render_visual;
     case HookId::camera_update_matrix:
+    case HookId::rw_camera_begin_update:
     case HookId::set_camera_mode_script:
         return InjectFeatureCategory::camera;
     case HookId::loose_file_overlay:
@@ -65,6 +66,7 @@ std::vector<InjectFeatureDescriptor> BuildInjectFeatureCatalog() {
         {HookId::bink_player_update_and_render, BuildCategory(HookId::bink_player_update_and_render), BuildGroupLabel(HookId::bink_player_update_and_render), "Bink 视频比例修正", "按 launcher 选项完整显示视频，或保持比例铺满宽屏并裁剪上下画面。", true},
         {HookId::d3d9_set_present_parameters, BuildCategory(HookId::d3d9_set_present_parameters), BuildGroupLabel(HookId::d3d9_set_present_parameters), "显示模式与 MSAA", "应用无边框窗口呈现，并在 D3D9 参数生效时请求指定抗锯齿等级。", true},
         {HookId::camera_update_matrix, BuildCategory(HookId::camera_update_matrix), BuildGroupLabel(HookId::camera_update_matrix), "相机俯仰保护", "扩大相机俯仰范围并阻止越过翻转边界。", true},
+        {HookId::rw_camera_begin_update, BuildCategory(HookId::rw_camera_begin_update), BuildGroupLabel(HookId::rw_camera_begin_update), "战斗相机渲染提交", "在战斗相机更新完成后、RenderWare 开始绘制前提交右摇杆视角。", true},
         {HookId::loose_file_overlay, BuildCategory(HookId::loose_file_overlay), BuildGroupLabel(HookId::loose_file_overlay), "松散文件补丁", "优先加载 gamepatch；CS 脚本缺失时不回退，使用独立日志记录。", true, false},
     };
 }

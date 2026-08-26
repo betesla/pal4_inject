@@ -311,6 +311,36 @@ bool TryGetCeguiBindings(CeguiBindings* out, std::string* error) {
     cached.window_set_window_position =
         reinterpret_cast<CeguiBindings::WindowSetWindowPositionFn>(proc);
 
+    if (!ResolveBinding(module, "?getWindowMaxSize@Window@CEGUI@@QBEABVUVector2@2@XZ", &proc, error)) {
+        return false;
+    }
+    cached.window_get_window_max_size =
+        reinterpret_cast<CeguiBindings::WindowGetWindowMaxSizeFn>(proc);
+
+    if (!ResolveBinding(module, "?setWindowMaxSize@Window@CEGUI@@QAEXABVUVector2@2@@Z", &proc, error)) {
+        return false;
+    }
+    cached.window_set_window_max_size =
+        reinterpret_cast<CeguiBindings::WindowSetWindowMaxSizeFn>(proc);
+
+    if (!ResolveBinding(module, "?setWindowSize@Window@CEGUI@@QAEXABVUVector2@2@@Z", &proc, error)) {
+        return false;
+    }
+    cached.window_set_window_size =
+        reinterpret_cast<CeguiBindings::WindowSetWindowSizeFn>(proc);
+
+    if (!ResolveBinding(module, "?isClippedByParent@Window@CEGUI@@QBE_NXZ", &proc, error)) {
+        return false;
+    }
+    cached.window_is_clipped_by_parent =
+        reinterpret_cast<CeguiBindings::WindowIsClippedByParentFn>(proc);
+
+    if (!ResolveBinding(module, "?setClippedByParent@Window@CEGUI@@QAEX_N@Z", &proc, error)) {
+        return false;
+    }
+    cached.window_set_clipped_by_parent =
+        reinterpret_cast<CeguiBindings::WindowSetClippedByParentFn>(proc);
+
     if (!ResolveBinding(module, "?getFont@FontManager@CEGUI@@QBEPAVFont@2@ABVString@2@@Z", &proc, error)) {
         return false;
     }

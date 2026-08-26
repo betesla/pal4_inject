@@ -28,6 +28,9 @@ float ComputeWidescreenHudLogicalX(
     const CeguiWidescreenPlan& plan,
     float base_logical_x,
     WidescreenHudAnchor anchor) noexcept;
+float ComputeWidescreenEdgeToEdgeLogicalWidth(
+    const CeguiWidescreenPlan& plan,
+    float base_logical_width) noexcept;
 float ComputeCenteredUiLogicalX(
     const CeguiWidescreenPlan& plan,
     float base_logical_x) noexcept;
@@ -41,5 +44,11 @@ bool ApplyCeguiWidescreenMouseTransform(
     float* out_x,
     float* out_y) noexcept;
 bool ShouldDrawOriginalUiPillarboxMask(const CeguiWidescreenPlan& plan) noexcept;
+bool ShouldDrawOriginalUiPillarboxForVisibleRoots(
+    bool pillarboxed_main_menu_root_visible,
+    bool system_toolbar_root_visible,
+    bool frame_toolbar_root_visible,
+    bool system_setting_visible,
+    bool in_game_system_menu_widescreen_adapted) noexcept;
 
 }  // namespace pal4::inject

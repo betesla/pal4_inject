@@ -37,9 +37,11 @@
 #include "pal4inject/input_queue.h"
 #include "pal4inject/launcher.h"
 #include "pal4inject/loose_file_overlay.h"
+#include "pal4inject/main_menu_branding.h"
 #include "pal4inject/camera_pitch_guard.h"
 #include "pal4inject/cegui_font_resync.h"
 #include "pal4inject/cegui_widescreen.h"
+#include "pal4inject/widescreen_ui_layout.h"
 #include "pal4inject/ui_coordinate_space.h"
 #include "pal4inject/ui_input_plan.h"
 #include "pal4inject/camera_unlock_patch.h"
@@ -54,6 +56,7 @@
 #include "hook_manager.h"
 #include "loose_file_load_log.h"
 #include "runtime_state.h"
+#include "widescreen_ui_profiles.h"
 #include "x86_trampoline.h"
 #include "pal4inject_build_info.h"
 
@@ -213,6 +216,22 @@ void TestLooseFileOverlayPaths() {
     std::filesystem::remove_all(temp_root, ignored);
 }
 
+void TestMainMenuBrandingPlan() {
+    using namespace pal4::inject;
+    assert(kOriginalMainMenuVersionText == "PAL4 v1.1");
+    assert(kInjectedMainMenuVersionText == "PAL V1.2.1");
+    assert(kMainMenuVersionSlotSize == 12);
+    assert(kOriginalMainMenuVersionSlot[0] == 'P');
+    assert(kOriginalMainMenuVersionSlot[3] == '4');
+    assert(kOriginalMainMenuVersionSlot[9] == 0);
+    assert(kInjectedMainMenuVersionSlot[3] == ' ');
+    assert(kInjectedMainMenuVersionSlot[4] == 'V');
+    assert(kInjectedMainMenuVersionSlot[9] == '1');
+    assert(kInjectedMainMenuVersionSlot[10] == 0);
+    assert(kInjectedMainMenuVersionSlot[11] == 0);
+    assert(ida::kMainMenuVersionText == 0x8B9494);
+}
+
 void TestX86TrampolineCopiesLargeImmediateStackFrame() {
     const std::array<std::uint8_t, 7> source{
         0x81, 0xEC, 0x00, 0x01, 0x00, 0x00, 0x56,
@@ -233,6 +252,21 @@ void TestX86TrampolineCopiesTextScriptPrologue() {
         0x8B, 0x44, 0x24, 0x04, 0x56,
     };
     std::array<std::uint8_t, 5> destination{};
+    std::string error;
+    assert(pal4::inject::CopyRelocatingX86Bytes(
+        source.data(),
+        destination.data(),
+        source.size(),
+        &error));
+    assert(destination == source);
+    assert(error.empty());
+}
+
+void TestX86TrampolineCopiesRwCameraDispatchThunk() {
+    const std::array<std::uint8_t, 8> source{
+        0x8B, 0x44, 0x24, 0x04, 0x89, 0x44, 0x24, 0x04,
+    };
+    std::array<std::uint8_t, 8> destination{};
     std::string error;
     assert(pal4::inject::CopyRelocatingX86Bytes(
         source.data(),
@@ -304,7 +338,7 @@ void TestLooseFileLoadLogFormatting() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 37);
+    assert(inventory.size() == 38);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -319,6 +353,7 @@ void TestHookInventory() {
     bool found_camera_prepare = false;
     bool found_camera_run_single = false;
     bool found_camera_update_matrix = false;
+    bool found_rw_camera_begin_update = false;
     bool found_d3d9_present = false;
     bool found_bink_player_update_and_render = false;
     bool found_loose_file_overlay = false;
@@ -429,6 +464,13 @@ void TestHookInventory() {
             assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
             assert(hook.patch_span == 7);
             assert(hook.ida_ea == pal4::inject::ida::kCameraUpdateMatrix);
+        }
+        if (hook.id == HookId::rw_camera_begin_update) {
+            found_rw_camera_begin_update = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 8);
+            assert(hook.ida_ea == pal4::inject::ida::kRwCameraBeginUpdate);
+            assert(!hook.bootstrap_required);
         }
         if (hook.id == HookId::d3d9_set_present_parameters) {
             found_d3d9_present = true;
@@ -570,6 +612,7 @@ void TestHookInventory() {
     assert(found_camera_prepare);
     assert(found_camera_run_single);
     assert(found_camera_update_matrix);
+    assert(found_rw_camera_begin_update);
     assert(found_d3d9_present);
     assert(found_bink_player_update_and_render);
     assert(found_loose_file_overlay);
@@ -1069,7 +1112,7 @@ void TestMemoryRuntimeHelpers() {
 
 void TestInjectFeatureCatalog() {
     const auto rows = pal4::inject::BuildInjectFeatureCatalog();
-    assert(rows.size() == 19);
+    assert(rows.size() == 20);
 
     const auto find_row =
         [&rows](const HookId id) -> const pal4::inject::InjectFeatureDescriptor* {
@@ -1127,6 +1170,10 @@ void TestInjectFeatureCatalog() {
     assert(camera_row);
     assert(camera_row->category == pal4::inject::InjectFeatureCategory::camera);
     assert(camera_row->group_label == std::string_view("相机"));
+    const auto* battle_camera_row = find_row(HookId::rw_camera_begin_update);
+    assert(battle_camera_row);
+    assert(battle_camera_row->category == pal4::inject::InjectFeatureCategory::camera);
+    assert(battle_camera_row->group_label == std::string_view("相机"));
 
     const auto* loose_file_row = find_row(HookId::loose_file_overlay);
     assert(loose_file_row);
@@ -1240,6 +1287,7 @@ void TestInjectSettingsRoundTrip() {
 
     std::string error;
     const auto text = pal4::inject::FormatInjectPersistedSettings(settings);
+    assert(text.find("gamepad.binding.") == std::string::npos);
     pal4::inject::InjectPersistedSettings parsed{};
     assert(pal4::inject::ParseInjectPersistedSettings(text, &parsed, &error));
     assert(parsed.script_mode == pal4::inject::ScriptMode::cs);
@@ -1257,7 +1305,8 @@ void TestInjectSettingsRoundTrip() {
     assert(parsed.gamepad_camera_sensitivity == 175.0F);
     assert(pal4::inject::GetGamepadBinding(
         parsed.gamepad_mapping,
-        pal4::inject::Xbox360Button::y) == pal4::inject::GamepadAction::map);
+        pal4::inject::Xbox360Button::y) ==
+        pal4::inject::GamepadAction::maze_skill);
     assert(parsed.borderless_window);
     assert(parsed.borderless_monitor == R"(\\.\DISPLAY2)");
     assert(parsed.hooks.size() == 3);
@@ -1329,6 +1378,48 @@ void TestInjectSettingsRoundTrip() {
         version9.gamepad_mapping,
         pal4::inject::Xbox360Button::left_thumb) ==
         pal4::inject::GamepadAction::switch_leader);
+
+    pal4::inject::InjectPersistedSettings version10{};
+    assert(pal4::inject::ParseInjectPersistedSettings(
+        "version=10\n"
+        "gamepad.binding.x=mouse_left\n"
+        "gamepad.binding.y=run_toggle\n"
+        "gamepad.binding.start=system_menu\n",
+        &version10,
+        &error));
+    assert(pal4::inject::GetGamepadBinding(
+        version10.gamepad_mapping,
+        pal4::inject::Xbox360Button::x) ==
+        pal4::inject::GamepadAction::place_marker);
+    assert(pal4::inject::GetGamepadBinding(
+        version10.gamepad_mapping,
+        pal4::inject::Xbox360Button::y) ==
+        pal4::inject::GamepadAction::maze_skill);
+    assert(pal4::inject::GetGamepadBinding(
+        version10.gamepad_mapping,
+        pal4::inject::Xbox360Button::start) ==
+        pal4::inject::GamepadAction::system_page);
+
+    pal4::inject::InjectPersistedSettings custom_version10{};
+    assert(pal4::inject::ParseInjectPersistedSettings(
+        "version=10\n"
+        "gamepad.binding.x=map\n"
+        "gamepad.binding.y=mouse_left\n"
+        "gamepad.binding.start=confirm\n",
+        &custom_version10,
+        &error));
+    assert(pal4::inject::GetGamepadBinding(
+        custom_version10.gamepad_mapping,
+        pal4::inject::Xbox360Button::x) ==
+        pal4::inject::GamepadAction::place_marker);
+    assert(pal4::inject::GetGamepadBinding(
+        custom_version10.gamepad_mapping,
+        pal4::inject::Xbox360Button::y) ==
+        pal4::inject::GamepadAction::maze_skill);
+    assert(pal4::inject::GetGamepadBinding(
+        custom_version10.gamepad_mapping,
+        pal4::inject::Xbox360Button::start) ==
+        pal4::inject::GamepadAction::system_page);
     assert(!legacy.borderless_window);
     assert(legacy.borderless_monitor.empty());
 
@@ -1377,6 +1468,25 @@ void TestGamepadLogic() {
     assert(std::fabs(diagonal.x - 0.7071F) < 0.001F);
     assert(std::fabs(diagonal.y - 0.7071F) < 0.001F);
     assert(std::fabs(diagonal.magnitude - 1.0F) < 0.001F);
+    pal4::inject::GamepadCameraVector3 battle_focus{};
+    assert(pal4::inject::TryDeriveGamepadCameraOrbitFocus(
+        {100.0F, 25.0F, -50.0F},
+        {0.0F, 0.0F, 2.0F},
+        452.0F,
+        &battle_focus));
+    assert(std::fabs(battle_focus.x - 100.0F) < 0.001F);
+    assert(std::fabs(battle_focus.y - 25.0F) < 0.001F);
+    assert(std::fabs(battle_focus.z - 402.0F) < 0.001F);
+    assert(!pal4::inject::TryDeriveGamepadCameraOrbitFocus(
+        {}, {}, 452.0F, &battle_focus));
+    assert(!pal4::inject::TryDeriveGamepadCameraOrbitFocus(
+        {}, {0.0F, 0.0F, 1.0F}, 0.0F, &battle_focus));
+    assert(!pal4::inject::TryDeriveGamepadCameraOrbitFocus(
+        {}, {0.0F, 0.0F, 1.0F}, 452.0F, nullptr));
+    assert(!pal4::inject::ShouldApplyGamepadBattleCamera(0.0F));
+    assert(!pal4::inject::ShouldApplyGamepadBattleCamera(-0.1F));
+    assert(!pal4::inject::ShouldApplyGamepadBattleCamera(std::nanf("")));
+    assert(pal4::inject::ShouldApplyGamepadBattleCamera(0.001F));
     assert(pal4::inject::SelectGamepadMovementMode(0.61F, 0.62F, 0.88F) == 0);
     assert(pal4::inject::SelectGamepadMovementMode(0.62F, 0.62F, 0.88F) == 1);
     assert(pal4::inject::SelectGamepadMovementMode(0.87F, 0.62F, 0.88F) == 1);
@@ -1416,6 +1526,84 @@ void TestGamepadLogic() {
     assert(pal4::inject::GetGamepadBinding(
         mapping,
         pal4::inject::Xbox360Button::a) == pal4::inject::GamepadAction::confirm);
+    assert(pal4::inject::GetGamepadBinding(
+        mapping,
+        pal4::inject::Xbox360Button::b) == pal4::inject::GamepadAction::cancel);
+    assert(pal4::inject::GetGamepadBinding(
+        mapping,
+        pal4::inject::Xbox360Button::x) ==
+        pal4::inject::GamepadAction::place_marker);
+    assert(pal4::inject::GetGamepadBinding(
+        mapping,
+        pal4::inject::Xbox360Button::y) ==
+        pal4::inject::GamepadAction::maze_skill);
+    assert(pal4::inject::GetGamepadBinding(
+        mapping,
+        pal4::inject::Xbox360Button::back) ==
+        pal4::inject::GamepadAction::cancel);
+    assert(pal4::inject::GetGamepadBinding(
+        mapping,
+        pal4::inject::Xbox360Button::start) ==
+        pal4::inject::GamepadAction::system_page);
+    assert(pal4::inject::ResolveGamepadActionForContext(
+        pal4::inject::Xbox360Button::start,
+        pal4::inject::GamepadAction::system_page,
+        pal4::inject::GamepadInputContext::gameplay) ==
+        pal4::inject::GamepadAction::system_page);
+    assert(pal4::inject::ResolveGamepadActionForContext(
+        pal4::inject::Xbox360Button::start,
+        pal4::inject::GamepadAction::system_page,
+        pal4::inject::GamepadInputContext::system_menu) ==
+        pal4::inject::GamepadAction::none);
+    assert(pal4::inject::ResolveGamepadActionForContext(
+        pal4::inject::Xbox360Button::start,
+        pal4::inject::GamepadAction::system_page,
+        pal4::inject::GamepadInputContext::menu) ==
+        pal4::inject::GamepadAction::none);
+    assert(pal4::inject::ResolveGamepadActionForContext(
+        pal4::inject::Xbox360Button::back,
+        pal4::inject::GamepadAction::cancel,
+        pal4::inject::GamepadInputContext::gameplay) ==
+        pal4::inject::GamepadAction::none);
+    assert(pal4::inject::ResolveGamepadActionForContext(
+        pal4::inject::Xbox360Button::back,
+        pal4::inject::GamepadAction::cancel,
+        pal4::inject::GamepadInputContext::system_menu) ==
+        pal4::inject::GamepadAction::cancel);
+    assert(pal4::inject::ResolveGamepadActionForContext(
+        pal4::inject::Xbox360Button::left_shoulder,
+        pal4::inject::GamepadAction::main_page_previous,
+        pal4::inject::GamepadInputContext::gameplay) ==
+        pal4::inject::GamepadAction::map);
+    assert(pal4::inject::ResolveGamepadActionForContext(
+        pal4::inject::Xbox360Button::left_shoulder,
+        pal4::inject::GamepadAction::main_page_previous,
+        pal4::inject::GamepadInputContext::system_menu) ==
+        pal4::inject::GamepadAction::main_page_previous);
+    assert(pal4::inject::ResolveGamepadActionForContext(
+        pal4::inject::Xbox360Button::b,
+        pal4::inject::GamepadAction::cancel,
+        pal4::inject::GamepadInputContext::gameplay,
+        true,
+        false) == pal4::inject::GamepadAction::cancel);
+    assert(pal4::inject::ResolveGamepadActionForContext(
+        pal4::inject::Xbox360Button::x,
+        pal4::inject::GamepadAction::place_marker,
+        pal4::inject::GamepadInputContext::gameplay,
+        true,
+        true) == pal4::inject::GamepadAction::combat_attack);
+    assert(pal4::inject::ResolveGamepadActionForContext(
+        pal4::inject::Xbox360Button::y,
+        pal4::inject::GamepadAction::maze_skill,
+        pal4::inject::GamepadInputContext::gameplay,
+        true,
+        true) == pal4::inject::GamepadAction::combat_defend);
+    assert(pal4::inject::ResolveGamepadActionForContext(
+        pal4::inject::Xbox360Button::x,
+        pal4::inject::GamepadAction::place_marker,
+        pal4::inject::GamepadInputContext::gameplay,
+        true,
+        false) == pal4::inject::GamepadAction::place_marker);
     std::array<bool, pal4::inject::kXbox360ButtonCount> pressed_buttons{};
     pressed_buttons[static_cast<std::size_t>(pal4::inject::Xbox360Button::a)] = true;
     assert(pal4::inject::IsMappedGamepadActionPressed(
@@ -1459,6 +1647,23 @@ void TestGamepadLogic() {
         pal4::inject::Xbox360Button::left_thumb) ==
         pal4::inject::GamepadAction::switch_leader);
     assert(pal4::inject::WrapGamepadCycleIndex(0, -1, 7) == 6);
+    const bool available_pages[]{true, false, true, false, false, true};
+    assert(pal4::inject::FindNextAvailableGamepadPage(
+        0, 1, available_pages, 6) == 2);
+    assert(pal4::inject::FindNextAvailableGamepadPage(
+        0, -1, available_pages, 6) == 5);
+    assert(pal4::inject::FindNextAvailableGamepadPage(
+        2, 1, available_pages, 6) == 5);
+    assert(pal4::inject::FindNextAvailableGamepadPage(
+        5, 1, available_pages, 6) == 0);
+    const bool only_current_page[]{false, true, false};
+    assert(pal4::inject::FindNextAvailableGamepadPage(
+        1, 1, only_current_page, 3) == 1);
+    const bool no_available_pages[]{false, false};
+    assert(pal4::inject::FindNextAvailableGamepadPage(
+        0, 1, no_available_pages, 2) == -1);
+    assert(pal4::inject::FindNextAvailableGamepadPage(
+        0, 0, available_pages, 6) == -1);
     assert(
         pal4::inject::SelectGamepadCursorPresentation(true, true) ==
         pal4::inject::GamepadCursorPresentation::hide_all);
@@ -1469,14 +1674,98 @@ void TestGamepadLogic() {
         pal4::inject::SelectGamepadCursorPresentation(false, false) ==
         pal4::inject::GamepadCursorPresentation::native_only);
     assert(
-        pal4::inject::SelectSystemMenuCancelAction(false, false) ==
-        pal4::inject::SystemMenuCancelAction::none);
+        pal4::inject::SelectGameplayDpadAction(
+            pal4::inject::GamepadDpadDirection::up) ==
+        pal4::inject::GamepadAction::role_page);
     assert(
-        pal4::inject::SelectSystemMenuCancelAction(true, false) ==
-        pal4::inject::SystemMenuCancelAction::close_root);
+        pal4::inject::SelectGameplayDpadAction(
+            pal4::inject::GamepadDpadDirection::down) ==
+        pal4::inject::GamepadAction::magic_page);
     assert(
-        pal4::inject::SelectSystemMenuCancelAction(true, true) ==
-        pal4::inject::SystemMenuCancelAction::escape_nested);
+        pal4::inject::SelectGameplayDpadAction(
+            pal4::inject::GamepadDpadDirection::left) ==
+        pal4::inject::GamepadAction::item_page);
+    assert(
+        pal4::inject::SelectGameplayDpadAction(
+            pal4::inject::GamepadDpadDirection::right) ==
+        pal4::inject::GamepadAction::equipment_page);
+    assert(!pal4::inject::ShouldDispatchGamepadCancel(
+        pal4::inject::GamepadInputContext::gameplay));
+    assert(pal4::inject::ShouldDispatchGamepadCancel(
+        pal4::inject::GamepadInputContext::system_menu));
+    assert(pal4::inject::ShouldDispatchGamepadCancel(
+        pal4::inject::GamepadInputContext::menu));
+    assert(pal4::inject::SelectGamepadDpadNavigationMode(
+        pal4::inject::GamepadInputContext::gameplay,
+        false, false, false) ==
+        pal4::inject::GamepadDpadNavigationMode::gameplay_shortcuts);
+    assert(pal4::inject::SelectGamepadDpadNavigationMode(
+        pal4::inject::GamepadInputContext::gameplay,
+        false, false, true) ==
+        pal4::inject::GamepadDpadNavigationMode::plain_ui);
+    assert(pal4::inject::SelectGamepadDpadNavigationMode(
+        pal4::inject::GamepadInputContext::gameplay,
+        true, false, false) ==
+        pal4::inject::GamepadDpadNavigationMode::system_menu);
+    assert(pal4::inject::SelectGamepadDpadNavigationMode(
+        pal4::inject::GamepadInputContext::gameplay,
+        false, true, false) ==
+        pal4::inject::GamepadDpadNavigationMode::plain_ui);
+    assert(pal4::inject::SelectGamepadDpadNavigationMode(
+        pal4::inject::GamepadInputContext::menu,
+        false, false, false) ==
+        pal4::inject::GamepadDpadNavigationMode::plain_ui);
+    assert(pal4::inject::SelectGamepadDpadNavigationMode(
+        pal4::inject::GamepadInputContext::system_menu,
+        false, false, false) ==
+        pal4::inject::GamepadDpadNavigationMode::system_menu);
+    using WheelSector = pal4::inject::GamepadCombatWheelSector;
+    assert(pal4::inject::SelectGamepadCombatWheelSector(
+        {0.0F, 1.0F, 1.0F}, WheelSector::none) == WheelSector::magic);
+    assert(pal4::inject::SelectGamepadCombatWheelSector(
+        {0.95F, 0.31F, 1.0F}, WheelSector::none) == WheelSector::stunt);
+    assert(pal4::inject::SelectGamepadCombatWheelSector(
+        {0.59F, -0.81F, 1.0F}, WheelSector::none) == WheelSector::flee);
+    assert(pal4::inject::SelectGamepadCombatWheelSector(
+        {-0.59F, -0.81F, 1.0F}, WheelSector::none) == WheelSector::defend);
+    assert(pal4::inject::SelectGamepadCombatWheelSector(
+        {-0.95F, 0.31F, 1.0F}, WheelSector::none) == WheelSector::article);
+    assert(pal4::inject::SelectGamepadCombatWheelSector(
+        {0.0F, 0.0F, 0.2F}, WheelSector::magic) == WheelSector::none);
+    assert(pal4::inject::SelectGamepadCombatWheelSector(
+        {0.5F, 0.866F, 1.0F}, WheelSector::stunt) == WheelSector::stunt);
+    assert(pal4::inject::SelectGamepadCombatWheelSector(
+        {0.342F, 0.94F, 1.0F}, WheelSector::stunt) == WheelSector::magic);
+    const auto magic_plan =
+        pal4::inject::BuildGamepadCombatWheelNavigationPlan(
+            WheelSector::magic);
+    assert(magic_plan.count == 3);
+    assert(magic_plan.directions[0] ==
+        pal4::inject::GamepadDpadDirection::up);
+    const auto flee_plan =
+        pal4::inject::BuildGamepadCombatWheelNavigationPlan(
+            WheelSector::flee);
+    assert(flee_plan.count == 5);
+    assert(flee_plan.directions[0] ==
+        pal4::inject::GamepadDpadDirection::right);
+    assert(flee_plan.directions[3] ==
+        pal4::inject::GamepadDpadDirection::down);
+    const auto centre_plan =
+        pal4::inject::BuildGamepadCombatWheelNavigationPlan(
+            WheelSector::none);
+    assert(centre_plan.count == 4);
+    assert(centre_plan.directions[0] ==
+        pal4::inject::GamepadDpadDirection::up);
+    assert(centre_plan.directions[3] ==
+        pal4::inject::GamepadDpadDirection::down);
+    assert(pal4::inject::ShouldCenterGamepadCombatWheel(
+        true, WheelSector::magic, 0.0F));
+    assert(!pal4::inject::ShouldCenterGamepadCombatWheel(
+        true, WheelSector::none, 0.0F));
+    assert(!pal4::inject::ShouldCenterGamepadCombatWheel(
+        false, WheelSector::magic, 0.0F));
+    assert(!pal4::inject::ShouldCenterGamepadCombatWheel(
+        true, WheelSector::magic, 0.3F));
 }
 
 void TestGiTalkVoiceVolume() {
@@ -1834,6 +2123,199 @@ void TestCeguiWidescreenPlanMath() {
     assert(plan_1920_1080.render_rect_left > -133.34F && plan_1920_1080.render_rect_left < -133.33F);
     assert(plan_1920_1080.render_rect_right > 933.33F && plan_1920_1080.render_rect_right < 933.34F);
     assert(pal4::inject::ShouldDrawOriginalUiPillarboxMask(plan_1920_1080));
+    const float movie_frame_width =
+        pal4::inject::ComputeWidescreenEdgeToEdgeLogicalWidth(
+            plan_1920_1080,
+            800.0F);
+    assert(movie_frame_width > 1066.66F && movie_frame_width < 1066.67F);
+    const float main_menu_top_center_x = pal4::inject::ComputeWidescreenHudLogicalX(
+        plan_1920_1080,
+        72.0F,
+        pal4::inject::WidescreenHudAnchor::left_edge);
+    const float main_menu_top_center_width =
+        pal4::inject::ComputeWidescreenEdgeToEdgeLogicalWidth(
+            plan_1920_1080,
+            462.0F);
+    const float main_menu_top_right_x = pal4::inject::ComputeWidescreenHudLogicalX(
+        plan_1920_1080,
+        534.0F,
+        pal4::inject::WidescreenHudAnchor::right_edge);
+    assert(main_menu_top_center_x > -61.34F && main_menu_top_center_x < -61.33F);
+    assert(main_menu_top_center_width > 728.66F && main_menu_top_center_width < 728.67F);
+    assert(std::fabs(
+        main_menu_top_center_x + main_menu_top_center_width - main_menu_top_right_x) <
+        0.01F);
+    const auto main_menu_top_center_plan =
+        pal4::inject::BuildWidescreenUiWindowPlan(
+            plan_1920_1080,
+            pal4::inject::WidescreenUiHorizontalMode::stretch_between_edges,
+            72.0F,
+            462.0F);
+    assert(main_menu_top_center_plan.set_x);
+    assert(main_menu_top_center_plan.set_width);
+    assert(std::fabs(main_menu_top_center_plan.x - main_menu_top_center_x) < 0.01F);
+    assert(std::fabs(main_menu_top_center_plan.width - main_menu_top_center_width) < 0.01F);
+    const auto centered_dialog_plan = pal4::inject::BuildWidescreenUiWindowPlan(
+        plan_1920_1080,
+        pal4::inject::WidescreenUiHorizontalMode::preserve,
+        200.0F,
+        400.0F);
+    assert(!centered_dialog_plan.set_x);
+    assert(!centered_dialog_plan.set_width);
+    assert(centered_dialog_plan.x == 200.0F);
+    const auto padded_offset_plan = pal4::inject::BuildWidescreenUiWindowPlan(
+        plan_1920_1080,
+        pal4::inject::WidescreenUiHorizontalMode::offset_by_padding_factor,
+        251.0F,
+        298.0F,
+        1.0F,
+        509.0F,
+        -70.0F);
+    assert(padded_offset_plan.set_x);
+    assert(padded_offset_plan.set_y);
+    assert(!padded_offset_plan.set_width);
+    assert(padded_offset_plan.x > 384.33F && padded_offset_plan.x < 384.34F);
+    assert(padded_offset_plan.y == 439.0F);
+    const auto load_top_center_plan = pal4::inject::BuildWidescreenUiWindowPlan(
+        plan_1920_1080,
+        pal4::inject::WidescreenUiHorizontalMode::stretch_between_edges,
+        82.0F,
+        318.0F);
+    const auto load_top_right_plan = pal4::inject::BuildWidescreenUiWindowPlan(
+        plan_1920_1080,
+        pal4::inject::WidescreenUiHorizontalMode::right_edge,
+        400.0F,
+        400.0F);
+    assert(load_top_center_plan.set_x);
+    assert(load_top_center_plan.set_width);
+    assert(load_top_right_plan.set_x);
+    assert(!load_top_right_plan.set_width);
+    assert(std::fabs(
+        load_top_center_plan.x + load_top_center_plan.width - load_top_right_plan.x) <
+        0.01F);
+    const auto* picture_preview_profile =
+        pal4::inject::FindWidescreenUiProfileByRootName("picturePreviewWindow/Root");
+    assert(picture_preview_profile);
+    assert(
+        picture_preview_profile->pillarbox_policy ==
+        pal4::inject::WidescreenUiPillarboxPolicy::remove);
+    assert(picture_preview_profile->rule_count == 9);
+    const auto* world_map_profile =
+        pal4::inject::FindWidescreenUiProfileByRootName("WorldMap/Root");
+    assert(world_map_profile);
+    assert(
+        world_map_profile->pillarbox_policy ==
+        pal4::inject::WidescreenUiPillarboxPolicy::preserve);
+    assert(world_map_profile->rule_count == 0);
+    assert(centered_dialog_plan.width == 400.0F);
+    assert(
+        pal4::inject::ComputeWidescreenEdgeToEdgeLogicalWidth(
+            plan_1280_800,
+            800.0F) == 800.0F);
+    assert(!pal4::inject::ShouldDrawOriginalUiPillarboxForVisibleRoots(
+        false, false, false, false, false));
+    assert(!pal4::inject::ShouldDrawOriginalUiPillarboxForVisibleRoots(
+        false, true, false, false, false));
+    assert(!pal4::inject::ShouldDrawOriginalUiPillarboxForVisibleRoots(
+        false, false, true, false, false));
+    assert(pal4::inject::ShouldDrawOriginalUiPillarboxForVisibleRoots(
+        false, true, true, false, false));
+    assert(pal4::inject::ShouldDrawOriginalUiPillarboxForVisibleRoots(
+        true, false, false, false, false));
+    assert(pal4::inject::ShouldDrawOriginalUiPillarboxForVisibleRoots(
+        false, false, false, true, false));
+    assert(!pal4::inject::ShouldDrawOriginalUiPillarboxForVisibleRoots(
+        false, true, true, false, true));
+    assert(!pal4::inject::ShouldDrawOriginalUiPillarboxForVisibleRoots(
+        false, false, false, true, true));
+    assert(pal4::inject::ShouldDrawOriginalUiPillarboxForVisibleRoots(
+        true, true, true, false, true));
+    const auto* in_game_toolbar_profile =
+        pal4::inject::FindWidescreenUiProfileByRootName("sysToolBar/Root");
+    assert(in_game_toolbar_profile);
+    assert(
+        in_game_toolbar_profile->pillarbox_policy ==
+        pal4::inject::WidescreenUiPillarboxPolicy::remove);
+    assert(in_game_toolbar_profile->rule_count == 2);
+    struct ExpectedInGameProfile {
+        const char* trigger_window_name;
+        std::size_t rule_count;
+    };
+    constexpr auto expected_in_game_profiles = std::to_array<ExpectedInGameProfile>({
+        {"sysToolBar/Root", 2},
+        {"frameToolbar/Root", 1},
+        {"decorator/Root", 3},
+        {"gameInfo/Frame", 1},
+        {"roleStateWindow/Root", 1},
+        {"PropertyWindow/Root", 7},
+        {"EquipmentWindow/Root", 7},
+        {"magicWindow/Root", 7},
+        {"SmithWindow/Root", 4},
+        {"MissionWindow/Root", 3},
+        {"SystemSetting/Root", 6},
+    });
+    for (const auto& expected : expected_in_game_profiles) {
+        const auto* profile = pal4::inject::FindWidescreenUiProfileByRootName(
+            expected.trigger_window_name);
+        assert(profile);
+        assert(profile->rule_count == expected.rule_count);
+    }
+    struct ExpectedTransitionalProfile {
+        const char* trigger_window_name;
+        std::size_t rule_count;
+        pal4::inject::WidescreenUiPillarboxPolicy policy;
+    };
+    constexpr auto expected_transitional_profiles =
+        std::to_array<ExpectedTransitionalProfile>({
+            {"loading/Root", 4, pal4::inject::WidescreenUiPillarboxPolicy::remove},
+            {"CombatMainWindow/Root", 4,
+             pal4::inject::WidescreenUiPillarboxPolicy::unchanged},
+            {"CombatRoleState/Root", 4,
+             pal4::inject::WidescreenUiPillarboxPolicy::unchanged},
+            {"CombatActionConsoleWindow/StaticControlPanel", 1,
+             pal4::inject::WidescreenUiPillarboxPolicy::unchanged},
+            {"CombatMagicSelectWindow/Root", 1,
+             pal4::inject::WidescreenUiPillarboxPolicy::unchanged},
+            {"CombatPropertySelectWindow/Root", 1,
+             pal4::inject::WidescreenUiPillarboxPolicy::unchanged},
+            {"CombatStuntSelectWindow/Root", 1,
+             pal4::inject::WidescreenUiPillarboxPolicy::unchanged},
+            {"CombatSelectWindow/Root", 1,
+             pal4::inject::WidescreenUiPillarboxPolicy::unchanged},
+            {"CombatEndingWindow/Root", 2,
+             pal4::inject::WidescreenUiPillarboxPolicy::unchanged},
+        });
+    for (const auto& expected : expected_transitional_profiles) {
+        const auto* profile = pal4::inject::FindWidescreenUiProfileByRootName(
+            expected.trigger_window_name);
+        assert(profile);
+        assert(profile->rule_count == expected.rule_count);
+        assert(profile->pillarbox_policy == expected.policy);
+    }
+    const auto profile_has_window_rule = [](
+        const pal4::inject::WidescreenUiProfile& profile,
+        const std::string_view window_name) {
+        for (std::size_t index = 0; index < profile.rule_count; ++index) {
+            if (profile.rules[index].window_name == window_name) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto* combat_main_profile =
+        pal4::inject::FindWidescreenUiProfileByRootName("CombatMainWindow/Root");
+    assert(combat_main_profile);
+    assert(!profile_has_window_rule(
+        *combat_main_profile, "CombatMainWindow/StaticActionSequence"));
+    assert(!profile_has_window_rule(
+        *combat_main_profile, "CombatMainWindow/StaticRole1"));
+    const auto* combat_ending_profile =
+        pal4::inject::FindWidescreenUiProfileByRootName("CombatEndingWindow/Root");
+    assert(combat_ending_profile);
+    assert(!profile_has_window_rule(
+        *combat_ending_profile, "CombatEndingWindow/PanelRole0"));
+    assert(!profile_has_window_rule(
+        *combat_ending_profile, "CombatEndingWindow/PanelRole3"));
     const float centered_ui_x =
         pal4::inject::ComputeCenteredUiLogicalX(plan_1920_1080, 102.0F);
     assert(centered_ui_x > 235.33F && centered_ui_x < 235.34F);
@@ -2746,10 +3228,12 @@ void MaybeRunIntegrationSmoke() {
 int main() {
     ConfigureNonInteractiveCrashDialogs();
     TestResolveRuntimeAddress();
+    TestMainMenuBrandingPlan();
     TestPackagedRuntimeLayoutPaths();
     TestLooseFileOverlayPaths();
     TestX86TrampolineCopiesLargeImmediateStackFrame();
     TestX86TrampolineCopiesTextScriptPrologue();
+    TestX86TrampolineCopiesRwCameraDispatchThunk();
     TestLooseFileLoadLogFormatting();
     TestHookInventory();
     TestHookManagerBootstrapReplacementCoverage();

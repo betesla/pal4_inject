@@ -502,6 +502,27 @@ bool IsWindowAttachedToActiveGuiSheet(
     return false;
 }
 
+bool IsNamedWindowVisibleOnActiveGuiSheet(
+    const CeguiBindings& bindings,
+    const char* const name,
+    bool* const visible,
+    std::string* error) {
+    if (!name || !visible || !bindings.window_is_visible) {
+        if (error) {
+            *error = "named-window visibility dependencies are unavailable";
+        }
+        return false;
+    }
+    void* window = nullptr;
+    if (!ResolveWindowByName(bindings, name, &window, error)) {
+        return false;
+    }
+    *visible = window &&
+        IsWindowAttachedToActiveGuiSheet(bindings, window) &&
+        bindings.window_is_visible(window, false);
+    return true;
+}
+
 const UiSnapshotNode* FindNodeByNameInsensitive(
     const UiSnapshotNode& node,
     const std::string_view name) {
@@ -514,6 +535,183 @@ const UiSnapshotNode* FindNodeByNameInsensitive(
         }
     }
     return nullptr;
+}
+
+bool IsAvailableMenuNode(const UiSnapshotNode* const node) {
+    return node && node->visible && node->enabled;
+}
+
+constexpr std::array<std::string_view, 7> kSystemMenuPageRoots{
+    "roleStateWindow/Root",
+    "PropertyWindow/Root",
+    "EquipmentWindow/Root",
+    "magicWindow/Root",
+    "SmithWindow/Root",
+    "MissionWindow/Root",
+    "SystemSetting/Root",
+};
+
+constexpr std::array<std::string_view, 10> kPrimaryMenuNavigationRoots{
+    "MainWindow/Root",
+    "loadWindow/Root",
+    "HelpWindow/Root",
+    "IntroductionWindow/Root",
+    "moviePreviewWindow/Root",
+    "picturePreviewWindow/Root",
+    "PictureViewWindow/Root",
+    "olInfo/Root",
+    "RepeatGameWindow/Root",
+    "WorldMap/Root",
+};
+
+constexpr std::array<std::string_view, 8> kCombatNavigationRoots{
+    "CombatMainWindow/Root",
+    "CombatRoleState/Root",
+    "CombatActionConsoleWindow/StaticControlPanel",
+    "CombatMagicSelectWindow/Root",
+    "CombatPropertySelectWindow/Root",
+    "CombatStuntSelectWindow/Root",
+    "CombatSelectWindow/Root",
+    "CombatEndingWindow/Root",
+};
+
+constexpr std::array<std::string_view, 7> kSystemMenuPageButtons{
+    "sysToolBar/Role",
+    "sysToolBar/Property",
+    "sysToolBar/Equipment",
+    "sysToolBar/Magic",
+    "sysToolBar/Forging",
+    "sysToolBar/Task",
+    "sysToolBar/System",
+};
+
+constexpr std::array<const char*, 3> kSystemMenuPreviousRoleButtons{
+    "PropertyWindow/PropertyLeftArrowButton",
+    "EquipmentWindow/BtnLeftArrow",
+    "magicWindow/BtnLeft",
+};
+
+constexpr std::array<const char*, 3> kSystemMenuNextRoleButtons{
+    "PropertyWindow/PropertyRightArrowButton",
+    "EquipmentWindow/BtnRightArrow",
+    "magicWindow/BtnRight",
+};
+
+using SystemMenuSubPageNames = std::array<std::string_view, 6>;
+constexpr std::array<SystemMenuSubPageNames, 7> kSystemMenuSubPageButtons{{
+    {},
+    {
+        "PropertyWindow/NewProp",
+        "PropertyWindow/PropCure",
+        "PropertyWindow/Attack",
+        "PropertyWindow/Auxiliary",
+        "PropertyWindow/PropMaterial",
+        "PropertyWindow/PropScenario",
+    },
+    {
+        "EquipmentWindow/BtnEquipmentClass5",
+        "EquipmentWindow/BtnEquipmentClass0",
+        "EquipmentWindow/BtnEquipmentClass1",
+        "EquipmentWindow/BtnEquipmentClass2",
+        "EquipmentWindow/BtnEquipmentClass3",
+        "EquipmentWindow/BtnEquipmentClass4",
+    },
+    {
+        "magicWindow/BtnStunt",
+        "magicWindow/BtnMagicWater",
+        "magicWindow/BtnMagicFire",
+        "magicWindow/BtnMagicThunder",
+        "magicWindow/BtnMagicAir",
+        "magicWindow/BtnMagicEarth",
+    },
+    {
+        "SmithWindow/ButtonFound",
+        "SmithWindow/ButtonSmithery",
+        "SmithWindow/ButtonAddMagic",
+        {},
+        {},
+        {},
+    },
+    {
+        "MissionWindow/BtnMission",
+        "MissionWindow/BtnScenario",
+        {},
+        {},
+        {},
+        {},
+    },
+    {
+        "SystemSetting/BtnSaveData",
+        "SystemSetting/BtnLoadData",
+        "SystemSetting/BtnSystemSetting",
+        "SystemSetting/BtnExit",
+        {},
+        {},
+    },
+}};
+
+template <std::size_t N>
+bool HasVisibleNamedNode(
+    const UiSnapshotNode& root,
+    const std::array<std::string_view, N>& names) {
+    for (const auto name : names) {
+        const auto* node = FindNodeByNameInsensitive(root, name);
+        if (node && node->visible) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void PopulateSystemMenuUiState(
+    const UiSnapshotTree& tree,
+    SystemMenuUiState* const state) {
+    if (!state) {
+        return;
+    }
+    *state = {};
+    const auto* popup_root =
+        FindNodeByNameInsensitive(tree.root, "menuWindow/Root");
+    const auto* close_button =
+        FindNodeByNameInsensitive(tree.root, "frameToolbar/btnClose");
+    state->visible =
+        HasVisibleNamedNode(tree.root, kSystemMenuPageRoots) ||
+        (popup_root && popup_root->visible) ||
+        (close_button && close_button->visible && close_button->enabled);
+    state->menu_navigation_visible =
+        HasVisibleNamedNode(tree.root, kPrimaryMenuNavigationRoots);
+}
+
+bool TryDispatchVisiblePushButton(
+    const CeguiBindings& bindings,
+    const char* const button_name,
+    std::string* error) {
+    void* button = nullptr;
+    if (!ResolveWindowByName(
+            bindings,
+            button_name,
+            &button,
+            error)) {
+        return false;
+    }
+    if (!button ||
+        !IsWindowAttachedToActiveGuiSheet(bindings, button) ||
+        !bindings.window_is_visible(button, false) ||
+        bindings.window_is_disabled(button, false)) {
+        if (error) {
+            error->clear();
+        }
+        return false;
+    }
+
+    OpaqueCeguiWindowEventArgs event_args{};
+    bindings.window_event_args_ctor(&event_args, button);
+    bindings.push_button_on_clicked(button, &event_args);
+    bindings.window_event_args_dtor(&event_args);
+    if (error) {
+        error->clear();
+    }
+    return true;
 }
 
 }  // namespace
@@ -535,49 +733,6 @@ bool ClickCachedUiSnapshotRef(const std::string_view ref, std::string* error) {
         return false;
     }
     return DispatchClientClick(node, error);
-}
-
-bool ClickLikelySystemMenuCloseButton(std::string* error) {
-    CeguiBindings bindings{};
-    if (!TryGetCeguiBindings(&bindings, error) ||
-        !bindings.window_event_args_ctor ||
-        !bindings.window_event_args_dtor ||
-        !bindings.push_button_on_clicked) {
-        return false;
-    }
-
-    void* close_button = nullptr;
-    if (!ResolveWindowByName(
-            bindings,
-            "frameToolbar/btnClose",
-            &close_button,
-            error)) {
-        return false;
-    }
-    if (!close_button) {
-        if (error) {
-            *error = "failed to locate system-menu close button frameToolbar/btnClose";
-        }
-        return false;
-    }
-    if ((bindings.window_is_visible &&
-         !bindings.window_is_visible(close_button, false)) ||
-        (bindings.window_is_disabled &&
-         bindings.window_is_disabled(close_button, false))) {
-        if (error) {
-            *error = "system-menu close button is not visible and enabled";
-        }
-        return false;
-    }
-
-    OpaqueCeguiWindowEventArgs event_args{};
-    bindings.window_event_args_ctor(&event_args, close_button);
-    bindings.push_button_on_clicked(close_button, &event_args);
-    bindings.window_event_args_dtor(&event_args);
-    if (error) {
-        error->clear();
-    }
-    return true;
 }
 
 bool QuerySystemMenuShellVisible(bool* const visible, std::string* error) {
@@ -608,11 +763,72 @@ bool QuerySystemMenuShellVisible(bool* const visible, std::string* error) {
     return true;
 }
 
-bool QuerySystemMenuState(
-    bool* const visible,
-    bool* const page_visible,
+bool TryActivateSystemMenuRoleSwitch(
+    const bool next,
     std::string* error) {
-    if (!visible || !page_visible) {
+    CeguiBindings bindings{};
+    if (!TryGetCeguiBindings(&bindings, error) ||
+        !bindings.window_is_visible ||
+        !bindings.window_is_disabled ||
+        !bindings.window_get_parent ||
+        !bindings.window_event_args_ctor ||
+        !bindings.window_event_args_dtor ||
+        !bindings.push_button_on_clicked) {
+        if (error && error->empty()) {
+            *error = "CEGUI role-switch dependencies are unavailable";
+        }
+        return false;
+    }
+
+    void* popup_root = nullptr;
+    if (!ResolveWindowByName(
+            bindings,
+            "menuWindow/Root",
+            &popup_root,
+            error)) {
+        return false;
+    }
+    if (popup_root &&
+        IsWindowAttachedToActiveGuiSheet(bindings, popup_root) &&
+        bindings.window_is_visible(popup_root, false)) {
+        if (error) {
+            error->clear();
+        }
+        return false;
+    }
+
+    const auto& button_names = next
+        ? kSystemMenuNextRoleButtons
+        : kSystemMenuPreviousRoleButtons;
+    for (const char* const button_name : button_names) {
+        std::string lookup_error;
+        if (TryDispatchVisiblePushButton(
+                bindings,
+                button_name,
+                &lookup_error)) {
+            if (error) {
+                error->clear();
+            }
+            return true;
+        }
+        if (!lookup_error.empty()) {
+            if (error) {
+                *error = std::move(lookup_error);
+            }
+            return false;
+        }
+    }
+
+    if (error) {
+        error->clear();
+    }
+    return false;
+}
+
+bool QuerySystemMenuState(
+    SystemMenuUiState* const state,
+    std::string* error) {
+    if (!state) {
         if (error) {
             *error = "system-menu state output pointer is null";
         }
@@ -623,27 +839,142 @@ bool QuerySystemMenuState(
     if (!CaptureUiSnapshotInternal(false, &tree, error)) {
         return false;
     }
-    constexpr std::array<std::string_view, 7> kSystemMenuPageRoots{
-        "roleStateWindow/Root",
-        "PropertyWindow/Root",
-        "EquipmentWindow/Root",
-        "magicWindow/Root",
-        "SmithWindow/Root",
-        "MissionWindow/Root",
-        "SystemSetting/Root",
-    };
-    *page_visible = false;
-    for (const auto name : kSystemMenuPageRoots) {
-        const auto* root = FindNodeByNameInsensitive(tree.root, name);
-        if (root && root->visible) {
-            *page_visible = true;
+    PopulateSystemMenuUiState(tree, state);
+    return true;
+}
+
+bool QueryGamepadNavigationUiState(
+    GamepadNavigationUiState* const state,
+    std::string* error) {
+    if (!state) {
+        if (error) {
+            *error = "gamepad navigation UI state output pointer is null";
+        }
+        return false;
+    }
+
+    UiSnapshotTree tree{};
+    if (!CaptureUiSnapshotInternal(false, &tree, error)) {
+        return false;
+    }
+
+    *state = {};
+    PopulateSystemMenuUiState(tree, &state->menu);
+    state->combat_navigation_visible =
+        HasVisibleNamedNode(tree.root, kCombatNavigationRoots);
+    const auto* action_wheel = FindNodeByNameInsensitive(
+        tree.root,
+        "CombatActionConsoleWindow/StaticControlPanel");
+    state->combat_action_wheel_visible =
+        action_wheel && action_wheel->visible;
+    return true;
+}
+
+bool QueryCombatNavigationUiState(
+    CombatNavigationUiState* const state,
+    std::string* error) {
+    if (!state) {
+        if (error) {
+            *error = "combat navigation UI state output pointer is null";
+        }
+        return false;
+    }
+
+    CeguiBindings bindings{};
+    if (!TryGetCeguiBindings(&bindings, error) ||
+        !bindings.window_is_visible ||
+        !bindings.window_get_parent) {
+        return false;
+    }
+
+    *state = {};
+    for (const auto name : kCombatNavigationRoots) {
+        const std::string owned_name{name};
+        bool visible = false;
+        if (!IsNamedWindowVisibleOnActiveGuiSheet(
+                bindings,
+                owned_name.c_str(),
+                &visible,
+                error)) {
+            return false;
+        }
+        state->visible = state->visible || visible;
+        if (name == "CombatActionConsoleWindow/StaticControlPanel") {
+            state->action_wheel_visible = visible;
         }
     }
-    const auto* close_button =
-        FindNodeByNameInsensitive(tree.root, "frameToolbar/btnClose");
-    const bool close_button_visible =
-        close_button && close_button->visible && close_button->enabled;
-    *visible = *page_visible || close_button_visible;
+    if (error) {
+        error->clear();
+    }
+    return true;
+}
+
+bool TryActivateCombatActionButton(
+    const CombatActionButton button,
+    std::string* error) {
+    CeguiBindings bindings{};
+    if (!TryGetCeguiBindings(&bindings, error) ||
+        !bindings.window_is_visible ||
+        !bindings.window_is_disabled ||
+        !bindings.window_get_parent ||
+        !bindings.window_event_args_ctor ||
+        !bindings.window_event_args_dtor ||
+        !bindings.push_button_on_clicked) {
+        if (error && error->empty()) {
+            *error = "CEGUI combat-action dependencies are unavailable";
+        }
+        return false;
+    }
+
+    const char* const button_name = button == CombatActionButton::attack
+        ? "CombatActionConsoleWindow/BtnAttack"
+        : "CombatActionConsoleWindow/BtnDefend";
+    return TryDispatchVisiblePushButton(bindings, button_name, error);
+}
+
+bool QuerySystemMenuNavigationState(
+    SystemMenuNavigationState* const state,
+    std::string* error) {
+    if (!state) {
+        if (error) {
+            *error = "system-menu navigation output pointer is null";
+        }
+        return false;
+    }
+
+    UiSnapshotTree tree{};
+    if (!CaptureUiSnapshotInternal(false, &tree, error)) {
+        return false;
+    }
+
+    *state = {};
+    for (std::size_t index = 0; index < kSystemMenuPageButtons.size(); ++index) {
+        const auto* button =
+            FindNodeByNameInsensitive(tree.root, kSystemMenuPageButtons[index]);
+        state->main_pages[index] = IsAvailableMenuNode(button);
+
+        const auto* page_root =
+            FindNodeByNameInsensitive(tree.root, kSystemMenuPageRoots[index]);
+        if (page_root && page_root->visible) {
+            state->current_main_page = static_cast<std::uint32_t>(index);
+            state->has_current_main_page = true;
+        }
+    }
+
+    if (!state->has_current_main_page) {
+        return true;
+    }
+
+    const auto& sub_page_names =
+        kSystemMenuSubPageButtons[state->current_main_page];
+    for (std::size_t index = 0; index < sub_page_names.size(); ++index) {
+        if (sub_page_names[index].empty()) {
+            continue;
+        }
+        const auto* button =
+            FindNodeByNameInsensitive(tree.root, sub_page_names[index]);
+        state->sub_pages[index] = IsAvailableMenuNode(button);
+    }
     return true;
 }
 

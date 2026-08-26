@@ -38,6 +38,11 @@
     - 置位 ready event
 
 ## Module Split
+- `src/launcher`
+  - `imgui_host.cpp`
+    - 初始化 Win32 + Direct3D 9 的 ImGui 宿主，并启用标准 XInput 导航；十字键、A 确认与 B 返回直接使用 ImGui 语义，不与游戏进程内的手柄映射共享状态
+  - `launcher_ui.cpp`
+    - 在 ImGui 空间寻路之上维护左栏主栏目/右栏子栏目焦点状态：左栏上下只更新栏目并保持左栏焦点，A 才对右栏发起无激活的 nav-init，B 从右栏恢复当前左栏项目；Start/Back 作为无弹窗时的启动/退出全局操作；嵌套设置 child 使用 `NavFlattened`，避免先停在子窗口边框再二次进入
 - `src/common`
   - `types.cpp`
     - 公共 enum / struct string conversion
@@ -121,18 +126,20 @@
     - CEGUI gui sheet 枚举
     - 最近一次 `snapshot_ui` 的 ref cache
     - `click_ui_ref / fill_ui_ref / type_text` runtime side effect
+    - 解析当前活动 `GUISheet` 上可见且启用的物品、装备、仙术角色箭头，并直接派发 `PushButton::onClicked`；小弹窗可见或当前页没有角色箭头时不截获普通左右导航
   - `cegui_renderer_hooks.cpp`
     - shared `CEGUI_Renderer_Constructor_2` widescreen pillarbox patch
     - object-local synthetic vtable for `active UI logical -> physical` 投影
-    - 原版 4:3 UI 走居中缩放时，只在白名单界面先绘制左右黑色 pillarbox 底板，再提交 CEGUI 队列；白名单覆盖主菜单族窗口和底部工具栏打开的角色/属性/装备/仙术/锻造/任务/系统设置窗口，普通 gameplay HUD 不绘制黑边遮罩，避免贴边元素被盖住
+    - 原版 4:3 UI 走居中缩放时，只在明确要求保留原比例的 profile 前先绘制左右黑色 pillarbox 底板，再提交 CEGUI 队列。已宽屏化的标题页面与游戏内系统菜单不再触发遮罩，帮助、制作人员等未安全拆分的复合页面仍可独立触发；普通 gameplay HUD 不绘制遮罩
     - 在普通 CEGUI 队列提交完成后绘制 `giTalk` 矢量喇叭、0～3 道音波和七段式百分比数字，保证提示位于游戏 UI 上层，并按 1.6 秒可见周期在末尾淡出
   - `battle_ui_layout_hooks.cpp`
     - `SetProperties_4C2550` 保留为纯透传 hook，不再承载战斗坐标修正
     - `RenderTextAndImage` 当前只负责 battle 自绘共享 sink 的位置投影
     - `ui_showCombatHint / ui_showCombatHint2` 浮动提示窗居中修正
-  - `hud_layout_fixups.cpp`
-    - gameplay HUD edge-anchor fixups for `minimap.xml` / `portrait.xml`
-    - runtime restore/apply path when widescreen renderer mode changes
+  - `widescreen_ui_profiles.cpp` / `hud_layout_fixups.cpp`
+    - 前者集中声明每个已识别根界面的黑边策略及子窗口布局规则；规则描述 `preserve / left_edge / right_edge / stretch_between_edges / offset_by_padding_factor`，并可附加纵向偏移，不在运行时钩子中散落页面特判
+    - 后者只处理当前活动 `GUISheet` 中的 profile，并在窗口首次出现时捕获原始位置、尺寸、最大尺寸和父级裁剪状态；关闭宽屏时精确恢复，WindowManager 中隐藏或残留页面不会被错误套用
+    - 常驻 `minimap.xml` / `portrait.xml` 使用左右边缘锚点；标题 `MainWindow`、`loadWindow`、`moviePreviewWindow`、`picturePreviewWindow`、`PictureViewWindow` 与 `olInfo` 按既有九宫格部件扩展边框，内容区保持居中；`MoviePlayWindow` 使用同一状态管理机制扩展播放边框。游戏内人物、物品、装备、仙术、锻造、任务、系统七页共用 `sysToolBar`、`frameToolbar`、`decorator` 与 `gameInfo` 外框 profile。`loading` 铺宽背景并补偿子节点位移以保持进度组居中；战斗主 HUD、角色状态栏、行动盘、三类选择窗、通用目标选择窗和结算页各自使用独立 profile。行动条小头像由战斗更新逻辑动态定位，不能和静态条框分开锚定，因此整组保持原位；结算 `PanelRole0..3` 也不进入静态 profile，由原版入场动画从共同起点展开为四列。帮助、制作人员和世界地图等整张/复合贴图 profile 明确保留原比例。项目早期手改 `ui_ab` 只用于比对历史效果，不作为官方布局证据。需要跨出 800×600 父窗口的元素会临时解除父级裁剪，连接条在提高最大宽度后再调用 `setWindowSize`
   - `bink_video_hooks.cpp`
     - `BinkPlayer_UpdateAndRender` seam
     - `fit` 保留完整画面；`fill_width_crop` 按屏幕宽度等比放大并居中裁剪上下区域
@@ -166,10 +173,13 @@
   - `bootstrap.cpp`
     - bootstrap 主流程
     - 复核 launcher 期请求的脚本模式，必要时补写并记录日志
+    - 在标题流程开始绘制前校验 IDA `0x8B9494` 的 12 字节数据槽，并将 `PAL4 v1.1` 窄替换为 `PAL V1.2.1`；不修改磁盘 EXE，字节不匹配会记录失败并阻止 runtime 声明完全 ready
   - `gamepad_runtime.cpp`
-    - 动态加载 XInput、轮询 0 号手柄、维护菜单上下文与按钮映射
-    - 仅由原生 `ProcessInputs` 入口轮询；默认 A 键不做界面分类，而把同一个空格键按下/松开同时镜像到 Win32 键盘路径与 PAL4 原生 InputManager 键码 `32`。原生状态注入首帧只推进一次以保留“刚按下 2”，后续帧才恢复为“按住 3”，使 UI、读档、对话和 3D 交互共享空格语义且不跳过一次性交互边沿；Start/F1 同时按七个内容页与 `frameToolbar/btnClose` 的实际状态切换整层系统菜单，并通过关闭按钮的 CEGUI 点击事件逐层收敛；B 在内容页执行一级 Esc 返回、在只剩工具栏的主页面触发关闭事件，因此可连续返回直至退出 UI，且不会在 3D 场景中借由 Esc 误开菜单；缓存为菜单状态时，同一输入入口检查关闭按钮能否沿父节点链连接到当前 `GUISheet`，而不是仅检查 WindowManager 中可能残留的对象及其局部 visible 标志；除刚打开菜单的四帧延迟外，连续两帧脱离当前 UI 树即清除菜单状态，使读档切场景后立即恢复移动，不从渲染帧或 timer 建立第二条轮询路径
-    - LB/RB 与 LT/RT 的分页键通过游戏线程上的 CEGUI 直连事件派发，避免 `SendInput` 的同帧按下/释放被菜单漏采样
+    - 动态加载 XInput、轮询 0 号手柄、维护菜单上下文与固定只读按钮映射
+    - 标题主界面和战斗界面都不能仅通过 `PALIV` 指针判定。十字键初次按下时以一次 CEGUI snapshot 同时读取主界面、系统菜单和 `Combat*` 活动根节点，再将本次按住周期锁定为普通 3D 快捷页、系统菜单导航或纯方向导航三种模式之一，避免战斗中误发 F1～F4，也避免长按过程中切换语义
+    - 仅由原生 `ProcessInputs` 入口轮询；默认 A 键把同一个空格键按下/松开同时镜像到 Win32 键盘路径与 PAL4 原生 InputManager 键码 `32`。原生状态注入首帧只推进一次以保留“刚按下 2”，后续帧才恢复为“按住 3”，使 UI、读档、对话和 3D 交互共享空格语义且不跳过一次性交互边沿。实体按钮动作经过统一的上下文解析：3D 场景中 Start=F7、LB=M、Back/B=无，主菜单或系统 UI 中 Start=无、Back/B=Esc、LB/RB=主分页；X=V、Y=C、L3=Tab。上下文敏感按钮首次按下时读取真实 UI 快照，避免仅凭 `PALIV` 对象误判标题界面。普通 3D 场景十字键按上/下/左/右发送 F1/F4/F2/F3；战斗活动根可见时四方向只发送 VK_UP/VK_DOWN/VK_LEFT/VK_RIGHT；系统 UI 中上下保持方向导航，左右则优先调用当前可见页面的角色箭头事件，当前页不支持换人或存在小弹窗时回退为普通左右导航。关闭菜单统一沿原版 Esc 的逐层返回路径处理，避免直接关闭父层后残留“使用/丢弃”等弹窗。页面快捷键在发送后只缓存菜单活动提示，同一输入入口仍通过 `frameToolbar/btnClose` 与当前 `GUISheet` 的连接关系校验真实状态。连续两帧脱离当前 UI 树即清除菜单状态，使读档切场景后立即恢复移动，不从渲染帧或 timer 建立第二条轮询路径
+    - 摇杆活动期间以 100 ms 间隔轻量检查当前活动 `Combat*` 根；一旦识别到战斗，空闲期间也继续低频刷新，直到战斗根消失，避免摇杆回中就丢失战斗状态。行动盘把左摇杆量化为五个 72° 外环扇区，并通过原版方向键邻接图收敛到相应类别；摇杆回中时先经“连续向上到仙术、再向下一次”的稳定路径回到中央攻击，然后才清空扇区状态，不读写私有 CEGUI 选择字节。行动盘可见时 B 按真实战斗根分流为 Esc，X/Y 通过可见、启用且仍挂在当前 `GUISheet` 的 `BtnAttack/BtnDefend` 原生点击事件直达攻击/防御；普通 3D 场景仍保留 B 无动作、X=V、Y=C。具体选择列表中左摇杆使用占优轴四向重复。战斗右摇杆只在离开径向死区期间累计目标 yaw/pitch；真正的相机 setter 延迟到 `RwCameraBeginUpdate`，位于战斗控制器逐帧覆盖之后、可见世界绘制之前。右摇杆回中会立即撤销渲染前覆盖，使选敌、头顶指针跟随、技能特写和脚本切镜可由下一次原生相机更新接管；非战斗场景仍由 `PlayerControlUpdate` 处理相机
+    - LB/RB 与 LT/RT 的分页键通过游戏线程上的 UI 按键 seam 派发，避免 `SendInput` 的同帧按下/释放被菜单漏采样；派发前从单次 UI snapshot 读取当前主页面和各页签的 `visible/enabled` 状态，循环时跳过尚未开放、隐藏或禁用的主/子页签。纵向当前页由手柄状态连续维护，并在主页面变化时归零，不采用 CEGUI 按钮的 `active/focused` 状态：页面关闭后旧按钮仍可能保持 active，但实际内容已经回到默认子页
     - 产出经过径向死区处理的左右摇杆状态；兼容模式才回写 W/A/S/D
     - 根据最近的有效手柄/鼠标输入控制光标；手柄模式维持 CEGUI 与 Win32 光标隐藏，鼠标模式读取 CEGUI `MouseCursor::isVisible()`，UI 中仅保留游戏光标、3D 场景仅保留原生光标，避免两枚指针同时显示
     - 过滤 3D 场景鼠标捕获产生的窗口中心回中消息，并对手柄到鼠标切换做短时去抖，避免把游戏自身的回中动作误判为鼠标接管
@@ -179,6 +189,7 @@
     - 通过活动相机前向/右向量构建相机相对方向，并用右摇杆更新 yaw/pitch
     - R3 默认读取当前镜头模式配置记录的原版距离，并调用原生相机距离 setter 在 `0.2× / 0.5× / 1.0× / 1.5×` 四档间循环
     - 左摇杆持续推动时维护独立的目标 yaw，并在中央相机矩阵入口阻断“角色转向带动跟随镜头、下一帧方向再次偏转”的反馈环
+    - 战斗相机维护独立目标姿态，并只对与当前活动 PAL4 相机绑定的 `RwCamera` 在 begin-update 前提交；提交前读取原生 `RwFrame` modelling matrix，以 `position + normalize(at) * distance` 恢复当帧战斗焦点，再用 PAL4 的“保留 target、反算 eye”模式叠加右摇杆角度，因此战斗脚本仍拥有选人、跟随和切镜控制权；离屏/替代相机因指针不匹配保持原样
     - 可选地在脚本 `SetCameraMode` 返回后恢复此前模式
 
 ## Current Behavior Boundary
@@ -202,6 +213,7 @@
   - `ui_showCombatHint`
   - `ui_showCombatHint2`
   - `Camera_UpdateMatrix`
+  - `RwCameraBeginUpdate`
   - `D3D9SetPresentParameters`
   - `BinkPlayer_UpdateAndRender`
 - 只做 inventory、不默认安装：

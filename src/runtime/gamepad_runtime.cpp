@@ -1,9 +1,11 @@
 #include "gamepad_runtime.h"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -38,7 +40,7 @@ constexpr int kMainPageCount = 7;
 constexpr std::uint32_t kRepeatInitialDelayMs = 300;
 constexpr std::uint32_t kRepeatIntervalMs = 110;
 constexpr std::uint32_t kGamepadToMouseDebounceMs = 250;
-constexpr std::uint8_t kSystemMenuCloseAllMaxSteps = 8;
+constexpr std::uint32_t kCombatUiQueryIntervalMs = 100;
 constexpr std::uint8_t kSystemMenuOpenValidationDelayFrames = 4;
 constexpr std::uint8_t kSystemMenuHiddenConfirmationFrames = 2;
 constexpr int kKeyCodeA = 97;
@@ -60,8 +62,6 @@ struct GamepadRuntime {
     bool load_attempted = false;
     bool connected = false;
     bool system_menu_active = false;
-    bool system_menu_cancel_pending = false;
-    std::uint8_t system_menu_close_all_steps_remaining = 0;
     std::uint8_t system_menu_validation_delay_frames = 0;
     std::uint8_t system_menu_hidden_frames = 0;
     GamepadInputContext context = GamepadInputContext::gameplay;
@@ -74,8 +74,16 @@ struct GamepadRuntime {
     bool hold_d = false;
     bool hold_space = false;
     bool raw_space_held = false;
-    bool hold_mouse_left = false;
+    GamepadDpadNavigationMode dpad_navigation_mode =
+        GamepadDpadNavigationMode::gameplay_shortcuts;
     DirectionRepeatState dpad_repeat{};
+    DirectionRepeatState combat_stick_repeat{};
+    GamepadCombatWheelSector combat_wheel_sector =
+        GamepadCombatWheelSector::none;
+    bool combat_analog_navigation_active = false;
+    bool combat_action_wheel_visible = false;
+    DWORD last_combat_ui_query_tick = 0;
+    DWORD last_combat_camera_tick = 0;
     std::array<GamepadRepeatState, kXbox360ButtonCount> button_repeat{};
     GamepadModernControlState modern_controls{};
     bool cursor_hide_requested = false;
@@ -341,35 +349,6 @@ bool TapUiSeamKey(const std::uint32_t virtual_key) {
         SendUiSeamKey(virtual_key, true);
 }
 
-LPARAM BuildMouseClientLParam() {
-    POINT point{};
-    if (!GetCursorPos(&point)) {
-        return 0;
-    }
-    HWND hwnd = GetForegroundWindow();
-    if (hwnd) {
-        ScreenToClient(hwnd, &point);
-    }
-    return MAKELPARAM(point.x, point.y);
-}
-
-void SetMouseLeftHeld(const bool pressed, GamepadRuntime* const runtime) {
-    if (!runtime || runtime->hold_mouse_left == pressed) {
-        return;
-    }
-    UiMessageCommand command{};
-    command.msg = pressed ? WM_LBUTTONDOWN : WM_LBUTTONUP;
-    command.wparam = pressed ? MK_LBUTTON : 0;
-    command.lparam = static_cast<std::uint32_t>(BuildMouseClientLParam());
-    command.bypass_os_queue = false;
-    std::string error;
-    const bool ok = DispatchUiMessageCommand(command, &error);
-    if (!ok && !error.empty()) {
-        GetRuntimeState().SetLastError(error);
-    }
-    runtime->hold_mouse_left = pressed && ok;
-}
-
 void SetHeldKey(
     const bool pressed,
     const int key_code,
@@ -398,7 +377,6 @@ void ReleaseGameplayHolds(GamepadRuntime* const runtime) {
     runtime->hold_s = false;
     runtime->hold_d = false;
     runtime->modern_controls = {};
-    SetMouseLeftHeld(false, runtime);
 }
 
 void ReleaseDirectKeyboardHolds(GamepadRuntime* const runtime) {
@@ -476,13 +454,29 @@ bool IsButtonJustPressed(
     return IsButtonPressed(current, button) && !IsButtonPressed(previous, button);
 }
 
-bool ClickSystemMenuClose() {
-    std::string error;
-    const bool clicked = ClickLikelySystemMenuCloseButton(&error);
-    if (!clicked && !error.empty()) {
-        GetRuntimeState().SetLastError(error);
+bool OpenSystemMenuPage(
+    GamepadRuntime* const runtime,
+    const std::uint32_t virtual_key) {
+    if (!runtime) {
+        return false;
     }
-    return clicked;
+    const bool dispatched = TapInjectedKey(virtual_key);
+    if (dispatched) {
+        runtime->system_menu_active = true;
+        if (virtual_key >= VK_F1 && virtual_key <= VK_F7) {
+            runtime->current_main_page = virtual_key - VK_F1;
+        }
+        runtime->current_vertical_page = 0;
+        runtime->system_menu_validation_delay_frames =
+            kSystemMenuOpenValidationDelayFrames;
+        runtime->system_menu_hidden_frames = 0;
+    }
+    ReleaseGameplayHolds(runtime);
+    LogGamepadEvent(
+        std::string("system_menu_page_key virtual_key=") +
+        std::to_string(virtual_key) +
+        " dispatched=" + (dispatched ? "1" : "0"));
+    return dispatched;
 }
 
 void ResetSystemMenuState(GamepadRuntime* const runtime) {
@@ -490,8 +484,6 @@ void ResetSystemMenuState(GamepadRuntime* const runtime) {
         return;
     }
     runtime->system_menu_active = false;
-    runtime->system_menu_cancel_pending = false;
-    runtime->system_menu_close_all_steps_remaining = 0;
     runtime->system_menu_validation_delay_frames = 0;
     runtime->system_menu_hidden_frames = 0;
     runtime->current_main_page = 0;
@@ -529,80 +521,6 @@ void SynchronizeSystemMenuShellVisibility(
     }
 }
 
-void ToggleSystemMenu(GamepadRuntime* const runtime) {
-    if (!runtime) {
-        return;
-    }
-
-    bool menu_visible = runtime->system_menu_active;
-    bool page_visible = false;
-    std::string query_error;
-    if (!QuerySystemMenuState(
-            &menu_visible,
-            &page_visible,
-            &query_error) &&
-        !query_error.empty()) {
-        GetRuntimeState().SetLastError(query_error);
-    }
-    if (menu_visible) {
-        if (ClickSystemMenuClose()) {
-            runtime->system_menu_close_all_steps_remaining =
-                kSystemMenuCloseAllMaxSteps;
-        }
-        runtime->system_menu_cancel_pending = false;
-    } else {
-        runtime->system_menu_active = true;
-        runtime->current_main_page = 0;
-        runtime->current_vertical_page = 0;
-        TapUiSeamKey(VK_F1);
-        runtime->system_menu_cancel_pending = false;
-        runtime->system_menu_close_all_steps_remaining = 0;
-        runtime->system_menu_validation_delay_frames =
-            kSystemMenuOpenValidationDelayFrames;
-        runtime->system_menu_hidden_frames = 0;
-    }
-    ReleaseGameplayHolds(runtime);
-}
-
-void ResolvePendingSystemMenuTransition(GamepadRuntime* const runtime) {
-    if (!runtime ||
-        (!runtime->system_menu_cancel_pending &&
-         runtime->system_menu_close_all_steps_remaining == 0)) {
-        return;
-    }
-
-    bool visible = true;
-    bool page_visible = false;
-    std::string error;
-    if (!QuerySystemMenuState(&visible, &page_visible, &error)) {
-        if (!error.empty()) {
-            GetRuntimeState().SetLastError(error);
-        }
-        runtime->system_menu_cancel_pending = false;
-        runtime->system_menu_close_all_steps_remaining = 0;
-        return;
-    }
-
-    runtime->system_menu_active = visible;
-    if (runtime->system_menu_close_all_steps_remaining != 0) {
-        if (!visible) {
-            runtime->system_menu_close_all_steps_remaining = 0;
-        } else if (ClickSystemMenuClose()) {
-            --runtime->system_menu_close_all_steps_remaining;
-        } else {
-            runtime->system_menu_close_all_steps_remaining = 0;
-        }
-    } else {
-        runtime->system_menu_cancel_pending = false;
-    }
-    if (!visible) {
-        runtime->current_main_page = 0;
-        runtime->current_vertical_page = 0;
-    }
-    LogGamepadEvent(std::string("menu_transition_resolved menu_visible=") +
-        (visible ? "1" : "0"));
-}
-
 void ExecuteImmediateAction(
     GamepadRuntime* const runtime,
     const GamepadAction action) {
@@ -616,29 +534,29 @@ void ExecuteImmediateAction(
         break;
     case GamepadAction::cancel:
         {
-            bool menu_visible = runtime->system_menu_active;
-            bool page_visible = false;
+            GamepadNavigationUiState navigation_state{};
             std::string error;
-            if (!QuerySystemMenuState(
-                    &menu_visible,
-                    &page_visible,
-                    &error) &&
-                !error.empty()) {
+            bool menu_navigation_visible = false;
+            bool combat_navigation_visible = false;
+            if (QueryGamepadNavigationUiState(&navigation_state, &error)) {
+                runtime->system_menu_active = navigation_state.menu.visible;
+                menu_navigation_visible =
+                    navigation_state.menu.menu_navigation_visible;
+                combat_navigation_visible =
+                    navigation_state.combat_navigation_visible;
+            } else if (!error.empty()) {
                 GetRuntimeState().SetLastError(error);
             }
-            runtime->system_menu_active = menu_visible;
-            const auto cancel_action = SelectSystemMenuCancelAction(
-                menu_visible,
-                page_visible);
-            if (cancel_action == SystemMenuCancelAction::close_root) {
-                if (ClickSystemMenuClose()) {
-                    runtime->system_menu_cancel_pending = true;
-                }
-            } else if (cancel_action == SystemMenuCancelAction::escape_nested) {
-                TapUiSeamKey(VK_ESCAPE);
-                runtime->system_menu_cancel_pending = true;
-            } else if (DetermineContext(*runtime) == GamepadInputContext::menu) {
-                TapUiSeamKey(VK_ESCAPE);
+            const auto context = DetermineContext(*runtime);
+            if (ShouldDispatchGamepadCancel(context) ||
+                menu_navigation_visible ||
+                combat_navigation_visible) {
+                const bool dispatched = TapUiSeamKey(VK_ESCAPE);
+                LogGamepadEvent(
+                    std::string("cancel context=") + ToString(context) +
+                    " combat=" +
+                    (combat_navigation_visible ? "1" : "0") +
+                    " dispatched=" + (dispatched ? "1" : "0"));
             }
         }
         ReleaseGameplayHolds(runtime);
@@ -650,14 +568,12 @@ void ExecuteImmediateAction(
         TapInjectedKey('F');
         break;
     case GamepadAction::map:
-        if (runtime->system_menu_active) {
-            TapUiSeamKey('M');
-        } else {
-            TapInjectedKey('M');
-        }
+        TapInjectedKey('M');
         break;
     case GamepadAction::switch_leader:
-        TapInjectedKey(VK_TAB);
+        if (DetermineContext(*runtime) == GamepadInputContext::gameplay) {
+            TapInjectedKey(VK_TAB);
+        }
         break;
     case GamepadAction::camera_distance_cycle:
         if (DetermineContext(*runtime) == GamepadInputContext::gameplay &&
@@ -667,7 +583,51 @@ void ExecuteImmediateAction(
         }
         break;
     case GamepadAction::system_menu:
-        ToggleSystemMenu(runtime);
+        OpenSystemMenuPage(runtime, VK_F7);
+        break;
+    case GamepadAction::place_marker:
+        if (DetermineContext(*runtime) == GamepadInputContext::gameplay) {
+            TapInjectedKey('V');
+        }
+        break;
+    case GamepadAction::maze_skill:
+        if (DetermineContext(*runtime) == GamepadInputContext::gameplay) {
+            TapInjectedKey('C');
+        }
+        break;
+    case GamepadAction::role_page:
+        OpenSystemMenuPage(runtime, VK_F1);
+        break;
+    case GamepadAction::item_page:
+        OpenSystemMenuPage(runtime, VK_F2);
+        break;
+    case GamepadAction::equipment_page:
+        OpenSystemMenuPage(runtime, VK_F3);
+        break;
+    case GamepadAction::magic_page:
+        OpenSystemMenuPage(runtime, VK_F4);
+        break;
+    case GamepadAction::system_page:
+        OpenSystemMenuPage(runtime, VK_F7);
+        break;
+    case GamepadAction::combat_attack:
+    case GamepadAction::combat_defend:
+        {
+            std::string error;
+            const bool attack = action == GamepadAction::combat_attack;
+            const bool dispatched = TryActivateCombatActionButton(
+                attack
+                    ? CombatActionButton::attack
+                    : CombatActionButton::defend,
+                &error);
+            if (!error.empty()) {
+                GetRuntimeState().SetLastError(error);
+            }
+            LogGamepadEvent(
+                std::string("combat_shortcut action=") +
+                (attack ? "attack" : "defend") +
+                " dispatched=" + (dispatched ? "1" : "0"));
+        }
         break;
     case GamepadAction::none:
     case GamepadAction::mouse_left:
@@ -692,31 +652,79 @@ void ExecutePageAction(
     if (!runtime || !runtime->system_menu_active) {
         return;
     }
+
+    SystemMenuNavigationState navigation{};
+    std::string error;
+    if (!QuerySystemMenuNavigationState(&navigation, &error)) {
+        if (!error.empty()) {
+            GetRuntimeState().SetLastError(error);
+        }
+        LogGamepadEvent(
+            std::string("page_action action=") + ToString(action) +
+            " skipped=navigation_snapshot_unavailable");
+        return;
+    }
+    if (navigation.has_current_main_page &&
+        runtime->current_main_page != navigation.current_main_page) {
+        runtime->current_main_page = navigation.current_main_page;
+        runtime->current_vertical_page = 0;
+    }
+
     if (action == GamepadAction::main_page_previous ||
         action == GamepadAction::main_page_next) {
         const int delta = action == GamepadAction::main_page_previous ? -1 : 1;
-        runtime->current_main_page = static_cast<std::uint32_t>(
-            WrapGamepadCycleIndex(
-                static_cast<int>(runtime->current_main_page), delta, kMainPageCount));
-        const bool dispatched =
-            TapUiSeamKey(VK_F1 + runtime->current_main_page);
+        const int next_page = FindNextAvailableGamepadPage(
+            static_cast<int>(runtime->current_main_page),
+            delta,
+            navigation.main_pages.data(),
+            kMainPageCount);
+        if (next_page < 0 ||
+            next_page == static_cast<int>(runtime->current_main_page)) {
+            LogGamepadEvent(
+                std::string("page_action action=") + ToString(action) +
+                " skipped=no_other_available_main_page");
+            return;
+        }
+        const bool dispatched = TapUiSeamKey(VK_F1 + next_page);
+        if (dispatched) {
+            runtime->current_main_page =
+                static_cast<std::uint32_t>(next_page);
+            runtime->current_vertical_page = 0;
+        }
         LogGamepadEvent(
             std::string("page_action action=") + ToString(action) +
-            " main_page=" + std::to_string(runtime->current_main_page) +
+            " main_page=" + std::to_string(next_page) +
             " dispatched=" + (dispatched ? "1" : "0"));
         return;
     }
+
+    if (!navigation.has_current_main_page) {
+        LogGamepadEvent(
+            std::string("page_action action=") + ToString(action) +
+            " skipped=no_active_main_page");
+        return;
+    }
     const int delta = action == GamepadAction::sub_page_previous ? -1 : 1;
-    runtime->current_vertical_page = static_cast<std::uint32_t>(
-        WrapGamepadCycleIndex(
-            static_cast<int>(runtime->current_vertical_page),
-            delta,
-            kVerticalPageCount));
-    const bool dispatched =
-        TapUiSeamKey('1' + runtime->current_vertical_page);
+    const int next_page = FindNextAvailableGamepadPage(
+        static_cast<int>(runtime->current_vertical_page),
+        delta,
+        navigation.sub_pages.data(),
+        kVerticalPageCount);
+    if (next_page < 0 ||
+        next_page == static_cast<int>(runtime->current_vertical_page)) {
+        LogGamepadEvent(
+            std::string("page_action action=") + ToString(action) +
+            " skipped=no_other_available_sub_page");
+        return;
+    }
+    const bool dispatched = TapUiSeamKey('1' + next_page);
+    if (dispatched) {
+        runtime->current_vertical_page =
+            static_cast<std::uint32_t>(next_page);
+    }
     LogGamepadEvent(
         std::string("page_action action=") + ToString(action) +
-        " sub_page=" + std::to_string(runtime->current_vertical_page) +
+        " sub_page=" + std::to_string(next_page) +
         " dispatched=" + (dispatched ? "1" : "0"));
 }
 
@@ -729,7 +737,6 @@ void UpdateMappedButtons(
     if (!runtime) {
         return;
     }
-    bool mouse_left_held = false;
     std::array<bool, kXbox360ButtonCount> pressed_buttons{};
     for (std::size_t index = 0; index < kXbox360ButtonCount; ++index) {
         pressed_buttons[index] = IsButtonPressed(
@@ -740,16 +747,59 @@ void UpdateMappedButtons(
         mapping,
         GamepadAction::confirm,
         pressed_buttons);
+    GamepadInputContext input_context = DetermineContext(*runtime);
+    constexpr std::array context_sensitive_buttons{
+        Xbox360Button::b,
+        Xbox360Button::x,
+        Xbox360Button::y,
+        Xbox360Button::back,
+        Xbox360Button::start,
+        Xbox360Button::left_shoulder,
+        Xbox360Button::right_shoulder,
+        Xbox360Button::left_trigger,
+        Xbox360Button::right_trigger,
+    };
+    bool context_sensitive_button_just_pressed = false;
+    for (const auto button : context_sensitive_buttons) {
+        if (IsButtonJustPressed(current, previous, button)) {
+            context_sensitive_button_just_pressed = true;
+            break;
+        }
+    }
+    bool combat_navigation_visible = false;
+    bool combat_action_wheel_visible = false;
+    if (context_sensitive_button_just_pressed) {
+        GamepadNavigationUiState navigation_state{};
+        std::string error;
+        if (QueryGamepadNavigationUiState(&navigation_state, &error)) {
+            combat_navigation_visible =
+                navigation_state.combat_navigation_visible;
+            combat_action_wheel_visible =
+                navigation_state.combat_action_wheel_visible;
+            if (navigation_state.menu.visible) {
+                runtime->system_menu_active = true;
+                input_context = GamepadInputContext::system_menu;
+            } else if (navigation_state.menu.menu_navigation_visible) {
+                input_context = GamepadInputContext::menu;
+            }
+        } else if (!error.empty()) {
+            GetRuntimeState().SetLastError(error);
+        }
+    }
     for (std::size_t index = 0; index < kXbox360ButtonCount; ++index) {
         const auto button = static_cast<Xbox360Button>(index);
-        const auto action = GetGamepadBinding(mapping, button);
+        const auto action = ResolveGamepadActionForContext(
+            button,
+            GetGamepadBinding(mapping, button),
+            input_context,
+            combat_navigation_visible,
+            combat_action_wheel_visible);
         const bool pressed = pressed_buttons[index];
         if (action == GamepadAction::confirm) {
             runtime->button_repeat[index] = {};
             continue;
         }
         if (action == GamepadAction::mouse_left) {
-            mouse_left_held = mouse_left_held || pressed;
             runtime->button_repeat[index] = {};
             continue;
         }
@@ -775,7 +825,6 @@ void UpdateMappedButtons(
         space_held,
         kKeyCodeSpace,
         &runtime->raw_space_held);
-    SetMouseLeftHeld(mouse_left_held && !runtime->system_menu_active, runtime);
 }
 
 void DispatchRepeatedDpad(
@@ -793,11 +842,220 @@ void DispatchRepeatedDpad(
     }
 }
 
+void DispatchRepeatedRoleSwitchOrDpad(
+    const bool pressed,
+    GamepadRepeatState* const repeat,
+    const bool next,
+    const std::uint32_t fallback_virtual_key,
+    const DWORD now_ms) {
+    if (!ConsumeGamepadRepeat(
+            pressed,
+            now_ms,
+            kRepeatInitialDelayMs,
+            kRepeatIntervalMs,
+            repeat)) {
+        return;
+    }
+
+    std::string error;
+    if (TryActivateSystemMenuRoleSwitch(next, &error)) {
+        LogGamepadEvent(std::string("role_switch direction=") +
+            (next ? "next" : "previous") + " dispatched=1");
+        return;
+    }
+    if (!error.empty()) {
+        GetRuntimeState().SetLastError(error);
+    }
+    TapUiSeamKey(fallback_virtual_key);
+}
+
+std::uint32_t VirtualKeyForDpadDirection(
+    const GamepadDpadDirection direction) noexcept {
+    switch (direction) {
+    case GamepadDpadDirection::up:
+        return VK_UP;
+    case GamepadDpadDirection::down:
+        return VK_DOWN;
+    case GamepadDpadDirection::left:
+        return VK_LEFT;
+    case GamepadDpadDirection::right:
+        return VK_RIGHT;
+    }
+    return 0;
+}
+
+void DispatchCombatWheelSelection(
+    GamepadRuntime* const runtime,
+    const GamepadAnalogStick& stick) {
+    if (!runtime) {
+        return;
+    }
+    const auto sector = SelectGamepadCombatWheelSector(
+        stick,
+        runtime->combat_wheel_sector);
+    if (sector == runtime->combat_wheel_sector) {
+        return;
+    }
+    runtime->combat_wheel_sector = sector;
+    const auto plan = BuildGamepadCombatWheelNavigationPlan(sector);
+    for (std::size_t index = 0; index < plan.count; ++index) {
+        const auto virtual_key = VirtualKeyForDpadDirection(
+            plan.directions[index]);
+        if (virtual_key != 0) {
+            TapUiSeamKey(virtual_key);
+        }
+    }
+    LogGamepadEvent(
+        std::string("combat_wheel sector=") +
+        std::to_string(static_cast<unsigned int>(sector)) +
+        " steps=" + std::to_string(plan.count));
+}
+
+void DispatchCombatStickNavigation(
+    GamepadRuntime* const runtime,
+    const GamepadAnalogStick& stick,
+    const DWORD now_ms) {
+    if (!runtime) {
+        return;
+    }
+    constexpr float kNavigationMagnitude = 0.35F;
+    const bool active = stick.magnitude >= kNavigationMagnitude;
+    const bool horizontal = std::fabs(stick.x) > std::fabs(stick.y);
+    const bool up = active && !horizontal && stick.y > 0.0F;
+    const bool down = active && !horizontal && stick.y < 0.0F;
+    const bool left = active && horizontal && stick.x < 0.0F;
+    const bool right = active && horizontal && stick.x > 0.0F;
+    DispatchRepeatedDpad(
+        up, &runtime->combat_stick_repeat.up, VK_UP, now_ms);
+    DispatchRepeatedDpad(
+        down, &runtime->combat_stick_repeat.down, VK_DOWN, now_ms);
+    DispatchRepeatedDpad(
+        left, &runtime->combat_stick_repeat.left, VK_LEFT, now_ms);
+    DispatchRepeatedDpad(
+        right, &runtime->combat_stick_repeat.right, VK_RIGHT, now_ms);
+}
+
+void RefreshCombatAnalogUiState(
+    GamepadRuntime* const runtime,
+    const DWORD now_ms) {
+    if (!runtime) {
+        return;
+    }
+    CombatNavigationUiState ui_state{};
+    std::string error;
+    if (QueryCombatNavigationUiState(&ui_state, &error)) {
+        const bool wheel_changed =
+            runtime->combat_action_wheel_visible !=
+            ui_state.action_wheel_visible;
+        runtime->combat_analog_navigation_active = ui_state.visible;
+        runtime->combat_action_wheel_visible =
+            ui_state.action_wheel_visible;
+        if (wheel_changed || !ui_state.visible) {
+            runtime->combat_wheel_sector =
+                GamepadCombatWheelSector::none;
+            runtime->combat_stick_repeat = {};
+        }
+    } else if (!error.empty()) {
+        GetRuntimeState().SetLastError(error);
+    }
+    runtime->last_combat_ui_query_tick = now_ms;
+}
+
 void UpdateDpadNavigation(
     GamepadRuntime* const runtime,
     const XINPUT_STATE& current,
+    const XINPUT_STATE& previous,
+    const GamepadInputContext context,
     const DWORD now_ms) {
     if (!runtime) {
+        return;
+    }
+    constexpr WORD kDpadMask =
+        XINPUT_GAMEPAD_DPAD_UP |
+        XINPUT_GAMEPAD_DPAD_DOWN |
+        XINPUT_GAMEPAD_DPAD_LEFT |
+        XINPUT_GAMEPAD_DPAD_RIGHT;
+    const bool any_pressed =
+        (current.Gamepad.wButtons & kDpadMask) != 0;
+    const bool any_was_pressed =
+        (previous.Gamepad.wButtons & kDpadMask) != 0;
+    if (!any_pressed) {
+        runtime->dpad_navigation_mode =
+            GamepadDpadNavigationMode::gameplay_shortcuts;
+    } else if (!any_was_pressed) {
+        bool system_menu_visible = false;
+        bool menu_navigation_visible = false;
+        bool combat_navigation_visible = false;
+        if (context == GamepadInputContext::gameplay) {
+            GamepadNavigationUiState ui_state{};
+            std::string error;
+            if (QueryGamepadNavigationUiState(&ui_state, &error)) {
+                system_menu_visible = ui_state.menu.visible;
+                menu_navigation_visible =
+                    ui_state.menu.menu_navigation_visible;
+                combat_navigation_visible =
+                    ui_state.combat_navigation_visible;
+                if (system_menu_visible) {
+                    runtime->system_menu_active = true;
+                }
+            } else if (!error.empty()) {
+                GetRuntimeState().SetLastError(error);
+            }
+        }
+        runtime->dpad_navigation_mode =
+            SelectGamepadDpadNavigationMode(
+                context,
+                system_menu_visible,
+                menu_navigation_visible,
+                combat_navigation_visible);
+        const char* mode_name = "gameplay";
+        if (runtime->dpad_navigation_mode ==
+            GamepadDpadNavigationMode::plain_ui) {
+            mode_name = "ui";
+        } else if (runtime->dpad_navigation_mode ==
+                   GamepadDpadNavigationMode::system_menu) {
+            mode_name = "system_menu";
+        }
+        LogGamepadEvent(
+            std::string("dpad_navigation mode=") +
+            mode_name +
+            " context=" + ToString(context) +
+            " visible_menu=" +
+            ((system_menu_visible || menu_navigation_visible) ? "1" : "0") +
+            " visible_combat=" +
+            (combat_navigation_visible ? "1" : "0"));
+    }
+    if (runtime->dpad_navigation_mode ==
+        GamepadDpadNavigationMode::gameplay_shortcuts) {
+        constexpr std::array shortcuts{
+            std::pair{XINPUT_GAMEPAD_DPAD_UP, GamepadDpadDirection::up},
+            std::pair{XINPUT_GAMEPAD_DPAD_DOWN, GamepadDpadDirection::down},
+            std::pair{XINPUT_GAMEPAD_DPAD_LEFT, GamepadDpadDirection::left},
+            std::pair{XINPUT_GAMEPAD_DPAD_RIGHT, GamepadDpadDirection::right},
+        };
+        std::array<GamepadRepeatState*, 4> repeat_states{
+            &runtime->dpad_repeat.up,
+            &runtime->dpad_repeat.down,
+            &runtime->dpad_repeat.left,
+            &runtime->dpad_repeat.right,
+        };
+        for (std::size_t index = 0; index < shortcuts.size(); ++index) {
+            const auto [mask, direction] = shortcuts[index];
+            const bool pressed = (current.Gamepad.wButtons & mask) != 0;
+            const bool was_pressed = (previous.Gamepad.wButtons & mask) != 0;
+            auto* const repeat = repeat_states[index];
+            if (!pressed) {
+                *repeat = {};
+                continue;
+            }
+            repeat->was_pressed = true;
+            repeat->next_repeat_ms = now_ms + kRepeatInitialDelayMs;
+            if (!was_pressed) {
+                ExecuteImmediateAction(
+                    runtime,
+                    SelectGameplayDpadAction(direction));
+            }
+        }
         return;
     }
     DispatchRepeatedDpad(
@@ -810,6 +1068,22 @@ void UpdateDpadNavigation(
         &runtime->dpad_repeat.down,
         VK_DOWN,
         now_ms);
+    if (runtime->dpad_navigation_mode ==
+        GamepadDpadNavigationMode::system_menu) {
+        DispatchRepeatedRoleSwitchOrDpad(
+            (current.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) != 0,
+            &runtime->dpad_repeat.left,
+            false,
+            VK_LEFT,
+            now_ms);
+        DispatchRepeatedRoleSwitchOrDpad(
+            (current.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0,
+            &runtime->dpad_repeat.right,
+            true,
+            VK_RIGHT,
+            now_ms);
+        return;
+    }
     DispatchRepeatedDpad(
         (current.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) != 0,
         &runtime->dpad_repeat.left,
@@ -822,27 +1096,87 @@ void UpdateDpadNavigation(
         now_ms);
 }
 
-void UpdateGameplayStick(
+void UpdateAnalogSticks(
     GamepadRuntime* const runtime,
     const XINPUT_STATE& current,
-    const GamepadInputContext context) {
+    const GamepadInputContext context,
+    const DWORD now_ms) {
     if (!runtime || context != GamepadInputContext::gameplay) {
+        DisableGamepadBattleCamera();
         ReleaseGameplayHolds(runtime);
         return;
     }
+
+    const auto left_stick = BuildGamepadAnalogStick(
+        current.Gamepad.sThumbLX,
+        current.Gamepad.sThumbLY,
+        XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+    const auto right_stick = BuildGamepadAnalogStick(
+        current.Gamepad.sThumbRX,
+        current.Gamepad.sThumbRY,
+        XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
+    const bool analog_active =
+        left_stick.magnitude > 0.0F || right_stick.magnitude > 0.0F;
+    if ((analog_active || runtime->combat_analog_navigation_active) &&
+        (runtime->last_combat_ui_query_tick == 0 ||
+         now_ms - runtime->last_combat_ui_query_tick >=
+             kCombatUiQueryIntervalMs)) {
+        RefreshCombatAnalogUiState(runtime, now_ms);
+    }
+    if (!analog_active) {
+        if (ShouldCenterGamepadCombatWheel(
+                runtime->combat_action_wheel_visible,
+                runtime->combat_wheel_sector,
+                left_stick.magnitude)) {
+            DispatchCombatWheelSelection(runtime, left_stick);
+        }
+        if (runtime->combat_analog_navigation_active) {
+            DisableGamepadBattleCamera();
+            ReleaseGameplayHolds(runtime);
+            runtime->modern_controls = {};
+            runtime->combat_stick_repeat = {};
+            runtime->last_combat_camera_tick = 0;
+            return;
+        }
+        DisableGamepadBattleCamera();
+        runtime->combat_action_wheel_visible = false;
+        runtime->combat_wheel_sector = GamepadCombatWheelSector::none;
+        runtime->combat_stick_repeat = {};
+        runtime->last_combat_ui_query_tick = 0;
+        runtime->last_combat_camera_tick = 0;
+    } else if (runtime->combat_analog_navigation_active) {
+        ReleaseGameplayHolds(runtime);
+        runtime->modern_controls = {};
+        if (runtime->combat_action_wheel_visible) {
+            runtime->combat_stick_repeat = {};
+            DispatchCombatWheelSelection(runtime, left_stick);
+        } else {
+            runtime->combat_wheel_sector =
+                GamepadCombatWheelSector::none;
+            DispatchCombatStickNavigation(runtime, left_stick, now_ms);
+        }
+        float delta_seconds = 0.0F;
+        if (runtime->last_combat_camera_tick != 0) {
+            delta_seconds = std::min(
+                static_cast<float>(
+                    now_ms - runtime->last_combat_camera_tick) /
+                    1000.0F,
+                0.1F);
+        }
+        runtime->last_combat_camera_tick = now_ms;
+        UpdateGamepadCameraOnly(right_stick, delta_seconds);
+        return;
+    }
+
+    DisableGamepadBattleCamera();
+
     if (GetRuntimeState().GamepadModernControls()) {
         runtime->hold_w = false;
         runtime->hold_a = false;
         runtime->hold_s = false;
         runtime->hold_d = false;
-        runtime->modern_controls.movement = BuildGamepadAnalogStick(
-            current.Gamepad.sThumbLX,
-            current.Gamepad.sThumbLY,
-            XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
-        runtime->modern_controls.camera = BuildGamepadAnalogStick(
-            current.Gamepad.sThumbRX,
-            current.Gamepad.sThumbRY,
-            XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
+        runtime->modern_controls.movement = left_stick;
+        runtime->modern_controls.camera = right_stick;
         runtime->modern_controls.active = true;
         return;
     }
@@ -873,8 +1207,17 @@ void UpdateConnectionState(
     ResetSystemMenuState(runtime);
     runtime->context = GamepadInputContext::gameplay;
     runtime->previous_state = {};
+    runtime->dpad_navigation_mode =
+        GamepadDpadNavigationMode::gameplay_shortcuts;
     runtime->dpad_repeat = {};
+    runtime->combat_stick_repeat = {};
+    runtime->combat_wheel_sector = GamepadCombatWheelSector::none;
+    runtime->combat_analog_navigation_active = false;
+    runtime->combat_action_wheel_visible = false;
+    runtime->last_combat_ui_query_tick = 0;
+    runtime->last_combat_camera_tick = 0;
     runtime->button_repeat = {};
+    DisableGamepadBattleCamera();
     ReleaseDirectKeyboardHolds(runtime);
     ReleaseGameplayHolds(runtime);
 }
@@ -888,6 +1231,7 @@ void TickGamepadInputCore() {
     auto& runtime = GetGamepadRuntime();
 
     if (!state.GamepadEnabled()) {
+        DisableGamepadBattleCamera();
         RequestGamepadCursorHidden(&runtime, false);
         ReleaseDirectKeyboardHolds(&runtime);
         ReleaseGameplayHolds(&runtime);
@@ -929,12 +1273,12 @@ void TickGamepadInputCore() {
     const DWORD now_ms = GetTickCount();
     const XINPUT_STATE previous = runtime.previous_state;
 
-    ResolvePendingSystemMenuTransition(&runtime);
     SynchronizeSystemMenuShellVisibility(&runtime);
     UpdateMappedButtons(&runtime, current, previous, mapping, now_ms);
-    const auto context = DetermineContext(runtime);
-    UpdateDpadNavigation(&runtime, current, now_ms);
-    UpdateGameplayStick(&runtime, current, context);
+    auto context = DetermineContext(runtime);
+    UpdateDpadNavigation(&runtime, current, previous, context, now_ms);
+    context = DetermineContext(runtime);
+    UpdateAnalogSticks(&runtime, current, context, now_ms);
 
     if (context != runtime.context) {
         LogGamepadEvent(std::string("context=") + ToString(context));

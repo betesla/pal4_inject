@@ -49,6 +49,15 @@ constexpr std::array kActions{
     EnumName{GamepadAction::main_page_next, std::string_view{"main_page_next"}},
     EnumName{GamepadAction::sub_page_previous, std::string_view{"sub_page_previous"}},
     EnumName{GamepadAction::sub_page_next, std::string_view{"sub_page_next"}},
+    EnumName{GamepadAction::place_marker, std::string_view{"place_marker"}},
+    EnumName{GamepadAction::maze_skill, std::string_view{"maze_skill"}},
+    EnumName{GamepadAction::role_page, std::string_view{"role_page"}},
+    EnumName{GamepadAction::item_page, std::string_view{"item_page"}},
+    EnumName{GamepadAction::equipment_page, std::string_view{"equipment_page"}},
+    EnumName{GamepadAction::magic_page, std::string_view{"magic_page"}},
+    EnumName{GamepadAction::system_page, std::string_view{"system_page"}},
+    EnumName{GamepadAction::combat_attack, std::string_view{"combat_attack"}},
+    EnumName{GamepadAction::combat_defend, std::string_view{"combat_defend"}},
 };
 
 template <typename Enum, std::size_t N>
@@ -115,8 +124,8 @@ Xbox360GamepadMapping DefaultXbox360GamepadMapping() noexcept {
     Xbox360GamepadMapping mapping{};
     SetGamepadBinding(&mapping, Xbox360Button::a, GamepadAction::confirm);
     SetGamepadBinding(&mapping, Xbox360Button::b, GamepadAction::cancel);
-    SetGamepadBinding(&mapping, Xbox360Button::x, GamepadAction::mouse_left);
-    SetGamepadBinding(&mapping, Xbox360Button::y, GamepadAction::run_toggle);
+    SetGamepadBinding(&mapping, Xbox360Button::x, GamepadAction::place_marker);
+    SetGamepadBinding(&mapping, Xbox360Button::y, GamepadAction::maze_skill);
     SetGamepadBinding(
         &mapping, Xbox360Button::left_shoulder, GamepadAction::main_page_previous);
     SetGamepadBinding(
@@ -125,8 +134,8 @@ Xbox360GamepadMapping DefaultXbox360GamepadMapping() noexcept {
         &mapping, Xbox360Button::left_trigger, GamepadAction::sub_page_previous);
     SetGamepadBinding(
         &mapping, Xbox360Button::right_trigger, GamepadAction::sub_page_next);
-    SetGamepadBinding(&mapping, Xbox360Button::back, GamepadAction::map);
-    SetGamepadBinding(&mapping, Xbox360Button::start, GamepadAction::system_menu);
+    SetGamepadBinding(&mapping, Xbox360Button::back, GamepadAction::cancel);
+    SetGamepadBinding(&mapping, Xbox360Button::start, GamepadAction::system_page);
     SetGamepadBinding(&mapping, Xbox360Button::left_thumb, GamepadAction::switch_leader);
     SetGamepadBinding(
         &mapping,
@@ -142,6 +151,42 @@ GamepadAction GetGamepadBinding(
     return index < mapping.bindings.size()
         ? mapping.bindings[index]
         : GamepadAction::none;
+}
+
+GamepadAction ResolveGamepadActionForContext(
+    const Xbox360Button button,
+    const GamepadAction configured_action,
+    const GamepadInputContext context,
+    const bool combat_navigation_visible,
+    const bool combat_action_wheel_visible) noexcept {
+    if (context == GamepadInputContext::gameplay) {
+        if (combat_action_wheel_visible) {
+            if (button == Xbox360Button::x) {
+                return GamepadAction::combat_attack;
+            }
+            if (button == Xbox360Button::y) {
+                return GamepadAction::combat_defend;
+            }
+        }
+        if (button == Xbox360Button::left_shoulder &&
+            configured_action == GamepadAction::main_page_previous) {
+            return GamepadAction::map;
+        }
+        if (button == Xbox360Button::b) {
+            return combat_navigation_visible
+                ? GamepadAction::cancel
+                : GamepadAction::none;
+        }
+        if (button == Xbox360Button::back) {
+            return GamepadAction::none;
+        }
+        return configured_action;
+    }
+    if (button == Xbox360Button::start &&
+        configured_action == GamepadAction::system_page) {
+        return GamepadAction::none;
+    }
+    return configured_action;
 }
 
 bool IsMappedGamepadActionPressed(
@@ -250,6 +295,52 @@ GamepadAnalogStick BuildGamepadAnalogStick(
         0.0F,
         1.0F);
     return {direction_x * magnitude, direction_y * magnitude, magnitude};
+}
+
+bool TryDeriveGamepadCameraOrbitFocus(
+    const GamepadCameraVector3& position,
+    const GamepadCameraVector3& forward,
+    const float distance,
+    GamepadCameraVector3* const out) noexcept {
+    if (!out ||
+        !std::isfinite(position.x) ||
+        !std::isfinite(position.y) ||
+        !std::isfinite(position.z) ||
+        !std::isfinite(forward.x) ||
+        !std::isfinite(forward.y) ||
+        !std::isfinite(forward.z) ||
+        !std::isfinite(distance) ||
+        distance <= 0.0F) {
+        return false;
+    }
+
+    const float forward_length = std::sqrt(
+        forward.x * forward.x +
+        forward.y * forward.y +
+        forward.z * forward.z);
+    if (!std::isfinite(forward_length) || forward_length <= 0.0001F) {
+        return false;
+    }
+
+    const float scale = distance / forward_length;
+    const GamepadCameraVector3 focus{
+        position.x + forward.x * scale,
+        position.y + forward.y * scale,
+        position.z + forward.z * scale,
+    };
+    if (!std::isfinite(focus.x) ||
+        !std::isfinite(focus.y) ||
+        !std::isfinite(focus.z)) {
+        return false;
+    }
+    *out = focus;
+    return true;
+}
+
+bool ShouldApplyGamepadBattleCamera(
+    const float right_stick_magnitude) noexcept {
+    return std::isfinite(right_stick_magnitude) &&
+        right_stick_magnitude > 0.0F;
 }
 
 bool HasGamepadInputActivity(
@@ -392,6 +483,160 @@ int WrapGamepadCycleIndex(
     return next;
 }
 
+int FindNextAvailableGamepadPage(
+    const int current,
+    const int delta,
+    const bool* const available,
+    const int item_count) noexcept {
+    if (!available || item_count <= 0 || delta == 0) {
+        return -1;
+    }
+    const int direction = delta < 0 ? -1 : 1;
+    int candidate = WrapGamepadCycleIndex(current, 0, item_count);
+    for (int checked = 0; checked < item_count; ++checked) {
+        candidate = WrapGamepadCycleIndex(candidate, direction, item_count);
+        if (available[candidate]) {
+            return candidate;
+        }
+    }
+    return -1;
+}
+
+GamepadAction SelectGameplayDpadAction(
+    const GamepadDpadDirection direction) noexcept {
+    switch (direction) {
+    case GamepadDpadDirection::up:
+        return GamepadAction::role_page;
+    case GamepadDpadDirection::down:
+        return GamepadAction::magic_page;
+    case GamepadDpadDirection::left:
+        return GamepadAction::item_page;
+    case GamepadDpadDirection::right:
+        return GamepadAction::equipment_page;
+    }
+    return GamepadAction::none;
+}
+
+bool ShouldDispatchGamepadCancel(
+    const GamepadInputContext context) noexcept {
+    return context != GamepadInputContext::gameplay;
+}
+
+GamepadDpadNavigationMode SelectGamepadDpadNavigationMode(
+    const GamepadInputContext context,
+    const bool system_menu_visible,
+    const bool menu_navigation_visible,
+    const bool combat_navigation_visible) noexcept {
+    if (combat_navigation_visible) {
+        return GamepadDpadNavigationMode::plain_ui;
+    }
+    if (context == GamepadInputContext::system_menu ||
+        system_menu_visible) {
+        return GamepadDpadNavigationMode::system_menu;
+    }
+    if (context == GamepadInputContext::menu ||
+        menu_navigation_visible) {
+        return GamepadDpadNavigationMode::plain_ui;
+    }
+    return GamepadDpadNavigationMode::gameplay_shortcuts;
+}
+
+GamepadCombatWheelSector SelectGamepadCombatWheelSector(
+    const GamepadAnalogStick& stick,
+    const GamepadCombatWheelSector previous) noexcept {
+    constexpr float kEngageMagnitude = 0.45F;
+    constexpr float kReleaseMagnitude = 0.25F;
+    constexpr float kSectorHalfAngleDegrees = 36.0F;
+    constexpr float kAngularHysteresisDegrees = 10.0F;
+    constexpr float kRadiansToDegrees = 57.29577951308232F;
+
+    if (stick.magnitude <= kReleaseMagnitude) {
+        return GamepadCombatWheelSector::none;
+    }
+    if (previous == GamepadCombatWheelSector::none &&
+        stick.magnitude < kEngageMagnitude) {
+        return GamepadCombatWheelSector::none;
+    }
+
+    const float angle_degrees =
+        std::atan2(stick.y, stick.x) * kRadiansToDegrees;
+    const auto sector_center = [](const GamepadCombatWheelSector sector) {
+        switch (sector) {
+        case GamepadCombatWheelSector::magic:
+            return 90.0F;
+        case GamepadCombatWheelSector::stunt:
+            return 18.0F;
+        case GamepadCombatWheelSector::flee:
+            return -54.0F;
+        case GamepadCombatWheelSector::defend:
+            return -126.0F;
+        case GamepadCombatWheelSector::article:
+            return 162.0F;
+        case GamepadCombatWheelSector::none:
+            return 0.0F;
+        }
+        return 0.0F;
+    };
+    if (previous != GamepadCombatWheelSector::none) {
+        const float previous_distance = std::fabs(std::remainder(
+            angle_degrees - sector_center(previous),
+            360.0F));
+        if (previous_distance <=
+            kSectorHalfAngleDegrees + kAngularHysteresisDegrees) {
+            return previous;
+        }
+    }
+
+    if (angle_degrees >= 54.0F && angle_degrees < 126.0F) {
+        return GamepadCombatWheelSector::magic;
+    }
+    if (angle_degrees >= -18.0F && angle_degrees < 54.0F) {
+        return GamepadCombatWheelSector::stunt;
+    }
+    if (angle_degrees >= -90.0F && angle_degrees < -18.0F) {
+        return GamepadCombatWheelSector::flee;
+    }
+    if (angle_degrees >= -162.0F && angle_degrees < -90.0F) {
+        return GamepadCombatWheelSector::defend;
+    }
+    return GamepadCombatWheelSector::article;
+}
+
+GamepadCombatWheelNavigationPlan BuildGamepadCombatWheelNavigationPlan(
+    const GamepadCombatWheelSector sector) noexcept {
+    using Direction = GamepadDpadDirection;
+    switch (sector) {
+    case GamepadCombatWheelSector::magic:
+        return {{{Direction::up, Direction::up, Direction::up}}, 3};
+    case GamepadCombatWheelSector::stunt:
+        return {{{Direction::right, Direction::right, Direction::right}}, 3};
+    case GamepadCombatWheelSector::flee:
+        return {{{Direction::right, Direction::right, Direction::right,
+                  Direction::down, Direction::down}}, 5};
+    case GamepadCombatWheelSector::defend:
+        return {{{Direction::left, Direction::left, Direction::left,
+                  Direction::down, Direction::down}}, 5};
+    case GamepadCombatWheelSector::article:
+        return {{{Direction::left, Direction::left, Direction::left}}, 3};
+    case GamepadCombatWheelSector::none:
+        // First converge on the top Magic node from any outer node, then move
+        // down once along PAL4's original navigation graph to the centre
+        // Attack node. This avoids depending on private CEGUI selection bytes.
+        return {{{Direction::up, Direction::up, Direction::up,
+                  Direction::down}}, 4};
+    }
+    return {};
+}
+
+bool ShouldCenterGamepadCombatWheel(
+    const bool action_wheel_visible,
+    const GamepadCombatWheelSector previous,
+    const float stick_magnitude) noexcept {
+    return action_wheel_visible &&
+        previous != GamepadCombatWheelSector::none &&
+        stick_magnitude <= 0.25F;
+}
+
 bool ConsumeGamepadRepeat(
     const bool pressed,
     const std::uint32_t now_ms,
@@ -427,17 +672,6 @@ GamepadCursorPresentation SelectGamepadCursorPresentation(
     return cegui_cursor_visible
         ? GamepadCursorPresentation::cegui_only
         : GamepadCursorPresentation::native_only;
-}
-
-SystemMenuCancelAction SelectSystemMenuCancelAction(
-    const bool menu_visible,
-    const bool page_visible) noexcept {
-    if (!menu_visible) {
-        return SystemMenuCancelAction::none;
-    }
-    return page_visible
-        ? SystemMenuCancelAction::escape_nested
-        : SystemMenuCancelAction::close_root;
 }
 
 }  // namespace pal4::inject

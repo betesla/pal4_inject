@@ -102,6 +102,7 @@ bool CopyRelocatingX86Bytes(
         case 0x39:
         case 0x8A:
         case 0x8B:
+        case 0x89:
         case 0x8D: {
             const std::size_t len = modrm_length(code + prefix_len, remaining - prefix_len, 1, 0);
             return len == 0 ? 0 : len + prefix_len;

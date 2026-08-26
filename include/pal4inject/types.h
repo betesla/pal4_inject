@@ -83,6 +83,7 @@ enum class HookId : std::uint8_t {
     crt_message_box,
     movement_collision_check,
     ui_frame_manager_set_cursor,
+    rw_camera_begin_update,
 };
 
 struct HookDescriptor {

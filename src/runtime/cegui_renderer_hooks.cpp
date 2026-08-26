@@ -25,6 +25,7 @@
 #include "pal4inject/ida_addresses.h"
 #include "hud_layout_fixups.h"
 #include "runtime_state.h"
+#include "widescreen_ui_profiles.h"
 
 namespace pal4::inject {
 namespace {
@@ -86,9 +87,10 @@ float AlignToHalfPixel(const float value) noexcept {
 }
 
 struct PillarboxUiMarkers {
-    bool main_menu_family_root = false;
+    bool pillarboxed_main_menu_root = false;
     bool sys_toolbar_root = false;
-    bool toolbar_overlay_root = false;
+    bool sys_toolbar_widescreen_adapted = false;
+    bool frame_toolbar_root = false;
     bool btn_system_setting = false;
     bool setting_window_0 = false;
     bool setting_window_1 = false;
@@ -105,49 +107,12 @@ bool WindowNameMatches(
         actual.ends_with(expected_leaf);
 }
 
-constexpr std::array<std::string_view, 10> kMainMenuFamilyRootNames = {
-    "MainWindow/Root",
-    "loadWindow/Root",
-    "CastWindow/Root",
-    "IntroductionWindow/Root",
-    "HelpWindow/Root",
-    "gameInfo/Root",
-    "moviePreviewWindow/Root",
-    "PalTestWindow/Root",
-    "PictureViewWindow/Root",
-    "picturePreviewWindow/Root",
-};
-
-bool IsMainMenuFamilyRootName(const std::string_view name) noexcept {
-    for (const std::string_view candidate : kMainMenuFamilyRootNames) {
-        if (WindowNameMatches(name, candidate)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 bool IsInGameToolbarBaseRootName(const std::string_view name) noexcept {
     return WindowNameMatches(name, "sysToolBar/Root");
 }
 
-constexpr std::array<std::string_view, 7> kToolbarOverlayRootNames = {
-    "roleStateWindow/Root",
-    "PropertyWindow/Root",
-    "EquipmentWindow/Root",
-    "magicWindow/Root",
-    "SmithWindow/Root",
-    "MissionWindow/Root",
-    "SystemSetting/Root",
-};
-
-bool IsToolbarOverlayRootName(const std::string_view name) noexcept {
-    for (const std::string_view candidate : kToolbarOverlayRootNames) {
-        if (WindowNameMatches(name, candidate)) {
-            return true;
-        }
-    }
-    return false;
+bool IsInGameFrameToolbarRootName(const std::string_view name) noexcept {
+    return WindowNameMatches(name, "frameToolbar/Root");
 }
 
 void CollectVisiblePillarboxUiMarkers(
@@ -167,17 +132,23 @@ void CollectVisiblePillarboxUiMarkers(
         return;
     }
 
-    const bool locally_visible = bindings.window_is_visible(window, true);
+    const bool actually_visible = bindings.window_is_visible(window, false);
     const OpaqueCeguiString* const name_string = bindings.window_get_name(window);
     const char* const name_chars = name_string ? bindings.cegui_string_c_str(name_string) : nullptr;
     const std::string_view name = name_chars ? std::string_view(name_chars) : std::string_view();
-    if (locally_visible) {
-        if (IsMainMenuFamilyRootName(name)) {
-            markers->main_menu_family_root = true;
-        } else if (IsInGameToolbarBaseRootName(name)) {
+    if (actually_visible) {
+        const WidescreenUiProfile* const profile = FindWidescreenUiProfileByRootName(name);
+        if (profile &&
+            profile->pillarbox_policy == WidescreenUiPillarboxPolicy::preserve) {
+            markers->pillarboxed_main_menu_root = true;
+        }
+        if (IsInGameToolbarBaseRootName(name)) {
             markers->sys_toolbar_root = true;
-        } else if (IsToolbarOverlayRootName(name)) {
-            markers->toolbar_overlay_root = true;
+            markers->sys_toolbar_widescreen_adapted =
+                profile &&
+                profile->pillarbox_policy == WidescreenUiPillarboxPolicy::remove;
+        } else if (IsInGameFrameToolbarRootName(name)) {
+            markers->frame_toolbar_root = true;
         } else if (WindowNameMatches(name, "BtnSystemSetting")) {
             markers->btn_system_setting = true;
         } else if (WindowNameMatches(name, "SettingWindow0")) {
@@ -211,13 +182,14 @@ bool HasVisiblePillarboxWhitelistedUi() {
     PillarboxUiMarkers markers{};
     CollectVisiblePillarboxUiMarkers(bindings, gui_sheet, 0, &markers);
 
-    const bool main_menu_context = markers.main_menu_family_root;
-    const bool toolbar_overlay_visible = markers.toolbar_overlay_root;
     const bool system_setting_visible =
         markers.btn_system_setting && (markers.setting_window_0 || markers.setting_window_1);
-    return main_menu_context ||
-        toolbar_overlay_visible ||
-        system_setting_visible;
+    return ShouldDrawOriginalUiPillarboxForVisibleRoots(
+        markers.pillarboxed_main_menu_root,
+        markers.sys_toolbar_root,
+        markers.frame_toolbar_root,
+        system_setting_visible,
+        markers.sys_toolbar_widescreen_adapted);
 }
 
 void WriteUiVertex(
@@ -1132,7 +1104,7 @@ void ApplyCeguiRendererHookMode(const HookMode mode) {
         }
         ApplyRendererStateToObject(reinterpret_cast<void*>(renderer_key), *state, enabled);
     }
-    RefreshWidescreenHudLayoutFixups();
+    RefreshWidescreenUiLayoutProfiles();
 }
 
 }  // namespace pal4::inject

@@ -106,6 +106,7 @@ add_library(pal4_inject_common STATIC
     src/common/ui_input_plan.cpp
     src/common/ui_snapshot.cpp
     src/common/types.cpp
+    src/common/widescreen_ui_layout.cpp
 )
 target_include_directories(pal4_inject_common
     PUBLIC
@@ -140,6 +141,7 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/ipc_server.cpp
     src/runtime/loose_file_load_log.cpp
     src/runtime/loose_file_hooks.cpp
+    src/runtime/main_menu_branding_patch.cpp
     src/runtime/media_observation_hooks.cpp
     src/runtime/memory_debug_runtime.cpp
     src/runtime/minimap_hooks.cpp
@@ -150,6 +152,7 @@ add_library(pal4_inject_runtime_core STATIC
     src/runtime/runtime_state.cpp
     src/runtime/system_message_box_hook.cpp
     src/runtime/ui_snapshot_runtime.cpp
+    src/runtime/widescreen_ui_profiles.cpp
     src/runtime/x86_trampoline.cpp
 )
 target_include_directories(pal4_inject_runtime_core

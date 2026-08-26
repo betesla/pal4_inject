@@ -932,7 +932,7 @@ int __cdecl Hook_ProcessInputs() {
     auto& state = GetRuntimeState();
     state.IncrementHookCall(HookId::process_inputs);
     DrainMainThreadUiQueue();
-    RefreshWidescreenHudLayoutFixups();
+    RefreshWidescreenUiLayoutProfiles();
     LogLowLevelObserveOnlyHook(HookId::process_inputs, nullptr);
     const auto mode = state.GetHookMode(HookId::process_inputs);
     if (!state.GamepadEnabled() || mode == HookMode::observe_only ||

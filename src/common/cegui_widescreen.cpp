@@ -31,6 +31,15 @@ float ComputeWidescreenHudLogicalX(
     }
 }
 
+float ComputeWidescreenEdgeToEdgeLogicalWidth(
+    const CeguiWidescreenPlan& plan,
+    const float base_logical_width) noexcept {
+    if (!plan.apply || plan.use_original_variant) {
+        return base_logical_width;
+    }
+    return base_logical_width + 2.0F * plan.logical_horizontal_padding;
+}
+
 float ComputeCenteredUiLogicalX(
     const CeguiWidescreenPlan& plan,
     const float base_logical_x) noexcept {
@@ -103,6 +112,19 @@ bool ShouldDrawOriginalUiPillarboxMask(const CeguiWidescreenPlan& plan) noexcept
         plan.uniform_scale > 0.0F &&
         plan.draw_pillarbox &&
         plan.horizontal_bias_pixels > kPillarboxEpsilonPixels;
+}
+
+bool ShouldDrawOriginalUiPillarboxForVisibleRoots(
+    const bool pillarboxed_main_menu_root_visible,
+    const bool system_toolbar_root_visible,
+    const bool frame_toolbar_root_visible,
+    const bool system_setting_visible,
+    const bool in_game_system_menu_widescreen_adapted) noexcept {
+    const bool in_game_system_menu_visible =
+        system_toolbar_root_visible && frame_toolbar_root_visible;
+    return pillarboxed_main_menu_root_visible ||
+        (!in_game_system_menu_widescreen_adapted &&
+         (in_game_system_menu_visible || system_setting_visible));
 }
 
 }  // namespace pal4::inject
