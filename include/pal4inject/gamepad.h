@@ -170,11 +170,8 @@ void SetGamepadBinding(
 
 GamepadDigitalAxes BuildGamepadDigitalAxes(int x, int y, int deadzone) noexcept;
 GamepadAnalogStick BuildGamepadAnalogStick(int x, int y, int deadzone) noexcept;
-bool TryDeriveGamepadCameraOrbitFocus(
-    const GamepadCameraVector3& position,
-    const GamepadCameraVector3& forward,
-    float distance,
-    GamepadCameraVector3* out) noexcept;
+bool IsValidGamepadCameraOrbitFocus(
+    const GamepadCameraVector3& focus) noexcept;
 bool ShouldApplyGamepadBattleCamera(float right_stick_magnitude) noexcept;
 bool HasGamepadInputActivity(
     std::uint16_t buttons,

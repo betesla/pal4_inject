@@ -297,44 +297,11 @@ GamepadAnalogStick BuildGamepadAnalogStick(
     return {direction_x * magnitude, direction_y * magnitude, magnitude};
 }
 
-bool TryDeriveGamepadCameraOrbitFocus(
-    const GamepadCameraVector3& position,
-    const GamepadCameraVector3& forward,
-    const float distance,
-    GamepadCameraVector3* const out) noexcept {
-    if (!out ||
-        !std::isfinite(position.x) ||
-        !std::isfinite(position.y) ||
-        !std::isfinite(position.z) ||
-        !std::isfinite(forward.x) ||
-        !std::isfinite(forward.y) ||
-        !std::isfinite(forward.z) ||
-        !std::isfinite(distance) ||
-        distance <= 0.0F) {
-        return false;
-    }
-
-    const float forward_length = std::sqrt(
-        forward.x * forward.x +
-        forward.y * forward.y +
-        forward.z * forward.z);
-    if (!std::isfinite(forward_length) || forward_length <= 0.0001F) {
-        return false;
-    }
-
-    const float scale = distance / forward_length;
-    const GamepadCameraVector3 focus{
-        position.x + forward.x * scale,
-        position.y + forward.y * scale,
-        position.z + forward.z * scale,
-    };
-    if (!std::isfinite(focus.x) ||
-        !std::isfinite(focus.y) ||
-        !std::isfinite(focus.z)) {
-        return false;
-    }
-    *out = focus;
-    return true;
+bool IsValidGamepadCameraOrbitFocus(
+    const GamepadCameraVector3& focus) noexcept {
+    return std::isfinite(focus.x) &&
+        std::isfinite(focus.y) &&
+        std::isfinite(focus.z);
 }
 
 bool ShouldApplyGamepadBattleCamera(

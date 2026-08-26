@@ -189,7 +189,7 @@
     - 通过活动相机前向/右向量构建相机相对方向，并用右摇杆更新 yaw/pitch
     - R3 默认读取当前镜头模式配置记录的原版距离，并调用原生相机距离 setter 在 `0.2× / 0.5× / 1.0× / 1.5×` 四档间循环
     - 左摇杆持续推动时维护独立的目标 yaw，并在中央相机矩阵入口阻断“角色转向带动跟随镜头、下一帧方向再次偏转”的反馈环
-    - 战斗相机维护独立目标姿态，并只对与当前活动 PAL4 相机绑定的 `RwCamera` 在 begin-update 前提交；提交前读取原生 `RwFrame` modelling matrix，以 `position + normalize(at) * distance` 恢复当帧战斗焦点，再用 PAL4 的“保留 target、反算 eye”模式叠加右摇杆角度，因此战斗脚本仍拥有选人、跟随和切镜控制权；离屏/替代相机因指针不匹配保持原样
+    - 战斗相机维护独立目标姿态，并只对与当前活动 PAL4 相机绑定的 `RwCamera` 在 begin-update 前提交；提交前直接保存相机 `+0x74/+0x78/+0x7C` 的权威 target，再用 PAL4 的“保留 target、反算 eye”模式叠加右摇杆角度，因此战斗脚本仍拥有选人、跟随和切镜控制权；不再从上一帧 RenderWare 视图矩阵反推焦点，离屏/替代相机因指针不匹配保持原样
     - 可选地在脚本 `SetCameraMode` 返回后恢复此前模式
 
 ## Current Behavior Boundary

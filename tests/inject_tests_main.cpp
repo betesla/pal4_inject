@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <cstdio>
 #include <sstream>
@@ -1468,21 +1469,12 @@ void TestGamepadLogic() {
     assert(std::fabs(diagonal.x - 0.7071F) < 0.001F);
     assert(std::fabs(diagonal.y - 0.7071F) < 0.001F);
     assert(std::fabs(diagonal.magnitude - 1.0F) < 0.001F);
-    pal4::inject::GamepadCameraVector3 battle_focus{};
-    assert(pal4::inject::TryDeriveGamepadCameraOrbitFocus(
-        {100.0F, 25.0F, -50.0F},
-        {0.0F, 0.0F, 2.0F},
-        452.0F,
-        &battle_focus));
-    assert(std::fabs(battle_focus.x - 100.0F) < 0.001F);
-    assert(std::fabs(battle_focus.y - 25.0F) < 0.001F);
-    assert(std::fabs(battle_focus.z - 402.0F) < 0.001F);
-    assert(!pal4::inject::TryDeriveGamepadCameraOrbitFocus(
-        {}, {}, 452.0F, &battle_focus));
-    assert(!pal4::inject::TryDeriveGamepadCameraOrbitFocus(
-        {}, {0.0F, 0.0F, 1.0F}, 0.0F, &battle_focus));
-    assert(!pal4::inject::TryDeriveGamepadCameraOrbitFocus(
-        {}, {0.0F, 0.0F, 1.0F}, 452.0F, nullptr));
+    assert(pal4::inject::IsValidGamepadCameraOrbitFocus(
+        {100.0F, 25.0F, -50.0F}));
+    assert(!pal4::inject::IsValidGamepadCameraOrbitFocus(
+        {std::nanf(""), 25.0F, -50.0F}));
+    assert(!pal4::inject::IsValidGamepadCameraOrbitFocus(
+        {100.0F, std::numeric_limits<float>::infinity(), -50.0F}));
     assert(!pal4::inject::ShouldApplyGamepadBattleCamera(0.0F));
     assert(!pal4::inject::ShouldApplyGamepadBattleCamera(-0.1F));
     assert(!pal4::inject::ShouldApplyGamepadBattleCamera(std::nanf("")));

@@ -53,10 +53,6 @@ constexpr std::ptrdiff_t kPlayerYawOffset = 164;
 constexpr std::ptrdiff_t kPlayerAnimationOffset = 368;
 constexpr float kGamepadTurnSpeedDegreesPerSecond = 360.0F;
 constexpr float kGamepadWalkTurnThresholdDegrees = 20.0F;
-constexpr std::ptrdiff_t kRwObjectParentOffset = 4;
-constexpr std::ptrdiff_t kRwFrameModellingAtOffset = 48;
-constexpr std::ptrdiff_t kRwFrameModellingPositionOffset = 64;
-
 std::uintptr_t MainModuleBase() {
     auto& state = GetRuntimeState();
     std::uintptr_t base = state.MainModuleBase();
@@ -104,33 +100,28 @@ void DisableBattleCameraControl() noexcept {
 }
 
 bool TryCaptureNativeBattleCameraFocus(
-    void* const rw_camera,
     float* const camera,
     GamepadCameraVector3* const focus) noexcept {
-    if (!rw_camera || !camera || !focus) {
+    if (!camera || !focus) {
         return false;
     }
 
     __try {
-        // RwCamera inherits RwObjectHasFrame, whose RwObject parent points to
-        // the attached RwFrame. The modelling matrix begins at RwFrame+0x10;
-        // its `at` and `pos` members are therefore at +0x30 and +0x40.
-        const auto* const rw_camera_bytes =
-            reinterpret_cast<const std::byte*>(rw_camera);
-        const auto* const frame = *reinterpret_cast<const std::byte* const*>(
-            rw_camera_bytes + kRwObjectParentOffset);
-        if (!frame) {
+        // Camera_UpdateMatrix(mode=1) treats camera[29..31] as the
+        // authoritative orbit focus and derives camera[26..28] (the eye)
+        // from yaw, pitch and distance. Read that native target directly;
+        // deriving it from the RenderWare frame would inherit the previous
+        // user-adjusted view matrix instead of the current scripted focus.
+        const GamepadCameraVector3 native_focus{
+            camera[29],
+            camera[30],
+            camera[31],
+        };
+        if (!IsValidGamepadCameraOrbitFocus(native_focus)) {
             return false;
         }
-        const auto* const forward = reinterpret_cast<const float*>(
-            frame + kRwFrameModellingAtOffset);
-        const auto* const position = reinterpret_cast<const float*>(
-            frame + kRwFrameModellingPositionOffset);
-        return TryDeriveGamepadCameraOrbitFocus(
-            {position[0], position[1], position[2]},
-            {forward[0], forward[1], forward[2]},
-            camera[18],
-            focus);
+        *focus = native_focus;
+        return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
@@ -594,18 +585,18 @@ void ApplyGamepadBattleCameraBeforeRender(void* const rw_camera) noexcept {
         GamepadCameraVector3 native_focus{};
         if (set_yaw &&
             set_pitch &&
-            TryCaptureNativeBattleCameraFocus(
-                rw_camera,
-                camera,
-                &native_focus) &&
+            TryCaptureNativeBattleCameraFocus(camera, &native_focus) &&
             TrySetCameraOrbitFocus(camera, native_focus)) {
             // `1` makes PAL4 preserve camera.target and derive camera.eye.
-            // The target above came from the unmodified battle RwFrame at
-            // hook entry, so scripts keep ownership of focus/follow changes.
+            // The target above is the native camera's authoritative focus,
+            // so scripts keep ownership of focus/follow changes.
             set_yaw(
                 camera,
                 g_battle_camera_yaw.load(std::memory_order_relaxed),
                 1);
+            // Restore the exact same native focus before the second matrix
+            // rebuild as an explicit invariant between both setters.
+            TrySetCameraOrbitFocus(camera, native_focus);
             set_pitch(
                 camera,
                 g_battle_camera_pitch.load(std::memory_order_relaxed),
