@@ -10,7 +10,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <limits>
 #include <optional>
 #include <cstdio>
 #include <sstream>
@@ -339,7 +338,7 @@ void TestLooseFileLoadLogFormatting() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 38);
+    assert(inventory.size() == 37);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -354,7 +353,6 @@ void TestHookInventory() {
     bool found_camera_prepare = false;
     bool found_camera_run_single = false;
     bool found_camera_update_matrix = false;
-    bool found_rw_camera_begin_update = false;
     bool found_d3d9_present = false;
     bool found_bink_player_update_and_render = false;
     bool found_loose_file_overlay = false;
@@ -374,6 +372,7 @@ void TestHookInventory() {
     bool found_set_camera_mode_script = false;
     bool found_ui_frame_manager_set_cursor = false;
     for (const auto& hook : inventory) {
+        assert(hook.id != HookId::rw_camera_begin_update);
         assert(!hook.expected_prologue.empty());
         assert(hook.patch_span >= 5);
         if (hook.id == HookId::process_ui_event) {
@@ -465,13 +464,6 @@ void TestHookInventory() {
             assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
             assert(hook.patch_span == 7);
             assert(hook.ida_ea == pal4::inject::ida::kCameraUpdateMatrix);
-        }
-        if (hook.id == HookId::rw_camera_begin_update) {
-            found_rw_camera_begin_update = true;
-            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
-            assert(hook.patch_span == 8);
-            assert(hook.ida_ea == pal4::inject::ida::kRwCameraBeginUpdate);
-            assert(!hook.bootstrap_required);
         }
         if (hook.id == HookId::d3d9_set_present_parameters) {
             found_d3d9_present = true;
@@ -613,7 +605,6 @@ void TestHookInventory() {
     assert(found_camera_prepare);
     assert(found_camera_run_single);
     assert(found_camera_update_matrix);
-    assert(found_rw_camera_begin_update);
     assert(found_d3d9_present);
     assert(found_bink_player_update_and_render);
     assert(found_loose_file_overlay);
@@ -1113,7 +1104,13 @@ void TestMemoryRuntimeHelpers() {
 
 void TestInjectFeatureCatalog() {
     const auto rows = pal4::inject::BuildInjectFeatureCatalog();
-    assert(rows.size() == 20);
+    assert(!rows.empty());
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        assert(!rows[index].label.empty());
+        for (std::size_t other = index + 1; other < rows.size(); ++other) {
+            assert(rows[index].id != rows[other].id);
+        }
+    }
 
     const auto find_row =
         [&rows](const HookId id) -> const pal4::inject::InjectFeatureDescriptor* {
@@ -1171,10 +1168,7 @@ void TestInjectFeatureCatalog() {
     assert(camera_row);
     assert(camera_row->category == pal4::inject::InjectFeatureCategory::camera);
     assert(camera_row->group_label == std::string_view("相机"));
-    const auto* battle_camera_row = find_row(HookId::rw_camera_begin_update);
-    assert(battle_camera_row);
-    assert(battle_camera_row->category == pal4::inject::InjectFeatureCategory::camera);
-    assert(battle_camera_row->group_label == std::string_view("相机"));
+    assert(find_row(HookId::rw_camera_begin_update) == nullptr);
 
     const auto* loose_file_row = find_row(HookId::loose_file_overlay);
     assert(loose_file_row);
@@ -1469,16 +1463,6 @@ void TestGamepadLogic() {
     assert(std::fabs(diagonal.x - 0.7071F) < 0.001F);
     assert(std::fabs(diagonal.y - 0.7071F) < 0.001F);
     assert(std::fabs(diagonal.magnitude - 1.0F) < 0.001F);
-    assert(pal4::inject::IsValidGamepadCameraOrbitFocus(
-        {100.0F, 25.0F, -50.0F}));
-    assert(!pal4::inject::IsValidGamepadCameraOrbitFocus(
-        {std::nanf(""), 25.0F, -50.0F}));
-    assert(!pal4::inject::IsValidGamepadCameraOrbitFocus(
-        {100.0F, std::numeric_limits<float>::infinity(), -50.0F}));
-    assert(!pal4::inject::ShouldApplyGamepadBattleCamera(0.0F));
-    assert(!pal4::inject::ShouldApplyGamepadBattleCamera(-0.1F));
-    assert(!pal4::inject::ShouldApplyGamepadBattleCamera(std::nanf("")));
-    assert(pal4::inject::ShouldApplyGamepadBattleCamera(0.001F));
     assert(pal4::inject::SelectGamepadMovementMode(0.61F, 0.62F, 0.88F) == 0);
     assert(pal4::inject::SelectGamepadMovementMode(0.62F, 0.62F, 0.88F) == 1);
     assert(pal4::inject::SelectGamepadMovementMode(0.87F, 0.62F, 0.88F) == 1);

@@ -119,7 +119,6 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::camera_prepare:
         case HookId::camera_run_single:
         case HookId::camera_update_matrix:
-        case HookId::rw_camera_begin_update:
         case HookId::d3d9_set_present_parameters:
         case HookId::audio_system_play_music:
         case HookId::gi_play_movie:

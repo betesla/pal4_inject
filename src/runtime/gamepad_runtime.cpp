@@ -83,7 +83,6 @@ struct GamepadRuntime {
     bool combat_analog_navigation_active = false;
     bool combat_action_wheel_visible = false;
     DWORD last_combat_ui_query_tick = 0;
-    DWORD last_combat_camera_tick = 0;
     std::array<GamepadRepeatState, kXbox360ButtonCount> button_repeat{};
     GamepadModernControlState modern_controls{};
     bool cursor_hide_requested = false;
@@ -1102,7 +1101,6 @@ void UpdateAnalogSticks(
     const GamepadInputContext context,
     const DWORD now_ms) {
     if (!runtime || context != GamepadInputContext::gameplay) {
-        DisableGamepadBattleCamera();
         ReleaseGameplayHolds(runtime);
         return;
     }
@@ -1131,19 +1129,15 @@ void UpdateAnalogSticks(
             DispatchCombatWheelSelection(runtime, left_stick);
         }
         if (runtime->combat_analog_navigation_active) {
-            DisableGamepadBattleCamera();
             ReleaseGameplayHolds(runtime);
             runtime->modern_controls = {};
             runtime->combat_stick_repeat = {};
-            runtime->last_combat_camera_tick = 0;
             return;
         }
-        DisableGamepadBattleCamera();
         runtime->combat_action_wheel_visible = false;
         runtime->combat_wheel_sector = GamepadCombatWheelSector::none;
         runtime->combat_stick_repeat = {};
         runtime->last_combat_ui_query_tick = 0;
-        runtime->last_combat_camera_tick = 0;
     } else if (runtime->combat_analog_navigation_active) {
         ReleaseGameplayHolds(runtime);
         runtime->modern_controls = {};
@@ -1155,20 +1149,8 @@ void UpdateAnalogSticks(
                 GamepadCombatWheelSector::none;
             DispatchCombatStickNavigation(runtime, left_stick, now_ms);
         }
-        float delta_seconds = 0.0F;
-        if (runtime->last_combat_camera_tick != 0) {
-            delta_seconds = std::min(
-                static_cast<float>(
-                    now_ms - runtime->last_combat_camera_tick) /
-                    1000.0F,
-                0.1F);
-        }
-        runtime->last_combat_camera_tick = now_ms;
-        UpdateGamepadCameraOnly(right_stick, delta_seconds);
         return;
     }
-
-    DisableGamepadBattleCamera();
 
     if (GetRuntimeState().GamepadModernControls()) {
         runtime->hold_w = false;
@@ -1215,9 +1197,7 @@ void UpdateConnectionState(
     runtime->combat_analog_navigation_active = false;
     runtime->combat_action_wheel_visible = false;
     runtime->last_combat_ui_query_tick = 0;
-    runtime->last_combat_camera_tick = 0;
     runtime->button_repeat = {};
-    DisableGamepadBattleCamera();
     ReleaseDirectKeyboardHolds(runtime);
     ReleaseGameplayHolds(runtime);
 }
@@ -1231,7 +1211,6 @@ void TickGamepadInputCore() {
     auto& runtime = GetGamepadRuntime();
 
     if (!state.GamepadEnabled()) {
-        DisableGamepadBattleCamera();
         RequestGamepadCursorHidden(&runtime, false);
         ReleaseDirectKeyboardHolds(&runtime);
         ReleaseGameplayHolds(&runtime);

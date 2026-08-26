@@ -99,12 +99,6 @@ struct GamepadAnalogStick {
     float magnitude = 0.0F;
 };
 
-struct GamepadCameraVector3 {
-    float x = 0.0F;
-    float y = 0.0F;
-    float z = 0.0F;
-};
-
 struct GamepadMovementTuning {
     int mode = 0;
     float speed_multiplier = 0.4F;
@@ -170,9 +164,6 @@ void SetGamepadBinding(
 
 GamepadDigitalAxes BuildGamepadDigitalAxes(int x, int y, int deadzone) noexcept;
 GamepadAnalogStick BuildGamepadAnalogStick(int x, int y, int deadzone) noexcept;
-bool IsValidGamepadCameraOrbitFocus(
-    const GamepadCameraVector3& focus) noexcept;
-bool ShouldApplyGamepadBattleCamera(float right_stick_magnitude) noexcept;
 bool HasGamepadInputActivity(
     std::uint16_t buttons,
     std::uint8_t left_trigger,

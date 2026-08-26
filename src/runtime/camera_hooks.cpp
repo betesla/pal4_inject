@@ -20,12 +20,10 @@ namespace {
 using CameraUpdateMatrixFn = int (__thiscall*)(float*, int);
 using CameraPrepareFn = BOOL (__cdecl*)(int);
 using CameraRunSingleFn = int (__cdecl*)(int, void*);
-using RwCameraBeginUpdateFn = int (__cdecl*)(void*);
 
 CameraUpdateMatrixFn g_original_camera_update_matrix = nullptr;
 CameraPrepareFn g_original_camera_prepare = nullptr;
 CameraRunSingleFn g_original_camera_run_single = nullptr;
-RwCameraBeginUpdateFn g_original_rw_camera_begin_update = nullptr;
 int g_capture_pose_after_run_single = 0;
 DWORD g_last_camera_clamp_log_tick = 0;
 float g_last_logged_original_pitch = 0.0F;
@@ -214,25 +212,6 @@ int __fastcall Hook_CameraUpdateMatrix(
     return g_original_camera_update_matrix(self, update_position_mode);
 }
 
-int __cdecl Hook_RwCameraBeginUpdate(void* const rw_camera) {
-    auto& state = GetRuntimeState();
-    state.IncrementHookCall(HookId::rw_camera_begin_update);
-    if (!g_original_rw_camera_begin_update) {
-        state.SetHookError(
-            HookId::rw_camera_begin_update,
-            "original RwCameraBeginUpdate trampoline is null");
-        state.SetLastError("original RwCameraBeginUpdate trampoline is null");
-        return 0;
-    }
-
-    const HookMode mode = state.GetHookMode(HookId::rw_camera_begin_update);
-    if (mode != HookMode::observe_only && mode != HookMode::mirror_compare) {
-        ApplyGamepadBattleCameraBeforeRender(rw_camera);
-    }
-    state.ClearHookError(HookId::rw_camera_begin_update);
-    return g_original_rw_camera_begin_update(rw_camera);
-}
-
 }  // namespace
 
 void* GetCameraReplacementForHook(const HookId id) {
@@ -243,8 +222,6 @@ void* GetCameraReplacementForHook(const HookId id) {
         return reinterpret_cast<void*>(&Hook_CameraRunSingle);
     case HookId::camera_update_matrix:
         return reinterpret_cast<void*>(&Hook_CameraUpdateMatrix);
-    case HookId::rw_camera_begin_update:
-        return reinterpret_cast<void*>(&Hook_RwCameraBeginUpdate);
     default:
         return nullptr;
     }
@@ -261,10 +238,6 @@ void SetCameraOriginalTrampoline(const HookId id, void* trampoline) {
     case HookId::camera_update_matrix:
         g_original_camera_update_matrix =
             reinterpret_cast<CameraUpdateMatrixFn>(trampoline);
-        break;
-    case HookId::rw_camera_begin_update:
-        g_original_rw_camera_begin_update =
-            reinterpret_cast<RwCameraBeginUpdateFn>(trampoline);
         break;
     default:
         break;

@@ -297,19 +297,6 @@ GamepadAnalogStick BuildGamepadAnalogStick(
     return {direction_x * magnitude, direction_y * magnitude, magnitude};
 }
 
-bool IsValidGamepadCameraOrbitFocus(
-    const GamepadCameraVector3& focus) noexcept {
-    return std::isfinite(focus.x) &&
-        std::isfinite(focus.y) &&
-        std::isfinite(focus.z);
-}
-
-bool ShouldApplyGamepadBattleCamera(
-    const float right_stick_magnitude) noexcept {
-    return std::isfinite(right_stick_magnitude) &&
-        right_stick_magnitude > 0.0F;
-}
-
 bool HasGamepadInputActivity(
     const std::uint16_t buttons,
     const std::uint8_t left_trigger,
