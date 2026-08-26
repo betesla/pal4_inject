@@ -9,7 +9,7 @@
   - mode: `replace_with_fallback`
   - patch span: `7`
   - bootstrap order: `5`（最早安装，但失败不阻断其他 hook）
-  - reason: 用原始完整 `gamedata\...` 路径检查 `<游戏目录>\gamepatch`；命中时把只读文件映射装入原 CPK manager 的空闲句柄槽，未命中时调用原函数回退 CPK
+  - reason: 用原始完整 `gamedata\...` 路径检查 `<游戏目录>\gamepatch`；命中时把只读文件映射装入原 CPK manager 的空闲句柄槽，未命中时调用原函数回退 CPK；`.csb` 覆盖必须通过 4 字节 payload 长度头校验，否则按无有效补丁处理并回退原 CPK
   - diagnostics: 每次请求结果写入 `gamepatch\loose_file_load.log`，不依赖通用 hook 详细日志开关
   - lifecycle: 继续使用原版 `Package_ReadData / Package_Seek / sub_793C10(close)`，不另建平行流接口
 - `cs_TextScriptInterpreter_Initialize @ 0x7E0DA0`
@@ -17,7 +17,7 @@
   - calling convention: `bool __thiscall(void *self, const char *file_name, int unused_arg)`
   - patch span: `5`
   - bootstrap order: `6`（紧随 CPK seam 安装，失败不阻断其他 hook）
-  - reason: CS 模式的文本解释器用 `CRT_Fopen(file_name, "rb")` 直接读 `gamedata\editData\script\*.cs`，不会进入 CPK seam；发行版不携带 `editData` 源码，因此启用补丁时只把同路径 `gamepatch` 文件交给原文本读取器，缺失或读取失败直接返回失败
+  - reason: CS 模式的文本解释器用 `CRT_Fopen(file_name, "rb")` 直接读 `gamedata\editData\script\*.cs`，不会进入 CPK seam；原游戏误传到该入口的 `Music.csb` / `worldMap.csb` 会在候选层改查同名 `.cs`；发行版不携带 `editData` 源码，因此启用补丁时只把对应 `gamepatch` 文件交给原文本读取器，缺失或读取失败直接返回失败
   - diagnostics: 与 CPK seam 写入同一个独立 JSON Lines 日志，记录 `loader=text_script`；缺失时写 `gamepatch_required_missing`，不写任何 fallback 字段
 - `ProcessUIEvent @ 0x411900`
   - mode: `replace_with_fallback`
@@ -98,7 +98,7 @@
 - `PlayerControlUpdate @ 0x427660`
   - mode: `replace_with_fallback`
   - patch span: `6`
-  - reason: 这是两套原版移动输入分支之前的共同入口。连接手柄并启用现代控制时，左摇杆直接调用 `MovePlayerInDirection @ 0x427E70`，以活动相机的前向/右向量形成连续方向；`SetPlayerMovementMode @ 0x428190` 按推动幅度选择走、跑或快跑，并沿用原版 `0.4 / 1.0 / 1.5` 速度倍率。无有效摇杆输入时回退原逻辑。
+  - reason: 这是两套原版移动输入分支之前的共同入口。连接手柄并启用现代控制时，左摇杆直接调用 `MovePlayerInDirection @ 0x427E70`，以活动相机的前向/右向量形成连续方向；走路沿用原版 `0.4x`，跑到快跑阈值间把位移从 `1.0x` 连续插值到 `1.5x`、动画从 `1.0x` 连续插值到原版快跑的 `1.4x`。由于任意方向函数没有原版前进分支中的 `UpdateGridDisplay @ 0x40E210`，Hook 会在移动后补回小地图标记更新。无有效摇杆输入时回退原逻辑。
 - `SetCameraMode script callback @ 0x5BC650`
   - mode: `replace_with_fallback`
   - patch span: `6`

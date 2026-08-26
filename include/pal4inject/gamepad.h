@@ -68,9 +68,27 @@ struct GamepadAnalogStick {
     float magnitude = 0.0F;
 };
 
+struct GamepadMovementTuning {
+    int mode = 0;
+    float speed_multiplier = 0.4F;
+    float animation_multiplier = 1.0F;
+};
+
+struct GamepadTurnTuning {
+    float direction_x = 0.0F;
+    float direction_z = 1.0F;
+    float remaining_angle_degrees = 0.0F;
+    bool use_walk_animation = false;
+};
+
 struct GamepadRepeatState {
     bool was_pressed = false;
     std::uint32_t next_repeat_ms = 0;
+};
+
+struct GamepadKeyMirrorPlan {
+    std::uint8_t press_updates = 0;
+    std::uint8_t release_updates = 0;
 };
 
 enum class GamepadCursorPresentation : std::uint8_t {
@@ -95,6 +113,14 @@ Xbox360GamepadMapping DefaultXbox360GamepadMapping() noexcept;
 GamepadAction GetGamepadBinding(
     const Xbox360GamepadMapping& mapping,
     Xbox360Button button) noexcept;
+bool IsMappedGamepadActionPressed(
+    const Xbox360GamepadMapping& mapping,
+    GamepadAction action,
+    const std::array<bool, kXbox360ButtonCount>& pressed_buttons) noexcept;
+GamepadKeyMirrorPlan BuildGamepadKeyMirrorPlan(
+    bool pressed,
+    bool was_pressed,
+    std::uint8_t raw_key_state) noexcept;
 void SetGamepadBinding(
     Xbox360GamepadMapping* mapping,
     Xbox360Button button,
@@ -117,6 +143,17 @@ int SelectGamepadMovementMode(
     float magnitude,
     float run_threshold,
     float fast_run_threshold) noexcept;
+GamepadMovementTuning BuildGamepadMovementTuning(
+    float magnitude,
+    float run_threshold,
+    float fast_run_threshold) noexcept;
+GamepadTurnTuning BuildGamepadTurnTuning(
+    float current_yaw_degrees,
+    float target_direction_x,
+    float target_direction_z,
+    float delta_seconds,
+    float turn_speed_degrees_per_second,
+    float walk_animation_angle_degrees) noexcept;
 float SelectNextGamepadCameraDistance(
     float current,
     float mode_default) noexcept;

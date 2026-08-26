@@ -300,9 +300,25 @@ int __fastcall Hook_OpenPackageResourceFile(
     const std::string_view safe_resource_path = resource_path
         ? std::string_view(resource_path)
         : std::string_view{};
-    const auto candidate = resource_path
+    auto candidate = resource_path
         ? FindExistingLooseFile(game_root, resource_path)
         : std::nullopt;
+    std::optional<std::filesystem::path> rejected_candidate_path;
+    std::string candidate_rejection_reason;
+
+    if (IsLooseFileOverlayActiveMode(mode) && candidate &&
+        !ValidateLoosePackageFile(
+            safe_resource_path,
+            candidate->path,
+            &candidate_rejection_reason)) {
+        rejected_candidate_path = candidate->path;
+        state.AppendEventLog(
+            "loose_file_candidate_rejected resource=" +
+            std::string(safe_resource_path) +
+            " file=" + PathForRuntimeLog(candidate->path) +
+            " reason=" + candidate_rejection_reason);
+        candidate.reset();
+    }
 
     if (!IsLooseFileOverlayActiveMode(mode)) {
         const int original_result = CallOriginalPackage(self, resource_path);
@@ -331,7 +347,12 @@ int __fastcall Hook_OpenPackageResourceFile(
         entry.loader = "package";
         entry.mode = mode;
         entry.resource_path = safe_resource_path;
-        entry.reason = "loose_file_not_found_or_unsupported_path";
+        entry.reason = candidate_rejection_reason.empty()
+            ? "loose_file_not_found_or_unsupported_path"
+            : candidate_rejection_reason;
+        if (rejected_candidate_path) {
+            entry.file_path = *rejected_candidate_path;
+        }
         entry.fallback_source = "cpk";
         entry.fallback_result_known = true;
         entry.fallback_opened = original_result != 0;
@@ -404,7 +425,7 @@ bool __fastcall Hook_TextScriptInitialize(
         ? std::string_view(file_name)
         : std::string_view{};
     const auto candidate = file_name
-        ? FindExistingLooseFile(game_root, file_name)
+        ? FindExistingLooseTextScriptFile(game_root, file_name)
         : std::nullopt;
 
     if (!IsLooseFileOverlayActiveMode(mode)) {
@@ -447,7 +468,7 @@ bool __fastcall Hook_TextScriptInitialize(
         entry.mode = mode;
         entry.resource_path = safe_file_name;
         entry.reason = "gamepatch_file_required";
-        const auto expected = BuildLooseFileCandidates(game_root, safe_file_name);
+        const auto expected = BuildLooseTextScriptCandidates(game_root, safe_file_name);
         if (!expected.empty()) {
             entry.file_path = expected.front().path;
         }

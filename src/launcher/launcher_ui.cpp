@@ -593,7 +593,7 @@ void DrawControlsPage(LauncherUiState* const state) {
     ImGui::Checkbox(
         "现代摇杆控制",
         &state->inject_settings.gamepad_modern_controls);
-    ImGui::TextDisabled("左摇杆按推动幅度切换走/跑/快跑；右摇杆旋转自由视角。关闭后左摇杆退回 W/A/S/D。 ");
+    ImGui::TextDisabled("左摇杆切换走/跑，并在跑到快跑之间连续调节速度与动作；右摇杆旋转自由视角。关闭后左摇杆退回 W/A/S/D。 ");
     ImGui::BeginDisabled(!state->inject_settings.gamepad_modern_controls);
     float run_threshold_percent =
         state->inject_settings.gamepad_run_threshold * 100.0F;

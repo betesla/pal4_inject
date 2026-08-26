@@ -83,6 +83,7 @@
   - `loose_file_overlay.cpp`
     - 校验 `gamedata\...` 相对资源路径
     - 构造并查找 `<游戏目录>\gamepatch` 补丁候选与独立日志路径
+    - 在文本脚本候选层把原游戏误写的 `.csb` 请求映射为 `.cs`，并为 package seam 校验编译后 CSB 的 payload 长度头
 - `src/runtime`
   - `runtime_state.cpp`
     - bootstrap / pipe / hook call count / last UI event / last error / font sync / crash artifacts / 对白音量应用状态
@@ -104,9 +105,9 @@
   - `loose_file_hooks.cpp`
     - `PackageResourceManager_OpenFile @ 0x66E820` 松散文件优先 seam
     - 复用原 CPK manager 的文件句柄池和 read / seek / close 生命周期
-    - 补丁不存在或默认模式加载失败时回退 CPK
+    - 补丁不存在、CSB 类型校验失败或默认模式加载失败时回退 CPK
     - `cs_TextScriptInterpreter_Initialize @ 0x7E0DA0` 接管 CS 模式绕过 CPK 的直接文件读取
-    - CPK 与 CS 两条 seam 共用 `loose_file_overlay` 的 UI / HookMode；启用时 CS 只允许 `gamepatch`，缺失或读取失败直接返回失败
+    - CPK 与 CS 两条 seam 共用 `loose_file_overlay` 的 UI / HookMode；启用时 CS 只允许 `gamepatch`，并在该入口把误命名的 `.csb` 请求改查同名 `.cs`，缺失或读取失败直接返回失败
   - `loose_file_load_log.cpp`
     - 向 `gamepatch\loose_file_load.log` 写入可供其他软件解析的 UTF-8 JSON Lines
     - 通过 `loader=package|text_script` 统一记录 UI 关闭绕过、松散文件覆盖、CPK 回退、CS 必需文件缺失与覆盖错误；启动时轮换超过 8 MiB 的旧日志
@@ -167,14 +168,14 @@
     - 复核 launcher 期请求的脚本模式，必要时补写并记录日志
   - `gamepad_runtime.cpp`
     - 动态加载 XInput、轮询 0 号手柄、维护菜单上下文与按钮映射
-    - 仅由原生 `ProcessInputs` 入口轮询；Start/F1 同时按七个内容页与 `frameToolbar/btnClose` 的实际状态切换整层系统菜单，并通过关闭按钮的 CEGUI 点击事件逐层收敛；B 在内容页执行一级 Esc 返回、在只剩工具栏的主页面触发关闭事件，因此可连续返回直至退出 UI，且不会在 3D 场景中借由 Esc 误开菜单；缓存为菜单状态时，同一输入入口检查关闭按钮能否沿父节点链连接到当前 `GUISheet`，而不是仅检查 WindowManager 中可能残留的对象及其局部 visible 标志；除刚打开菜单的四帧延迟外，连续两帧脱离当前 UI 树即清除菜单状态，使读档切场景后立即恢复移动，不从渲染帧或 timer 建立第二条轮询路径
+    - 仅由原生 `ProcessInputs` 入口轮询；默认 A 键不做界面分类，而把同一个空格键按下/松开同时镜像到 Win32 键盘路径与 PAL4 原生 InputManager 键码 `32`。原生状态注入首帧只推进一次以保留“刚按下 2”，后续帧才恢复为“按住 3”，使 UI、读档、对话和 3D 交互共享空格语义且不跳过一次性交互边沿；Start/F1 同时按七个内容页与 `frameToolbar/btnClose` 的实际状态切换整层系统菜单，并通过关闭按钮的 CEGUI 点击事件逐层收敛；B 在内容页执行一级 Esc 返回、在只剩工具栏的主页面触发关闭事件，因此可连续返回直至退出 UI，且不会在 3D 场景中借由 Esc 误开菜单；缓存为菜单状态时，同一输入入口检查关闭按钮能否沿父节点链连接到当前 `GUISheet`，而不是仅检查 WindowManager 中可能残留的对象及其局部 visible 标志；除刚打开菜单的四帧延迟外，连续两帧脱离当前 UI 树即清除菜单状态，使读档切场景后立即恢复移动，不从渲染帧或 timer 建立第二条轮询路径
     - LB/RB 与 LT/RT 的分页键通过游戏线程上的 CEGUI 直连事件派发，避免 `SendInput` 的同帧按下/释放被菜单漏采样
     - 产出经过径向死区处理的左右摇杆状态；兼容模式才回写 W/A/S/D
     - 根据最近的有效手柄/鼠标输入控制光标；手柄模式维持 CEGUI 与 Win32 光标隐藏，鼠标模式读取 CEGUI `MouseCursor::isVisible()`，UI 中仅保留游戏光标、3D 场景仅保留原生光标，避免两枚指针同时显示
     - 过滤 3D 场景鼠标捕获产生的窗口中心回中消息，并对手柄到鼠标切换做短时去抖，避免把游戏自身的回中动作误判为鼠标接管
     - 在 `uiFrameManager_SetCursor @ 0x4BBB70` 入口拦截手柄模式下的原生 `SetCursor`，消除先显示、后清空造成的单帧闪烁
   - `gamepad_control_hooks.cpp`
-    - 在玩家控制总入口消费左摇杆，调用游戏原生任意方向移动函数与走/跑/快跑模式函数
+    - 在玩家控制总入口消费左摇杆，调用游戏原生任意方向移动函数与走/跑/快跑模式函数；补回该任意方向分支缺少的小地图位置更新，在跑到快跑阈值间同步线性插值移动和动画倍率，并在大角度改向时限制 yaw 变化、暂用行走动作完成转身
     - 通过活动相机前向/右向量构建相机相对方向，并用右摇杆更新 yaw/pitch
     - R3 默认读取当前镜头模式配置记录的原版距离，并调用原生相机距离 setter 在 `0.2× / 0.5× / 1.0× / 1.5×` 四档间循环
     - 左摇杆持续推动时维护独立的目标 yaw，并在中央相机矩阵入口阻断“角色转向带动跟随镜头、下一帧方向再次偏转”的反馈环

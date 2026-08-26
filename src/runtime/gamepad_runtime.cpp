@@ -24,6 +24,7 @@ namespace {
 
 using XInputGetStateFn = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
 using GetInputManagerFn = void* (__cdecl*)();
+using InputManagerGetKeyStateFn = SHORT (__thiscall*)(void*, int);
 using UpdateKeyOrButtonStateFn = char (__thiscall*)(void*, int, int);
 
 constexpr std::array<const char*, 3> kXInputDlls{
@@ -44,6 +45,7 @@ constexpr int kKeyCodeA = 97;
 constexpr int kKeyCodeD = 100;
 constexpr int kKeyCodeS = 115;
 constexpr int kKeyCodeW = 119;
+constexpr int kKeyCodeSpace = 32;
 
 struct DirectionRepeatState {
     GamepadRepeatState up{};
@@ -70,6 +72,8 @@ struct GamepadRuntime {
     bool hold_a = false;
     bool hold_s = false;
     bool hold_d = false;
+    bool hold_space = false;
+    bool raw_space_held = false;
     bool hold_mouse_left = false;
     DirectionRepeatState dpad_repeat{};
     std::array<GamepadRepeatState, kXbox360ButtonCount> button_repeat{};
@@ -259,6 +263,79 @@ bool TapInjectedKey(const std::uint32_t virtual_key) {
         SendInjectedKeyboardInput(virtual_key, true);
 }
 
+void SetInjectedKeyboardKeyHeld(
+    const bool pressed,
+    const std::uint32_t virtual_key,
+    bool* const held_flag) {
+    if (!held_flag || *held_flag == pressed) {
+        return;
+    }
+    if (!SendInjectedKeyboardInput(virtual_key, !pressed)) {
+        GetRuntimeState().SetLastError(
+            "gamepad failed to mirror a keyboard key state");
+        return;
+    }
+    *held_flag = pressed;
+    LogGamepadEvent(
+        std::string("keyboard_mirror virtual_key=") +
+        std::to_string(virtual_key) +
+        " pressed=" + (pressed ? "1" : "0"));
+}
+
+bool UpdateGameplayKeyMirror(
+    const bool pressed,
+    const int key_code,
+    bool* const was_pressed) {
+    if (!was_pressed) {
+        return false;
+    }
+    if (!pressed && !*was_pressed) {
+        return true;
+    }
+    const auto get_input_manager =
+        ResolveRuntimeFunction<GetInputManagerFn>(ida::kGetInputManager);
+    const auto get_key_state =
+        ResolveRuntimeFunction<InputManagerGetKeyStateFn>(ida::kInputManagerGetKeyState);
+    const auto update_key_state =
+        ResolveRuntimeFunction<UpdateKeyOrButtonStateFn>(ida::kUpdateKeyOrButtonState);
+    if (!get_input_manager || !get_key_state || !update_key_state) {
+        GetRuntimeState().SetLastError(
+            "gamepad gameplay key-mirror helpers are unavailable");
+        return false;
+    }
+    void* const input_manager = get_input_manager();
+    if (!input_manager) {
+        GetRuntimeState().SetLastError(
+            "gamepad GetInputManager returned null for key mirror");
+        return false;
+    }
+
+    const auto raw_state = static_cast<std::uint8_t>(
+        get_key_state(input_manager, key_code));
+    const auto plan = BuildGamepadKeyMirrorPlan(
+        pressed,
+        *was_pressed,
+        raw_state);
+    for (std::uint8_t index = 0; index < plan.press_updates; ++index) {
+        update_key_state(input_manager, key_code, 1);
+    }
+    for (std::uint8_t index = 0; index < plan.release_updates; ++index) {
+        update_key_state(input_manager, key_code, 0);
+    }
+    if (*was_pressed != pressed) {
+        LogGamepadEvent(
+            std::string("gameplay_key_mirror key_code=") +
+            std::to_string(key_code) +
+            " pressed=" +
+            (pressed ? "1" : "0") +
+            " raw_before=" + std::to_string(raw_state) +
+            " press_updates=" + std::to_string(plan.press_updates) +
+            " release_updates=" + std::to_string(plan.release_updates));
+    }
+    *was_pressed = pressed;
+    return true;
+}
+
 bool TapUiSeamKey(const std::uint32_t virtual_key) {
     return SendUiSeamKey(virtual_key, false) &&
         SendUiSeamKey(virtual_key, true);
@@ -322,6 +399,19 @@ void ReleaseGameplayHolds(GamepadRuntime* const runtime) {
     runtime->hold_d = false;
     runtime->modern_controls = {};
     SetMouseLeftHeld(false, runtime);
+}
+
+void ReleaseDirectKeyboardHolds(GamepadRuntime* const runtime) {
+    if (!runtime) {
+        return;
+    }
+    SetInjectedKeyboardKeyHeld(false, VK_SPACE, &runtime->hold_space);
+    if (runtime->raw_space_held) {
+        UpdateGameplayKeyMirror(
+            false,
+            kKeyCodeSpace,
+            &runtime->raw_space_held);
+    }
 }
 
 GamepadInputContext DetermineContext(const GamepadRuntime& runtime) {
@@ -521,11 +611,8 @@ void ExecuteImmediateAction(
     }
     switch (action) {
     case GamepadAction::confirm:
-        if (runtime->system_menu_active) {
-            TapUiSeamKey(VK_RETURN);
-        } else {
-            TapInjectedKey(VK_SPACE);
-        }
+        // Confirm is a direct held Space-key mapping handled in
+        // UpdateMappedButtons, so every original input path sees the same key.
         break;
     case GamepadAction::cancel:
         {
@@ -643,10 +730,24 @@ void UpdateMappedButtons(
         return;
     }
     bool mouse_left_held = false;
+    std::array<bool, kXbox360ButtonCount> pressed_buttons{};
+    for (std::size_t index = 0; index < kXbox360ButtonCount; ++index) {
+        pressed_buttons[index] = IsButtonPressed(
+            current,
+            static_cast<Xbox360Button>(index));
+    }
+    const bool space_held = IsMappedGamepadActionPressed(
+        mapping,
+        GamepadAction::confirm,
+        pressed_buttons);
     for (std::size_t index = 0; index < kXbox360ButtonCount; ++index) {
         const auto button = static_cast<Xbox360Button>(index);
         const auto action = GetGamepadBinding(mapping, button);
-        const bool pressed = IsButtonPressed(current, button);
+        const bool pressed = pressed_buttons[index];
+        if (action == GamepadAction::confirm) {
+            runtime->button_repeat[index] = {};
+            continue;
+        }
         if (action == GamepadAction::mouse_left) {
             mouse_left_held = mouse_left_held || pressed;
             runtime->button_repeat[index] = {};
@@ -669,6 +770,11 @@ void UpdateMappedButtons(
             ExecuteImmediateAction(runtime, action);
         }
     }
+    SetInjectedKeyboardKeyHeld(space_held, VK_SPACE, &runtime->hold_space);
+    UpdateGameplayKeyMirror(
+        space_held,
+        kKeyCodeSpace,
+        &runtime->raw_space_held);
     SetMouseLeftHeld(mouse_left_held && !runtime->system_menu_active, runtime);
 }
 
@@ -769,6 +875,7 @@ void UpdateConnectionState(
     runtime->previous_state = {};
     runtime->dpad_repeat = {};
     runtime->button_repeat = {};
+    ReleaseDirectKeyboardHolds(runtime);
     ReleaseGameplayHolds(runtime);
 }
 
@@ -782,6 +889,7 @@ void TickGamepadInputCore() {
 
     if (!state.GamepadEnabled()) {
         RequestGamepadCursorHidden(&runtime, false);
+        ReleaseDirectKeyboardHolds(&runtime);
         ReleaseGameplayHolds(&runtime);
         UpdateConnectionState(&runtime, false);
         state.SetGamepadContext(GamepadInputContext::gameplay);

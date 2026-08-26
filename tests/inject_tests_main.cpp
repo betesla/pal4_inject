@@ -129,6 +129,21 @@ void TestLooseFileOverlayPaths() {
         script_candidates.front().path ==
         game_root / "gamepatch" /
             "gamedata" / "editData" / "script" / "M10.cs");
+    const auto misnamed_script_candidates =
+        pal4::inject::BuildLooseTextScriptCandidates(
+            game_root,
+            R"(gamedata\editData\script\Music.csb)");
+    assert(misnamed_script_candidates.size() == 1);
+    assert(
+        misnamed_script_candidates.front().path ==
+        game_root / "gamepatch" /
+            "gamedata" / "editData" / "script" / "Music.cs");
+    const auto ordinary_text_script_candidates =
+        pal4::inject::BuildLooseTextScriptCandidates(
+            game_root,
+            R"(gamedata\editData\script\M10.cs)");
+    assert(ordinary_text_script_candidates.size() == 1);
+    assert(ordinary_text_script_candidates.front().path == script_candidates.front().path);
     assert(
         pal4::inject::LooseFileLoadLogPath(game_root) ==
         game_root / "gamepatch" / "loose_file_load.log");
@@ -149,6 +164,52 @@ void TestLooseFileOverlayPaths() {
         R"(gamedata\PALWorld\Q99\Q99\test.dff)");
     assert(found);
     assert(found->path == loose_file);
+
+    const auto script_directory = pal4::inject::GamePatchRoot(temp_root) /
+        "gamedata" / "editData" / "script";
+    std::filesystem::create_directories(script_directory);
+    const auto text_script = script_directory / "Music.cs";
+    {
+        std::ofstream out(text_script, std::ios::binary | std::ios::trunc);
+        out << "// PAL4 text script";
+    }
+    const auto found_text_script =
+        pal4::inject::FindExistingLooseTextScriptFile(
+            temp_root,
+            R"(gamedata\editData\script\Music.csb)");
+    assert(found_text_script);
+    assert(found_text_script->path == text_script);
+
+    const auto invalid_csb = script_directory / "Music.csb";
+    {
+        std::ofstream out(invalid_csb, std::ios::binary | std::ios::trunc);
+        out << "// This is source text, not compiled CSB";
+    }
+    std::string rejection_reason;
+    assert(!pal4::inject::ValidateLoosePackageFile(
+        R"(gamedata\editData\script\Music.csb)",
+        invalid_csb,
+        &rejection_reason));
+    assert(rejection_reason.find("invalid_csb_header") != std::string::npos);
+
+    const auto valid_csb = script_directory / "Valid.csb";
+    {
+        constexpr std::array<char, 7> bytes{
+            '\x03', '\x00', '\x00', '\x00', 'C', 'S', 'B',
+        };
+        std::ofstream out(valid_csb, std::ios::binary | std::ios::trunc);
+        out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    }
+    rejection_reason.clear();
+    assert(pal4::inject::ValidateLoosePackageFile(
+        R"(gamedata\editData\script\Valid.csb)",
+        valid_csb,
+        &rejection_reason));
+    assert(rejection_reason.empty());
+    assert(pal4::inject::ValidateLoosePackageFile(
+        R"(gamedata\PALWorld\Q99\Q99\test.dff)",
+        loose_file,
+        &rejection_reason));
     std::filesystem::remove_all(temp_root, ignored);
 }
 
@@ -1320,6 +1381,32 @@ void TestGamepadLogic() {
     assert(pal4::inject::SelectGamepadMovementMode(0.62F, 0.62F, 0.88F) == 1);
     assert(pal4::inject::SelectGamepadMovementMode(0.87F, 0.62F, 0.88F) == 1);
     assert(pal4::inject::SelectGamepadMovementMode(0.88F, 0.62F, 0.88F) == 2);
+    const auto walk_tuning =
+        pal4::inject::BuildGamepadMovementTuning(0.50F, 0.62F, 0.88F);
+    assert(walk_tuning.mode == 0);
+    assert(std::fabs(walk_tuning.speed_multiplier - 0.4F) < 0.001F);
+    assert(std::fabs(walk_tuning.animation_multiplier - 1.0F) < 0.001F);
+    const auto blended_tuning =
+        pal4::inject::BuildGamepadMovementTuning(0.75F, 0.62F, 0.88F);
+    assert(blended_tuning.mode == 1);
+    assert(std::fabs(blended_tuning.speed_multiplier - 1.25F) < 0.001F);
+    assert(std::fabs(blended_tuning.animation_multiplier - 1.20F) < 0.001F);
+    const auto fast_tuning =
+        pal4::inject::BuildGamepadMovementTuning(1.0F, 0.62F, 0.88F);
+    assert(fast_tuning.mode == 2);
+    assert(std::fabs(fast_tuning.speed_multiplier - 1.5F) < 0.001F);
+    assert(std::fabs(fast_tuning.animation_multiplier - 1.4F) < 0.001F);
+    const auto reverse_turn = pal4::inject::BuildGamepadTurnTuning(
+        0.0F, 0.0F, -1.0F, 0.1F, 360.0F, 20.0F);
+    assert(reverse_turn.use_walk_animation);
+    assert(std::fabs(reverse_turn.remaining_angle_degrees - 180.0F) < 0.001F);
+    assert(std::fabs(reverse_turn.direction_x + 0.5878F) < 0.001F);
+    assert(std::fabs(reverse_turn.direction_z - 0.8090F) < 0.001F);
+    const auto small_turn = pal4::inject::BuildGamepadTurnTuning(
+        0.0F, 0.173648F, 0.984808F, 0.1F, 360.0F, 20.0F);
+    assert(!small_turn.use_walk_animation);
+    assert(std::fabs(small_turn.direction_x - 0.173648F) < 0.001F);
+    assert(std::fabs(small_turn.direction_z - 0.984808F) < 0.001F);
     assert(pal4::inject::SelectNextGamepadCameraDistance(1.0F, 5.0F) == 2.5F);
     assert(pal4::inject::SelectNextGamepadCameraDistance(2.5F, 5.0F) == 5.0F);
     assert(pal4::inject::SelectNextGamepadCameraDistance(5.0F, 5.0F) == 7.5F);
@@ -1329,6 +1416,40 @@ void TestGamepadLogic() {
     assert(pal4::inject::GetGamepadBinding(
         mapping,
         pal4::inject::Xbox360Button::a) == pal4::inject::GamepadAction::confirm);
+    std::array<bool, pal4::inject::kXbox360ButtonCount> pressed_buttons{};
+    pressed_buttons[static_cast<std::size_t>(pal4::inject::Xbox360Button::a)] = true;
+    assert(pal4::inject::IsMappedGamepadActionPressed(
+        mapping,
+        pal4::inject::GamepadAction::confirm,
+        pressed_buttons));
+    pressed_buttons = {};
+    assert(!pal4::inject::IsMappedGamepadActionPressed(
+        mapping,
+        pal4::inject::GamepadAction::confirm,
+        pressed_buttons));
+    const auto initial_press_plan =
+        pal4::inject::BuildGamepadKeyMirrorPlan(true, false, 0);
+    assert(initial_press_plan.press_updates == 1);
+    assert(initial_press_plan.release_updates == 0);
+    const auto held_after_native_poll_plan =
+        pal4::inject::BuildGamepadKeyMirrorPlan(true, true, 1);
+    assert(held_after_native_poll_plan.press_updates == 2);
+    assert(held_after_native_poll_plan.release_updates == 0);
+    const auto held_after_just_pressed_plan =
+        pal4::inject::BuildGamepadKeyMirrorPlan(true, true, 2);
+    assert(held_after_just_pressed_plan.press_updates == 1);
+    assert(held_after_just_pressed_plan.release_updates == 0);
+    const auto already_held_plan =
+        pal4::inject::BuildGamepadKeyMirrorPlan(true, true, 3);
+    assert(already_held_plan.press_updates == 0);
+    const auto release_plan =
+        pal4::inject::BuildGamepadKeyMirrorPlan(false, true, 3);
+    assert(release_plan.press_updates == 0);
+    assert(release_plan.release_updates == 1);
+    const auto already_released_plan =
+        pal4::inject::BuildGamepadKeyMirrorPlan(false, true, 1);
+    assert(already_released_plan.press_updates == 0);
+    assert(already_released_plan.release_updates == 0);
     assert(pal4::inject::GetGamepadBinding(
         mapping,
         pal4::inject::Xbox360Button::right_thumb) ==

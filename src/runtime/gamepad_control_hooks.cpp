@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cmath>
 #include <sstream>
 
@@ -21,6 +22,9 @@ namespace {
 using PlayerControlUpdateFn = int (__thiscall*)(void*, void*, float);
 using MovePlayerInDirectionFn = int (__thiscall*)(void*, void*, const float*, float);
 using SetPlayerMovementModeFn = int (__thiscall*)(void*, int, int);
+using AnimationSetPlaybackRateFn = int (__thiscall*)(void*, float);
+using MinimapGetInstanceFn = void* (__cdecl*)();
+using MinimapUpdateGridDisplayFn = void (__thiscall*)(void*, float*, void*);
 using SetCameraModeScriptFn = int (__cdecl*)(char*);
 using GetCameraManagerFn = void* (__cdecl*)();
 using GetActiveCameraFn = float* (__thiscall*)(void*);
@@ -35,6 +39,14 @@ std::atomic<std::uintptr_t> g_camera_yaw_guard_target{0};
 std::atomic<float> g_camera_yaw_guard_angle{0.0F};
 bool g_camera_yaw_tracking = false;
 float g_controlled_camera_yaw = 0.0F;
+
+constexpr float kNativeMovementBaseSpeed = 169.89999F;
+constexpr std::ptrdiff_t kPlayerPositionOffset = 172;
+constexpr std::ptrdiff_t kPlayerRotationOffset = 160;
+constexpr std::ptrdiff_t kPlayerYawOffset = 164;
+constexpr std::ptrdiff_t kPlayerAnimationOffset = 368;
+constexpr float kGamepadTurnSpeedDegreesPerSecond = 360.0F;
+constexpr float kGamepadWalkTurnThresholdDegrees = 20.0F;
 
 std::uintptr_t MainModuleBase() {
     auto& state = GetRuntimeState();
@@ -156,6 +168,52 @@ bool BuildCameraRelativeMovement(
     return true;
 }
 
+void SetPlayerAnimationPlaybackRate(
+    void* const player,
+    const float multiplier) {
+    if (!player) {
+        return;
+    }
+    const auto set_playback_rate =
+        ResolveRuntimeFunction<AnimationSetPlaybackRateFn>(
+            ida::kAnimationSetPlaybackRate);
+    if (set_playback_rate) {
+        set_playback_rate(
+            static_cast<unsigned char*>(player) + kPlayerAnimationOffset,
+            multiplier);
+    }
+}
+
+void RestoreNativeMovementSpeed(void* const control) {
+    if (!control) {
+        return;
+    }
+    auto* const control_bytes = static_cast<unsigned char*>(control);
+    const float native_multiplier = *reinterpret_cast<const float*>(
+        control_bytes + 44);
+    *reinterpret_cast<float*>(control_bytes + 4) =
+        kNativeMovementBaseSpeed * native_multiplier;
+}
+
+void UpdateMinimapPlayerMarker(void* const player) {
+    if (!player) {
+        return;
+    }
+    const auto get_minimap = ResolveRuntimeFunction<MinimapGetInstanceFn>(
+        ida::kMinimapGetInstance);
+    const auto update_grid = ResolveRuntimeFunction<MinimapUpdateGridDisplayFn>(
+        ida::kMinimapUpdateGridDisplay);
+    void* const minimap = get_minimap ? get_minimap() : nullptr;
+    if (!minimap || !update_grid) {
+        return;
+    }
+    auto* const player_bytes = static_cast<unsigned char*>(player);
+    update_grid(
+        minimap,
+        reinterpret_cast<float*>(player_bytes + kPlayerPositionOffset),
+        player_bytes + kPlayerRotationOffset);
+}
+
 bool ReadCurrentCameraModeDefaultDistance(
     const void* const manager,
     float* const mode_default) noexcept {
@@ -196,6 +254,8 @@ int __fastcall Hook_PlayerControlUpdate(
     if (!state.GamepadEnabled() || !state.GamepadModernControls() ||
         !controls.active) {
         DisableCameraYawGuard();
+        RestoreNativeMovementSpeed(self);
+        SetPlayerAnimationPlaybackRate(player, 1.0F);
         return g_original_player_control_update(self, player, delta_seconds);
     }
 
@@ -208,6 +268,8 @@ int __fastcall Hook_PlayerControlUpdate(
         delta_seconds);
     float direction[3]{};
     if (!BuildCameraRelativeMovement(camera, controls.movement, direction)) {
+        RestoreNativeMovementSpeed(self);
+        SetPlayerAnimationPlaybackRate(player, 1.0F);
         return g_original_player_control_update(self, player, delta_seconds);
     }
 
@@ -216,31 +278,53 @@ int __fastcall Hook_PlayerControlUpdate(
     const auto move_player = ResolveRuntimeFunction<MovePlayerInDirectionFn>(
         ida::kMovePlayerInDirection);
     if (!set_movement_mode || !move_player || !self || !player) {
+        RestoreNativeMovementSpeed(self);
+        SetPlayerAnimationPlaybackRate(player, 1.0F);
         return g_original_player_control_update(self, player, delta_seconds);
     }
 
-    const int movement_mode = SelectGamepadMovementMode(
+    const auto* const player_bytes = static_cast<const unsigned char*>(player);
+    const auto turn_tuning = BuildGamepadTurnTuning(
+        *reinterpret_cast<const float*>(player_bytes + kPlayerYawOffset),
+        direction[0],
+        direction[2],
+        delta_seconds,
+        kGamepadTurnSpeedDegreesPerSecond,
+        kGamepadWalkTurnThresholdDegrees);
+    direction[0] = turn_tuning.direction_x;
+    direction[2] = turn_tuning.direction_z;
+
+    auto tuning = BuildGamepadMovementTuning(
         controls.movement.magnitude,
         state.GamepadRunThreshold(),
         state.GamepadFastRunThreshold());
+    if (turn_tuning.use_walk_animation) {
+        tuning = {0, 0.4F, 1.0F};
+    }
+    const int movement_mode = tuning.mode;
     const int current_mode = *reinterpret_cast<const int*>(
         static_cast<const unsigned char*>(self) + 40);
     if (current_mode != movement_mode) {
         set_movement_mode(self, movement_mode, 0);
         if (state.GamepadLogEnabled()) {
-            constexpr float kNativeSpeedMultipliers[]{0.4F, 1.0F, 1.5F};
             std::ostringstream event;
             event << "gamepad:movement_mode previous=" << current_mode
                   << " current=" << movement_mode
                   << " magnitude=" << controls.movement.magnitude
-                  << " native_speed_multiplier="
-                  << kNativeSpeedMultipliers[movement_mode];
+                  << " speed_multiplier=" << tuning.speed_multiplier
+                  << " animation_multiplier=" << tuning.animation_multiplier;
             state.AppendEventLog(event.str());
         }
     }
+    *reinterpret_cast<float*>(static_cast<unsigned char*>(self) + 4) =
+        kNativeMovementBaseSpeed * tuning.speed_multiplier;
+    SetPlayerAnimationPlaybackRate(player, tuning.animation_multiplier);
     const int moved = move_player(self, player, direction, delta_seconds);
     if (moved) {
         *reinterpret_cast<int*>(static_cast<unsigned char*>(self) + 16) = 1;
+        // MovePlayerInDirection omits the UpdateGridDisplay call made by the
+        // stock forward/back dispatcher, so preserve that native side effect.
+        UpdateMinimapPlayerMarker(player);
     }
     return moved;
 }

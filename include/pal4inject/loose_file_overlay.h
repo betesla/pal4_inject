@@ -21,8 +21,18 @@ std::filesystem::path LooseFileLoadLogPath(const std::filesystem::path& game_roo
 std::vector<LooseFileCandidate> BuildLooseFileCandidates(
     const std::filesystem::path& game_root,
     std::string_view resource_path);
+std::vector<LooseFileCandidate> BuildLooseTextScriptCandidates(
+    const std::filesystem::path& game_root,
+    std::string_view resource_path);
 std::optional<LooseFileCandidate> FindExistingLooseFile(
     const std::filesystem::path& game_root,
     std::string_view resource_path);
+std::optional<LooseFileCandidate> FindExistingLooseTextScriptFile(
+    const std::filesystem::path& game_root,
+    std::string_view resource_path);
+bool ValidateLoosePackageFile(
+    std::string_view resource_path,
+    const std::filesystem::path& file_path,
+    std::string* rejection_reason);
 
 }  // namespace pal4::inject

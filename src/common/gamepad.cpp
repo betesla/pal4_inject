@@ -144,6 +144,54 @@ GamepadAction GetGamepadBinding(
         : GamepadAction::none;
 }
 
+bool IsMappedGamepadActionPressed(
+    const Xbox360GamepadMapping& mapping,
+    const GamepadAction action,
+    const std::array<bool, kXbox360ButtonCount>& pressed_buttons) noexcept {
+    if (action == GamepadAction::none) {
+        return false;
+    }
+    for (std::size_t index = 0; index < kXbox360ButtonCount; ++index) {
+        if (pressed_buttons[index] && mapping.bindings[index] == action) {
+            return true;
+        }
+    }
+    return false;
+}
+
+GamepadKeyMirrorPlan BuildGamepadKeyMirrorPlan(
+    const bool pressed,
+    const bool was_pressed,
+    const std::uint8_t raw_key_state) noexcept {
+    GamepadKeyMirrorPlan plan{};
+    if (!pressed) {
+        if (was_pressed && (raw_key_state == 2 || raw_key_state == 3)) {
+            plan.release_updates = 1;
+        }
+        return plan;
+    }
+
+    if (!was_pressed) {
+        // Preserve PAL4's one-frame "just pressed" state (2). Advancing it
+        // twice here would skip directly to the held state (3), which breaks
+        // one-shot gameplay interaction checks.
+        if (raw_key_state < 2) {
+            plan.press_updates = 1;
+        }
+        return plan;
+    }
+
+    // The native DirectInput poll runs before the gamepad mirror and normally
+    // advances a synthetic held key to released (1). Restore held (3) without
+    // losing the original transition semantics.
+    if (raw_key_state == 0 || raw_key_state == 1) {
+        plan.press_updates = 2;
+    } else if (raw_key_state == 2) {
+        plan.press_updates = 1;
+    }
+    return plan;
+}
+
 void SetGamepadBinding(
     Xbox360GamepadMapping* const mapping,
     const Xbox360Button button,
@@ -227,15 +275,84 @@ int SelectGamepadMovementMode(
     const float magnitude,
     const float run_threshold,
     const float fast_run_threshold) noexcept {
+    return BuildGamepadMovementTuning(
+        magnitude,
+        run_threshold,
+        fast_run_threshold).mode;
+}
+
+GamepadMovementTuning BuildGamepadMovementTuning(
+    const float magnitude,
+    const float run_threshold,
+    const float fast_run_threshold) noexcept {
     const float normalized_run = std::clamp(run_threshold, 0.05F, 0.95F);
     const float normalized_fast = std::clamp(
         fast_run_threshold,
         normalized_run + 0.01F,
         1.0F);
     if (magnitude >= normalized_fast) {
-        return 2;
+        return {2, 1.5F, 1.4F};
     }
-    return magnitude >= normalized_run ? 1 : 0;
+    if (magnitude < normalized_run) {
+        return {0, 0.4F, 1.0F};
+    }
+
+    // PAL4's stock modes jump directly from run (1.0x movement/animation)
+    // to fast run (1.5x movement, 1.4x animation). Preserve both endpoints,
+    // but let an analog stick blend continuously between the configured
+    // run and fast-run thresholds.
+    const float blend = std::clamp(
+        (magnitude - normalized_run) / (normalized_fast - normalized_run),
+        0.0F,
+        1.0F);
+    return {
+        1,
+        1.0F + 0.5F * blend,
+        1.0F + 0.4F * blend,
+    };
+}
+
+GamepadTurnTuning BuildGamepadTurnTuning(
+    const float current_yaw_degrees,
+    const float target_direction_x,
+    const float target_direction_z,
+    const float delta_seconds,
+    const float turn_speed_degrees_per_second,
+    const float walk_animation_angle_degrees) noexcept {
+    const float target_length = std::sqrt(
+        target_direction_x * target_direction_x +
+        target_direction_z * target_direction_z);
+    if (!std::isfinite(current_yaw_degrees) ||
+        !std::isfinite(target_length) || target_length <= 0.0001F) {
+        return {target_direction_x, target_direction_z, 0.0F, false};
+    }
+
+    constexpr float kRadiansToDegrees = 57.29577951308232F;
+    constexpr float kDegreesToRadians = 0.017453292519943295F;
+    const float normalized_target_x = target_direction_x / target_length;
+    const float normalized_target_z = target_direction_z / target_length;
+    const float target_yaw =
+        std::atan2(normalized_target_x, normalized_target_z) * kRadiansToDegrees;
+    float angle_delta = std::fmod(
+        target_yaw - current_yaw_degrees + 540.0F,
+        360.0F) - 180.0F;
+    if (!std::isfinite(angle_delta)) {
+        return {normalized_target_x, normalized_target_z, 0.0F, false};
+    }
+
+    const float safe_delta_seconds = std::clamp(delta_seconds, 0.0F, 0.1F);
+    const float safe_turn_speed = std::max(turn_speed_degrees_per_second, 0.0F);
+    const float maximum_turn = safe_turn_speed * safe_delta_seconds;
+    const float applied_turn = std::clamp(angle_delta, -maximum_turn, maximum_turn);
+    const float smoothed_yaw = current_yaw_degrees + applied_turn;
+    const float smoothed_yaw_radians = smoothed_yaw * kDegreesToRadians;
+    const float walking_threshold = std::max(walk_animation_angle_degrees, 0.0F);
+    return {
+        std::sin(smoothed_yaw_radians),
+        std::cos(smoothed_yaw_radians),
+        std::fabs(angle_delta),
+        std::fabs(angle_delta) > walking_threshold,
+    };
 }
 
 float SelectNextGamepadCameraDistance(

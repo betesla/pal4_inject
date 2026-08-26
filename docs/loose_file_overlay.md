@@ -38,15 +38,25 @@ gamedata\editData\script\M10.cs
 <游戏目录>\gamepatch\gamedata\editData\script\M10.cs
 ```
 
+原游戏有两个已知的扩展名错误：CS 模式会把文本脚本请求写成 `Music.csb` 和 `worldMap.csb`。文本解释器 seam 会把所有误入该入口的 `.csb` 请求映射为同名 `.cs` 源码，因此对应补丁必须命名为：
+
+```text
+<游戏目录>\gamepatch\gamedata\editData\script\Music.cs
+<游戏目录>\gamepatch\gamedata\editData\script\worldMap.cs
+```
+
+不要把文本源码命名成 `.csb`。`.csb` 专用于已经编译的二进制脚本。
+
 ## 优先级与安全边界
 
-1. 若专用补丁目录中存在同路径普通文件，使用松散文件。
+1. 若专用补丁目录中存在同路径且类型校验通过的普通文件，使用松散文件。
 2. 若文件不存在，CPK 资源自动回退 CPK；CS 文本脚本记录 `gamepatch_required_missing` 并直接返回失败。
 3. 若松散文件存在但打开、映射或句柄分配失败：
    - CPK 资源在 `替换（可回退）` 下记录错误并回退原 CPK；`强制替换` 下直接失败。
    - CS 文本脚本在两种替换模式下都直接失败，不尝试游戏目录原路径。
 4. 只接受 `gamedata\...` 相对路径；绝对路径和包含 `..` 的路径不会进入松散文件层。
 5. CPK seam 的空文件和超过 4 GiB 的单文件不会作为覆盖资源加载；CS 文本脚本仍服从原文本解释器的读取结果。
+6. CPK seam 对 `.csb` 覆盖额外校验 4 字节小端 payload 长度头。头部与实际文件长度不符时，将该文件视为错误类型并回退原 CPK，避免文本源码被二进制解释器当成巨大数据块。
 
 launcher 的“增强 -> 松散文件补丁”提供一个统一勾选开关，默认启用并使用 `替换（可回退）`。它同时控制 CPK 资源和 CS 文本脚本。取消勾选后恢复原版加载路径；由于发行版没有 `editData`，关闭后 CS 模式通常不能工作。高级页仍可选择完整 HookMode，但两种替换模式对 CS 都执行“仅 gamepatch、无回退”策略。
 
@@ -66,7 +76,7 @@ CPK 资源在打开时使用只读内存映射，并在游戏释放该资源时�
 
 - `session_start`：新游戏进程开始记录，包含当前模式、`gamepatch` 根目录与格式版本。
 - `override`：已使用松散文件，包含实际文件和大小。
-- `cpk_fallback`：CPK seam 未找到松散文件，并记录 CPK 是否成功打开。
+- `cpk_fallback`：CPK seam 未找到可用松散文件，并记录 CPK 是否成功打开；错误命名或损坏的 `.csb` 会在 `reason` 中记录 `invalid_csb_header`。
 - `gamepatch_required_missing`：CS seam 未找到必需的 `gamepatch` 脚本，直接返回失败且没有 fallback 字段。
 - `overlay_disabled`：UI 开关已关闭，记录被忽略的候选文件以及原加载器结果。
 - `mirror_compare`：高级页使用镜像比对模式，不替换资源。
@@ -92,6 +102,6 @@ CPK 资源在打开时使用只读内存映射，并在游戏释放该资源时�
 ## 实现依据
 
 - CPK 资源入口：`PackageResourceManager_OpenFile @ 0x66E820`（原 IDA 名 `ScriptManager_LoadScriptFile_2`）。
-- CS 文本脚本入口：`cs_TextScriptInterpreter_Initialize @ 0x7E0DA0`。该函数直接 `CRT_Fopen(file_name, "rb")`，因此需要单独的内部 hook；启用时只把 `gamepatch` 绝对路径交给原读取器，缺失/失败不再用原相对路径调用它。该内部 hook 跟随同一个 `loose_file_overlay` UI 开关，不对用户暴露第二个功能项。
+- CS 文本脚本入口：`cs_TextScriptInterpreter_Initialize @ 0x7E0DA0`。该函数直接 `CRT_Fopen(file_name, "rb")`，因此需要单独的内部 hook；启用时只把 `gamepatch` 绝对路径交给原读取器，缺失/失败不再用原相对路径调用它。进入该文本入口的 `.csb` 误命名请求会在候选路径层改为 `.cs`，不会修改 CSB 模式仍需使用的原文件名常量。该内部 hook 跟随同一个 `loose_file_overlay` UI 开关，不对用户暴露第二个功能项。
 - runtime 复用原 CPK manager 的 8 个文件句柄槽和内存映射句柄布局。
 - 原版 `Package_ReadData / Package_Seek / sub_793C10(close)` 无需额外 detour；松散文件释放仍沿用原版生命周期。
