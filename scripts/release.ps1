@@ -17,6 +17,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ProductName = "PAL4Plus"
+$ProductShortName = "P4P"
+$LauncherExeName = "$ProductName.exe"
 
 function Resolve-RepoRoot {
     return (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -204,9 +207,12 @@ function Get-ReleaseNotes {
         return Get-Content -LiteralPath $ReleaseNotesPath -Raw -Encoding UTF8
     }
 
+    # Keep the UTF-8 Chinese guide encoded so Windows PowerShell 5 can parse
+    # this BOM-less script, then update the historical launcher filename.
     $installGuide = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(
         "5a6J6KOF5pa55byP77yaCjEuIOS4i+i9veW5tuino+WOi+acrOWPkeW4g+WMheOAggoyLiDlsIbop6PljovlkI7nmoTmiYDmnInmlofku7blpI3liLbliLAgUEFMNCDmuLjmiI/lronoo4Xnm67lvZXvvIzkvb8gUEFMNF9pbmplY3QuZXhlIOS4jiBQQUw0LmV4ZSDkvY3kuo7lkIzkuIDnm67lvZXjgIIKMy4g5L+d5oyBIHBhbDRfaW5qZWN0IOaWh+S7tuWkueS4jiBQQUw0X2luamVjdC5leGUg5ZCM57qn77yM5LiN6KaB5Y+q5aSN5Yi2IGV4ZeOAggo0LiDlj4zlh7sgUEFMNF9pbmplY3QuZXhlIOWQr+WKqOa4uOaIj+OAgg=="))
-    return "PAL4 Inject $Version`n`n$installGuide"
+    $installGuide = $installGuide.Replace("PAL4_inject.exe", $LauncherExeName)
+    return "$ProductName ($ProductShortName) $Version`n`n$installGuide"
 }
 
 function Send-GiteeReleaseAsset {
@@ -272,7 +278,7 @@ function Invoke-GitReleaseChecks {
             throw "Tag $Version exists but does not point at HEAD. Refusing to publish a mismatched release."
         }
     } else {
-        Invoke-Checked -FilePath "git" -Arguments @("tag", "-a", $Version, "-m", "PAL4 Inject $Version") -WorkingDirectory $repoRoot
+        Invoke-Checked -FilePath "git" -Arguments @("tag", "-a", $Version, "-m", "$ProductName ($ProductShortName) $Version") -WorkingDirectory $repoRoot
     }
 
     if (-not $SkipGitPush) {
@@ -321,7 +327,7 @@ function Publish-GitHubRelease {
         Authorization = Get-GitHubCredentialHeader
         Accept = "application/vnd.github+json"
         "X-GitHub-Api-Version" = "2022-11-28"
-        "User-Agent" = "PAL4-inject-release-script"
+        "User-Agent" = "PAL4Plus-P4P-release-script"
     }
 
     $release = $null
@@ -337,7 +343,7 @@ function Publish-GitHubRelease {
     }
 
     $payload = @{
-        name = "PAL4 Inject $Version"
+        name = "$ProductName ($ProductShortName) $Version"
         body = $ReleaseNotes
         draft = $Draft
         prerelease = $Prerelease
@@ -412,7 +418,7 @@ function Publish-GiteeRelease {
 
     $payload = @{
         access_token = $token
-        name = "PAL4 Inject $Version"
+        name = "$ProductName ($ProductShortName) $Version"
         body = $ReleaseNotes
         prerelease = if ($Prerelease) { "true" } else { "false" }
     }
@@ -471,7 +477,7 @@ if ($Version -notmatch "^v[0-9]+\.[0-9]+\.[0-9]+$") {
 $buildPath = Join-Path $repoRoot $BuildDir
 $distPath = Join-Path $repoRoot "dist"
 $payloadPath = Join-Path $distPath "pal4_inject"
-$zipPath = Join-Path $repoRoot "PAL4_inject_${Version}_win32.zip"
+$zipPath = Join-Path $repoRoot "${ProductName}_${Version}_win32.zip"
 $gameExeName = "PAL4.exe"
 $gameExePath = Join-Path $distPath $gameExeName
 $preservedGameExe = $null
@@ -496,7 +502,7 @@ if ((Test-Path -LiteralPath $distPath) -and ((Resolve-Path -LiteralPath $distPat
     Remove-Item -LiteralPath $distPath -Recurse -Force
 }
 New-Item -ItemType Directory -Force -Path $payloadPath | Out-Null
-Copy-Item -Force -LiteralPath (Join-Path $buildPath "$Configuration\PAL4_inject.exe") -Destination (Join-Path $distPath "PAL4_inject.exe")
+Copy-Item -Force -LiteralPath (Join-Path $buildPath "$Configuration\$LauncherExeName") -Destination (Join-Path $distPath $LauncherExeName)
 Copy-Item -Force -LiteralPath (Join-Path $buildPath "$Configuration\runtime.dll") -Destination (Join-Path $payloadPath "runtime.dll")
 Copy-Item -Force -LiteralPath (Join-Path $buildPath "$Configuration\cli.exe") -Destination (Join-Path $payloadPath "cli.exe")
 if ($preservedGameExe) {
@@ -512,6 +518,12 @@ if (Test-Path -LiteralPath $zipPath) {
 Compress-Archive -Path (Join-Path $distPath "*") -DestinationPath $zipPath -Force
 
 $zipListing = tar -tf $zipPath
+if ($zipListing -notcontains $LauncherExeName) {
+    throw "Release archive does not contain $LauncherExeName."
+}
+if ($zipListing -contains "PAL4_inject.exe") {
+    throw "Release archive still contains the retired PAL4_inject.exe launcher."
+}
 Write-Host "Created $zipPath"
 $zipListing | ForEach-Object { Write-Host "  $_" }
 

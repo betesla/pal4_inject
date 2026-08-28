@@ -14,6 +14,7 @@
 #include "hook_manager.h"
 #include "pal4inject_build_info.h"
 #include "pal4inject/dpi_awareness.h"
+#include "pal4inject/main_menu_branding.h"
 #include "ipc_server.h"
 #include "main_menu_branding_patch.h"
 #include "pal4inject/launcher.h"
@@ -140,7 +141,9 @@ DWORD WINAPI RuntimeBootstrapThread(LPVOID) {
         state.SetLastError(error);
         AppendBootstrapLog(std::string("main_menu_branding_patch failed: ") + error);
     } else {
-        AppendBootstrapLog("main_menu_branding_patch ok text=PAL V1.2.1");
+        AppendBootstrapLog(
+            std::string("main_menu_branding_patch ok text=") +
+            std::string(kInjectedMainMenuVersionText));
     }
 
     DpiAwarenessMode dpi_mode = DpiAwarenessMode::unknown;

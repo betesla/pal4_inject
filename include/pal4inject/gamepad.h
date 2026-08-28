@@ -183,6 +183,12 @@ GamepadMovementTuning BuildGamepadMovementTuning(
     float magnitude,
     float run_threshold,
     float fast_run_threshold) noexcept;
+bool ShouldSuppressGamepadCameraAutoRecenter(
+    bool replacement_active,
+    bool main_loop_auto_recenter,
+    bool gamepad_enabled,
+    bool modern_controls,
+    bool camera_yaw_tracking) noexcept;
 GamepadTurnTuning BuildGamepadTurnTuning(
     float current_yaw_degrees,
     float target_direction_x,

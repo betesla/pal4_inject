@@ -11,6 +11,7 @@
 #include "imgui_internal.h"
 #include "imgui_host.h"
 #include "pal4inject/inject_feature_catalog.h"
+#include "pal4inject/product_identity.h"
 #include "pal4inject/ui_coordinate_space.h"
 #include "pal4inject_build_info.h"
 
@@ -1023,7 +1024,9 @@ void DrawSidebarPageItem(
 }
 
 void DrawSidebar(LauncherViewState* const view, const HWND owner) {
-    ImGui::TextUnformatted("PAL4 Inject");
+    ImGui::TextUnformatted("PAL4Plus");
+    ImGui::SameLine();
+    ImGui::TextDisabled("P4P");
     ImGui::TextDisabled("%s", kPal4InjectVersion);
     ImGui::Spacing();
     ImGui::Separator();
@@ -1059,7 +1062,7 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
     ImGui::Begin(
-        "PAL4 Inject Launcher",
+        "PAL4Plus (P4P) Launcher",
         nullptr,
         ImGuiWindowFlags_NoDecoration |
             ImGuiWindowFlags_NoMove |
@@ -1149,10 +1152,10 @@ bool RunLauncherUi(
     std::snprintf(
         view.bug_title.data(),
         view.bug_title.size(),
-        "[Bug] PAL4 Inject %s 崩溃反馈",
+        "[Bug] PAL4Plus (P4P) %s 崩溃反馈",
         kPal4InjectVersion);
     return RunImGuiHost(
-        L"PAL4 注入启动器",
+        kLauncherWindowTitle,
         1060,
         720,
         &DrawLauncherFrame,

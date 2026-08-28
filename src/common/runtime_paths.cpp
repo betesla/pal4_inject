@@ -1,4 +1,5 @@
 #include "pal4inject/runtime_paths.h"
+#include "pal4inject/product_identity.h"
 
 #include <algorithm>
 #include <cctype>
@@ -42,6 +43,12 @@ std::filesystem::path PackagedCliPath(const std::filesystem::path& install_dir) 
     return PackagedPayloadDirectory(install_dir) / "cli.exe";
 }
 
+bool IsLauncherExecutableName(const std::filesystem::path& path) {
+    const auto filename = LowerAscii(path.filename().string());
+    return filename == LowerAscii(kLauncherExecutableName) ||
+        filename == LowerAscii(kLegacyLauncherExecutableName);
+}
+
 std::filesystem::path InjectModuleDirectory() {
     char buffer[MAX_PATH]{};
     const DWORD len = GetModuleFileNameA(CurrentModuleHandle(), buffer, MAX_PATH);
@@ -59,8 +66,7 @@ std::filesystem::path InjectDataDirectory() {
         return module_dir;
     }
 
-    const auto filename = LowerAscii(std::filesystem::path(std::string(buffer, len)).filename().string());
-    if (filename == "pal4_inject.exe") {
+    if (IsLauncherExecutableName(std::filesystem::path(std::string(buffer, len)))) {
         return module_dir / "pal4_inject";
     }
     return module_dir;

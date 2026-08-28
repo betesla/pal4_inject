@@ -27,6 +27,7 @@
 #include "pal4inject/inject_feature_catalog.h"
 #include "pal4inject/inject_settings.h"
 #include "pal4inject/launcher.h"
+#include "pal4inject/product_identity.h"
 #include "pal4inject/runtime_paths.h"
 #include "pal4inject_build_info.h"
 
@@ -72,7 +73,8 @@ std::filesystem::path DefaultRuntimeDllPath() {
 
 void PrintUsage() {
     std::cout
-        << "Usage: PAL4_inject (--game-root <path> | --exe <path>) "
+        << "Usage: " << pal4::inject::kLauncherExecutableName
+        << " (--game-root <path> | --exe <path>) "
         << "[--dll <path>] [--script-mode cs|csb] [--ready-timeout-ms <ms>] "
            "[--no-resume] [--background]\n";
 }
@@ -81,7 +83,7 @@ void ShowGuiError(const std::wstring& error) {
     MessageBoxW(
         nullptr,
         error.empty() ? L"启动失败。" : error.c_str(),
-        L"PAL4 注入启动器",
+        pal4::inject::kLauncherWindowTitle,
         MB_ICONERROR | MB_OK);
 }
 
@@ -297,7 +299,7 @@ bool FetchLatestReleaseInfo(
         return false;
     }
     const HINTERNET internet = InternetOpenW(
-        L"PAL4_inject",
+        pal4::inject::kProductNameWide,
         INTERNET_OPEN_TYPE_PRECONFIG,
         nullptr,
         nullptr,
@@ -311,7 +313,7 @@ bool FetchLatestReleaseInfo(
     const HINTERNET request = InternetOpenUrlW(
         internet,
         api_url,
-        L"Accept: application/json\r\nUser-Agent: PAL4_inject\r\n",
+        L"Accept: application/json\r\nUser-Agent: PAL4Plus-P4P\r\n",
         0,
         INTERNET_FLAG_RELOAD | INTERNET_FLAG_SECURE | INTERNET_FLAG_NO_CACHE_WRITE,
         0);
@@ -778,7 +780,7 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* const options) {
         return false;
     }
     if (!std::filesystem::exists(state.game_exe)) {
-        ShowGuiError(L"没有找到 PAL4.exe。\n\n请把 PAL4_inject.exe 放到 PAL4.exe 所在目录。");
+        ShowGuiError(L"没有找到 PAL4.exe。\n\n请把 PAL4Plus.exe 放到 PAL4.exe 所在目录。");
         return false;
     }
     if (!std::filesystem::exists(state.runtime_dll)) {

@@ -73,6 +73,8 @@ BOOL __cdecl Hook_CameraPrepare(const int script_string_arg) {
         return FALSE;
     }
 
+    ResetGamepadCameraYawControl();
+
     char name_buffer[128]{};
     const bool readable = CopyCameraPrepareName(
         script_string_arg,
@@ -106,6 +108,8 @@ int __cdecl Hook_CameraRunSingle(
         state.SetLastError("original Camera_RunSingle trampoline is null");
         return 0;
     }
+
+    ResetGamepadCameraYawControl();
 
     char name_buffer[128]{};
     const bool readable = CopyCameraPrepareName(

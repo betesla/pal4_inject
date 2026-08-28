@@ -1,4 +1,4 @@
-# PAL4 Inject Hook Inventory
+# PAL4Plus（P4P）Hook Inventory
 
 ## Scope
 这份清单只记录 `inject/` 当前消费的 IDA-backed 地址与 patch metadata。
@@ -99,6 +99,15 @@
   - mode: `replace_with_fallback`
   - patch span: `6`
   - reason: 这是两套原版移动输入分支之前的共同入口。连接手柄并启用现代控制时，左摇杆直接调用 `MovePlayerInDirection @ 0x427E70`，以活动相机的前向/右向量形成连续方向；走路沿用原版 `0.4x`，跑到快跑阈值间把位移从 `1.0x` 连续插值到 `1.5x`、动画从 `1.0x` 连续插值到原版快跑的 `1.4x`。由于任意方向函数没有原版前进分支中的 `UpdateGridDisplay @ 0x40E210`，Hook 会在移动后补回小地图标记更新。无有效摇杆输入时回退原逻辑。
+
+- `update_object_movement / main camera tail-follow @ 0x424440`
+  - current mode: `replace_with_fallback`
+  - patch span: `8`
+  - reason: 该函数是原版主循环尾部 yaw 自动回正的插值阶段，会在随后调用 `PalActorControl_FlushMainCameraTailYaw` 前直接重建相机矩阵。现代操作已经跟踪当前活动相机时，只屏蔽来自 `0x42498A/0x424A45` 的两次主循环调用，并把插值状态按原版完成路径清零，避免先渲染一帧角色背后角度再恢复；其他调用继续执行原版逻辑。
+
+- `PalActorControl_FlushMainCameraTailYaw @ 0x423FF0`
+  - current mode: `replace_with_fallback`
+  - reason: 原版主循环会在未检测到鼠标横向输入时从 `0x42499F/0x424A5A` 调用该函数，把主相机尾部 yaw 重新拉回角色背后。现代操作不进入原生鼠标状态，因此在可操作场景相机已被跟踪后屏蔽这两个自动回正调用；初始化、切换模式和 `giFlushTailYAngle` 的显式调用继续执行原版逻辑。剧情相机入口会清除旧跟踪状态，返回可操作场景后再继承新的当前角度。
 - `SetCameraMode script callback @ 0x5BC650`
   - mode: `replace_with_fallback`
   - patch span: `6`

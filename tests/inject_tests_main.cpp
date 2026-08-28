@@ -53,6 +53,7 @@
 #include "pal4inject/script_mode_override.h"
 #include "pal4inject/ui_snapshot.h"
 #include "memory_debug_runtime.h"
+#include "gamepad_control_hooks.h"
 #include "hook_manager.h"
 #include "loose_file_load_log.h"
 #include "runtime_state.h"
@@ -95,6 +96,10 @@ void TestPackagedRuntimeLayoutPaths() {
     assert(
         pal4::inject::PackagedCliPath(install_dir) ==
         install_dir / "pal4_inject" / "cli.exe");
+    assert(pal4::inject::IsLauncherExecutableName("PAL4Plus.exe"));
+    assert(pal4::inject::IsLauncherExecutableName("pal4plus.EXE"));
+    assert(pal4::inject::IsLauncherExecutableName("PAL4_inject.exe"));
+    assert(!pal4::inject::IsLauncherExecutableName("PAL4.exe"));
 }
 
 void TestLooseFileOverlayPaths() {
@@ -219,14 +224,14 @@ void TestLooseFileOverlayPaths() {
 void TestMainMenuBrandingPlan() {
     using namespace pal4::inject;
     assert(kOriginalMainMenuVersionText == "PAL4 v1.1");
-    assert(kInjectedMainMenuVersionText == "PAL V1.2.1");
+    assert(kInjectedMainMenuVersionText == "PAL V1.2.2");
     assert(kMainMenuVersionSlotSize == 12);
     assert(kOriginalMainMenuVersionSlot[0] == 'P');
     assert(kOriginalMainMenuVersionSlot[3] == '4');
     assert(kOriginalMainMenuVersionSlot[9] == 0);
     assert(kInjectedMainMenuVersionSlot[3] == ' ');
     assert(kInjectedMainMenuVersionSlot[4] == 'V');
-    assert(kInjectedMainMenuVersionSlot[9] == '1');
+    assert(kInjectedMainMenuVersionSlot[9] == '2');
     assert(kInjectedMainMenuVersionSlot[10] == 0);
     assert(kInjectedMainMenuVersionSlot[11] == 0);
     assert(ida::kMainMenuVersionText == 0x8B9494);
@@ -338,7 +343,7 @@ void TestLooseFileLoadLogFormatting() {
 
 void TestHookInventory() {
     const auto inventory = pal4::inject::BuildHookInventorySkeleton();
-    assert(inventory.size() == 37);
+    assert(inventory.size() == 39);
     bool found_process_ui_event = false;
     bool found_handle_ui_message = false;
     bool found_gi_talk = false;
@@ -369,6 +374,8 @@ void TestHookInventory() {
     bool found_crt_message_box = false;
     bool found_movement_collision_check = false;
     bool found_player_control_update = false;
+    bool found_main_camera_tail_follow_update = false;
+    bool found_flush_main_camera_tail_yaw = false;
     bool found_set_camera_mode_script = false;
     bool found_ui_frame_manager_set_cursor = false;
     for (const auto& hook : inventory) {
@@ -584,6 +591,18 @@ void TestHookInventory() {
             assert(hook.patch_span == 6);
             assert(hook.ida_ea == pal4::inject::ida::kPlayerControlUpdate);
         }
+        if (hook.id == HookId::main_camera_tail_follow_update) {
+            found_main_camera_tail_follow_update = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 8);
+            assert(hook.ida_ea == pal4::inject::ida::kMainCameraTailFollowUpdate);
+        }
+        if (hook.id == HookId::flush_main_camera_tail_yaw) {
+            found_flush_main_camera_tail_yaw = true;
+            assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
+            assert(hook.patch_span == 7);
+            assert(hook.ida_ea == pal4::inject::ida::kFlushMainCameraTailYaw);
+        }
         if (hook.id == HookId::set_camera_mode_script) {
             found_set_camera_mode_script = true;
             assert(hook.mode == pal4::inject::HookMode::replace_with_fallback);
@@ -621,6 +640,8 @@ void TestHookInventory() {
     assert(found_crt_message_box);
     assert(found_movement_collision_check);
     assert(found_player_control_update);
+    assert(found_main_camera_tail_follow_update);
+    assert(found_flush_main_camera_tail_yaw);
     assert(found_set_camera_mode_script);
     assert(found_ui_frame_manager_set_cursor);
 }
@@ -1482,6 +1503,18 @@ void TestGamepadLogic() {
     assert(fast_tuning.mode == 2);
     assert(std::fabs(fast_tuning.speed_multiplier - 1.5F) < 0.001F);
     assert(std::fabs(fast_tuning.animation_multiplier - 1.4F) < 0.001F);
+    assert(pal4::inject::ShouldSuppressGamepadCameraAutoRecenter(
+        true, true, true, true, true));
+    assert(!pal4::inject::ShouldSuppressGamepadCameraAutoRecenter(
+        false, true, true, true, true));
+    assert(!pal4::inject::ShouldSuppressGamepadCameraAutoRecenter(
+        true, false, true, true, true));
+    assert(!pal4::inject::ShouldSuppressGamepadCameraAutoRecenter(
+        true, true, false, true, true));
+    assert(!pal4::inject::ShouldSuppressGamepadCameraAutoRecenter(
+        true, true, true, false, true));
+    assert(!pal4::inject::ShouldSuppressGamepadCameraAutoRecenter(
+        true, true, true, true, false));
     const auto reverse_turn = pal4::inject::BuildGamepadTurnTuning(
         0.0F, 0.0F, -1.0F, 0.1F, 360.0F, 20.0F);
     assert(reverse_turn.use_walk_animation);
@@ -2070,6 +2103,28 @@ void TestCameraPitchGuardMath() {
     assert(pal4::inject::ClampCameraPitchAngle(-100.0F) == 271.0F);
 }
 
+void TestCameraYawGuardScope() {
+    pal4::inject::CameraYawGuard guard;
+    float gameplay_camera[32]{};
+    float story_camera[32]{};
+    gameplay_camera[15] = 10.0F;
+    story_camera[15] = 20.0F;
+
+    guard.Arm(gameplay_camera, 370.0F);
+    assert(guard.Apply(gameplay_camera));
+    assert(gameplay_camera[15] == 10.0F);
+    assert(!guard.Apply(story_camera));
+    assert(story_camera[15] == 20.0F);
+
+    guard.Disarm();
+    gameplay_camera[15] = 125.0F;
+    assert(!guard.Apply(gameplay_camera));
+    assert(gameplay_camera[15] == 125.0F);
+
+    guard.Arm(nullptr, 90.0F);
+    assert(!guard.Apply(gameplay_camera));
+}
+
 void TestCeguiWidescreenPlanMath() {
     assert(std::string(pal4::inject::ToString(pal4::inject::UiProfile::centered_800x600)) == "centered_800x600");
     assert(std::string(pal4::inject::ToString(pal4::inject::UiProfile::widescreen_1067x600)) == "widescreen_1067x600");
@@ -2614,6 +2669,8 @@ void TestBugReportHelpers() {
     options.include_crash_report = true;
     options.include_runtime_log = true;
     body = pal4::inject::BuildBugReportBody(data, options);
+    assert(body.find("PAL4Plus") != std::string::npos);
+    assert(body.find("P4P") != std::string::npos);
     assert(body.find("exception_code=0xC0000005") != std::string::npos);
     assert(body.find("last line") != std::string::npos);
     assert(body.find("未上传 minidump") != std::string::npos);
@@ -3234,6 +3291,7 @@ int main() {
     TestLauncherNaming();
     TestCameraPitchUnlockPatchMetadata();
     TestCameraPitchGuardMath();
+    TestCameraYawGuardScope();
     TestCeguiWidescreenPlanMath();
     TestCeguiDynamicFontResyncMath();
     TestCrashCaptureHelpers();

@@ -28,6 +28,8 @@ InjectFeatureCategory BuildCategory(const HookId id) {
     case HookId::d3d9_set_present_parameters:
         return InjectFeatureCategory::render_visual;
     case HookId::camera_update_matrix:
+    case HookId::main_camera_tail_follow_update:
+    case HookId::flush_main_camera_tail_yaw:
     case HookId::set_camera_mode_script:
         return InjectFeatureCategory::camera;
     case HookId::loose_file_overlay:

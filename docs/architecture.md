@@ -1,4 +1,4 @@
-# PAL4 Inject Architecture
+# PAL4Plus（P4P）Architecture
 
 ## Goals
 - 用独立的 `inject/` 轨承载原始 `launch.exe` 的 x86 运行时替换。
@@ -7,10 +7,10 @@
 
 ## Runtime Shape
 - 发布布局：
-  - `PAL4_inject.exe` 放在游戏根目录
+  - `PAL4Plus.exe` 放在游戏根目录
   - `runtime.dll` 与 `cli.exe` 放在 `pal4_inject\` 子目录
   - launcher 严格从 `pal4_inject\runtime.dll` 装载，不再回退到根目录 `runtime.dll`
-- `PAL4_inject.exe`
+- `PAL4Plus.exe`
   - ImGui + Direct3D 9 launcher UI，在进程启动前保存游戏和 Hook 配置
   - 设置页按游戏、视频、音频、控制、增强和高级分类；显示器枚举与分辨率列表集中在视频页
   - `CreateProcessA(..., CREATE_SUSPENDED)`
@@ -173,7 +173,7 @@
   - `bootstrap.cpp`
     - bootstrap 主流程
     - 复核 launcher 期请求的脚本模式，必要时补写并记录日志
-    - 在标题流程开始绘制前校验 IDA `0x8B9494` 的 12 字节数据槽，并将 `PAL4 v1.1` 窄替换为 `PAL V1.2.1`；不修改磁盘 EXE，字节不匹配会记录失败并阻止 runtime 声明完全 ready
+    - 在标题流程开始绘制前校验 IDA `0x8B9494` 的 12 字节数据槽，并将 `PAL4 v1.1` 窄替换为 `PAL V1.2.2`；不修改磁盘 EXE，字节不匹配会记录失败并阻止 runtime 声明完全 ready
   - `gamepad_runtime.cpp`
     - 动态加载 XInput、轮询 0 号手柄、维护菜单上下文与固定只读按钮映射
     - 标题主界面和战斗界面都不能仅通过 `PALIV` 指针判定。十字键初次按下时以一次 CEGUI snapshot 同时读取主界面、系统菜单和 `Combat*` 活动根节点，再将本次按住周期锁定为普通 3D 快捷页、系统菜单导航或纯方向导航三种模式之一，避免战斗中误发 F1～F4，也避免长按过程中切换语义
@@ -186,9 +186,10 @@
     - 在 `uiFrameManager_SetCursor @ 0x4BBB70` 入口拦截手柄模式下的原生 `SetCursor`，消除先显示、后清空造成的单帧闪烁
   - `gamepad_control_hooks.cpp`
     - 在玩家控制总入口消费左摇杆，调用游戏原生任意方向移动函数与走/跑/快跑模式函数；补回该任意方向分支缺少的小地图位置更新，在跑到快跑阈值间同步线性插值移动和动画倍率，并在大角度改向时限制 yaw 变化、暂用行走动作完成转身
-    - 通过活动相机前向/右向量构建相机相对方向，并用右摇杆更新 yaw/pitch
+    - 通过活动相机前向/右向量构建左摇杆的相机相对方向，并用右摇杆更新 yaw/pitch；右摇杆回中后仍保持当前镜头方位
+    - 现代操作接管可操作场景相机后，屏蔽主循环从 `0x42498A/0x424A45` 发起的尾随角插值，以及随后从 `0x42499F/0x424A5A` 发起的 `PalActorControl_FlushMainCameraTailYaw` 最终回正；初始化、相机模式切换、剧情镜头和脚本显式回正仍执行原版路径并重建相机跟踪状态
     - R3 默认读取当前镜头模式配置记录的原版距离，并调用原生相机距离 setter 在 `0.2× / 0.5× / 1.0× / 1.5×` 四档间循环
-    - 左摇杆持续推动时维护独立的目标 yaw，并在中央相机矩阵入口阻断“角色转向带动跟随镜头、下一帧方向再次偏转”的反馈环
+    - 偏航保护只覆盖右摇杆相机 setter 同步触发的矩阵重建，并在 setter 返回后立即解除。脚本切换模式、准备或运行剧情镜头时也会清除跟踪状态，避免剧情镜头复用活动相机对象时继承玩家角度
     - 可选地在脚本 `SetCameraMode` 返回后恢复此前模式
 
 ## Current Behavior Boundary

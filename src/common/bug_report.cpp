@@ -1,4 +1,5 @@
 #include "pal4inject/bug_report.h"
+#include "pal4inject/product_identity.h"
 
 #include <algorithm>
 #include <array>
@@ -271,7 +272,7 @@ std::string BuildBugReportBody(
     output << "## 问题描述\n\n"
            << (options.description.empty() ? "请在这里补充问题现象和复现步骤。" : options.description)
            << "\n\n## 环境\n\n"
-           << "- PAL4 Inject：" << options.version << '\n'
+           << "- " << kProductName << "（" << kProductShortName << "）：" << options.version << '\n'
            << "- Build：" << options.build_id << '\n';
     if (options.include_crash_report && data.HasCrashReport()) {
         output << "\n## 崩溃报告（已脱敏）\n\n"
@@ -284,7 +285,8 @@ std::string BuildBugReportBody(
     if (!data.crash_dump_path.empty()) {
         output << "\n> 本次反馈未上传 minidump；第一版仅提交用户确认过的文本内容。\n";
     }
-    output << "\n---\n由 PAL4 Inject 启动器整理，提交前已由用户确认。\n";
+    output << "\n---\n由 " << kProductName << "（" << kProductShortName
+           << "）启动器整理，提交前已由用户确认。\n";
     return output.str();
 }
 

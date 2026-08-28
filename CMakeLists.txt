@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.19)
-project(pal4_inject VERSION 0.2.1 LANGUAGES CXX)
+project(pal4_inject VERSION 0.2.2 LANGUAGES CXX)
+
+# Public branding is separate from stable internal target, payload, config, and IPC names.
+set(PAL4PLUS_LAUNCHER_BASENAME "PAL4Plus")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -191,13 +194,13 @@ target_include_directories(pal4_injector_launcher PRIVATE
 target_link_libraries(pal4_injector_launcher PRIVATE pal4_inject_common pal4_inject_imgui)
 target_link_libraries(pal4_injector_launcher PRIVATE gdi32 wininet)
 set_target_properties(pal4_injector_launcher PROPERTIES
-    OUTPUT_NAME "PAL4_inject"
+    OUTPUT_NAME "${PAL4PLUS_LAUNCHER_BASENAME}"
     WIN32_EXECUTABLE TRUE
 )
 pal4_inject_add_dev_publish(
     pal4_injector_launcher
     "${PAL4_INJECT_DEV_PUBLISH_ROOT}"
-    "PAL4_inject.exe"
+    "${PAL4PLUS_LAUNCHER_BASENAME}.exe"
 )
 if(MSVC)
     target_link_options(pal4_injector_launcher PRIVATE /ENTRY:mainCRTStartup)

@@ -1,6 +1,7 @@
-# PAL4 Inject Track
+# PAL4Plus（P4P）
 
-`inject/` 是原始 `launch.exe` 的 x86 注入与替换框架。
+PAL4Plus，简称 P4P，是《仙剑奇侠传四》的现代化增强启动器。内部仍使用稳定的
+`pal4_inject` 模块、目录和协议名称，以兼容已有配置、日志与调试工具。
 
 ## 目标
 - 保持 `rebuild/` 专注 IDA-backed truth recovery。
@@ -34,37 +35,37 @@ cmake --build I:\PAL4\projects\pal4_inject\build --config Debug
 
 ## 启动
 - 兼容旧方式：
-  - `PAL4_inject.exe --game-root <包含 launch.exe 的目录>`
+  - `PAL4Plus.exe --game-root <包含 launch.exe 的目录>`
 - 新增直接指定目标 EXE：
-  - `PAL4_inject.exe --exe <完整 exe 路径>`
+  - `PAL4Plus.exe --exe <完整 exe 路径>`
 - 新增脚本模式切换：
   - `--script-mode cs`
   - `--script-mode csb`
-  - 不传参数直接双击 `PAL4_inject.exe` 时，会弹出中文 GUI 选择 `CS` 或 `CSB`；首次默认 `CSB`，后续恢复上次启动时的选择
+  - 不传参数直接双击 `PAL4Plus.exe` 时，会弹出中文 GUI 选择 `CS` 或 `CSB`；首次默认 `CSB`，后续恢复上次启动时的选择
 - 发布启动入口：
   - 发布使用时，把 `dist` 目录里的文件复制到 PAL4 游戏安装目录
-  - `PAL4_inject.exe` 放在游戏目录根部，和 `PAL4.exe` 同级
-  - `PAL4_inject.exe` 是 GUI 程序，双击启动时不会弹出 CMD 黑窗口
+  - `PAL4Plus.exe` 放在游戏目录根部，和 `PAL4.exe` 同级
+  - `PAL4Plus.exe` 是 GUI 程序，双击启动时不会弹出 CMD 黑窗口
   - 注入相关文件放在游戏目录下的 `pal4_inject` 子目录，便于后续覆盖更新
   - 注入配置、runtime log、crash report / dump 等运行产物也统一放在 `pal4_inject` 子目录
-  - 双击 `PAL4_inject.exe` 后由 GUI 选择 `CS` 或 `CSB`
+  - 双击 `PAL4Plus.exe` 后由 GUI 选择 `CS` 或 `CSB`
   - GUI 会读取并保存游戏目录下的 `config.cfg`，可设置分辨率、普通窗口/无边框窗口/独占全屏、宽屏和垂直同步
   - 设置导航按 `游戏 / 视频 / 音频 / 控制 / 增强 / 高级` 分类；显示相关选项统一放在“视频”
   - 注入启动器支持标准 XInput 手柄导航：左栏上下切换栏目并预览右侧内容，A 进入右侧子栏目，B 返回当前左栏栏目或取消弹窗；Start 直接启动游戏，Back 直接退出启动器
   - “音频”页可在 `0%–300%` 范围独立设置 `giTalk` 对白配音音量；游戏中按 `[` / `]` 可降低 / 提高 5%，屏幕顶部会短暂显示矢量喇叭、音波档位和百分比数字；只调整 `PALSOUND` 配音对象，不改变 BGM 或普通音效
-  - “控制”页只读展示固定的 Xbox 360 / XInput 手柄映射，暂不支持用户改键；3D 场景中 Start=F7、LB=M，Back/B 无反应；进入系统 UI 后 Start 无反应、Back/B=Esc，LB/RB 与 LT/RT 分别遍历主/子分页并跳过尚未开放或被禁用的页签。3D 场景中 A=空格、X=V、Y=C、L3=Tab；非战斗 3D 场景十字键直接打开 F1/F4/F2/F3 页面，战斗 UI 中四个方向恢复普通上下左右导航，B=Esc，行动盘可用 X 直接攻击、Y 直接防御。战斗行动盘支持左摇杆五扇区直选物品、仙术、特技、防御和逃跑，回中后自动把选择恢复到中央攻击，进入具体列表后左摇杆改为普通四向导航；v0.2.1 暂不启用战斗右摇杆相机控制，以免覆盖原生角色、敌人和技能镜头焦点。系统 UI 中上下键保持方向导航，左右键在物品、装备和仙术等带角色箭头的页面直接换人，不要求先把焦点移到顶部箭头，其他页面或弹窗中仍按普通左右导航处理。A 键同时同步 Win32 键盘路径和 PAL4 原生 InputManager 状态，可用于主菜单、读档、对话和场景交互；现代控制模式使用左摇杆连续方向，大角度改向会以行走动作平滑转身，并在跑到快跑区间同步线性调节移动与动作速度；普通 3D 场景中右摇杆仍可调整视角，并可实验性保持自由镜头模式
+  - “控制”页只读展示固定的 Xbox 360 / XInput 手柄映射，暂不支持用户改键；3D 场景中 Start=F7、LB=M，Back/B 无反应；进入系统 UI 后 Start 无反应、Back/B=Esc，LB/RB 与 LT/RT 分别遍历主/子分页并跳过尚未开放或被禁用的页签。3D 场景中 A=空格、X=V、Y=C、L3=Tab；非战斗 3D 场景十字键直接打开 F1/F4/F2/F3 页面，战斗 UI 中四个方向恢复普通上下左右导航，B=Esc，行动盘可用 X 直接攻击、Y 直接防御。战斗行动盘支持左摇杆五扇区直选物品、仙术、特技、防御和逃跑，回中后自动把选择恢复到中央攻击，进入具体列表后左摇杆改为普通四向导航；v0.2.2 暂不启用战斗右摇杆相机控制，以免覆盖原生角色、敌人和技能镜头焦点。系统 UI 中上下键保持方向导航，左右键在物品、装备和仙术等带角色箭头的页面直接换人，不要求先把焦点移到顶部箭头，其他页面或弹窗中仍按普通左右导航处理。A 键同时同步 Win32 键盘路径和 PAL4 原生 InputManager 状态，可用于主菜单、读档、对话和场景交互；现代控制模式使用左摇杆连续方向，大角度改向会以行走动作平滑转身，并在跑到快跑区间同步线性调节移动与动作速度；普通 3D 场景中右摇杆仍可调整视角，并可实验性保持自由镜头模式
   - 自动检测全部显示器；无边框窗口可选择并记住所用显示器，D3D9 保持窗口呈现并覆盖其完整区域
   - 分辨率列表分为“常用分辨率”和“所选显示器支持”
   - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
   - GUI 提供“反馈 Bug”页：检测最新崩溃文本，允许预览并选择附带脱敏后的崩溃报告或运行日志末尾；只有用户明确勾选授权后才会把诊断内容带到 Gitee 新建 Issue 页面
   - 第一版不会读取或上传 minidump，也不会在后台自动提交；完整正文会同时复制到剪贴板，最终由用户在 Gitee 页面检查并提交
   - GUI 右上角显示当前版本和作者信息，点击 `B站 @北风7P` 可打开作者主页
-  - 当前内置版本为 `v0.2.1`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
+  - 当前内置版本为 `v0.2.2`，发布 Release 时建议使用同名 tag；构建号只用于定位具体构建时间
 
 示例：
 
 ```powershell
-I:\PAL4\projects\pal4_inject\build\Debug\PAL4_inject.exe `
+I:\PAL4\projects\pal4_inject\build\Debug\PAL4Plus.exe `
   --exe I:\Games\original\PAL4.exe `
   --script-mode cs `
   --dll I:\PAL4\projects\pal4_inject\build\Debug\runtime.dll
@@ -108,7 +109,7 @@ CPK 资源不存在补丁或加载失败时仍可回退原 CPK。CS 模式不同
 ## 产物
 - `runtime.dll`
 - `cli.exe`
-- `PAL4_inject.exe`
+- `PAL4Plus.exe`
   - 启动器 EXE 内嵌 `assets/icons/xianjian_syringe_energy.ico` 作为程序图标
 - `pal4_inject_tests.exe`
 
@@ -119,7 +120,7 @@ CPK 资源不存在补丁或加载失败时仍可回退原 CPK。CS 模式不同
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1
 ```
 
-脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.2.1` 会生成 tag/release 版本 `v0.2.1`，产物为 `PAL4_inject_v0.2.1_win32.zip`。如只想本地打包、不发布 GitHub Release：
+脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.2.2` 会生成 tag/release 版本 `v0.2.2`，产物为 `PAL4Plus_v0.2.2_win32.zip`。如只想本地打包、不发布 GitHub Release：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubRelease -SkipGiteeRelease
@@ -132,7 +133,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
 如需显式附带发布说明，可传入：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -ReleaseNotesPath .\docs\release_notes_v0.2.1.md
+powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -ReleaseNotesPath .\docs\release_notes_v0.2.2.md
 ```
 
 如果 `dist\PAL4.exe` 已存在，脚本会在刷新 `dist` 时保留它，并把它一同打入发布 zip；不要把 `PAL4.exe` 提交进 git。
@@ -218,7 +219,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - `minimap.xml` 可见部件改为靠左下
   - `portrait.xml` 可见部件改为靠右上
   - 标题主界面的左右装饰和按钮分别靠边，中央 Logo 保持居中，只横向扩展上下连接条；背景继续独立铺满宽屏
-  - 标题流程原本绘制的 `PAL4 v1.1` 会在内存中改为 `PAL V1.2.1`，便于从截图直接识别正在使用本修补；补丁先校验原始 12 字节数据槽，不修改磁盘上的 `PAL4.exe`
+  - 标题流程原本绘制的 `PAL4 v1.1` 会在内存中改为 `PAL V1.2.2`，便于从截图直接识别正在使用本修补；补丁先校验原始 12 字节数据槽，不修改磁盘上的 `PAL4.exe`
   - “旧的回忆”读档页只铺宽外围九宫格，中央存档列表和分页控件保持原尺寸居中，关闭按钮随右下框贴近屏幕边缘
   - “前尘忆梦”影片列表的四周边框铺到屏幕边缘，影片缩略图和说明区域保持原尺寸居中，右下关闭按钮继续可点击
   - 图片列表、图片查看器和旧版在线信息页复用同一外框策略：只延展八块外围装饰并移动关闭按钮，图片、文字与查看控件不参与拉伸

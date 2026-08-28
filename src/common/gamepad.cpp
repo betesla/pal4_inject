@@ -357,6 +357,19 @@ GamepadMovementTuning BuildGamepadMovementTuning(
     };
 }
 
+bool ShouldSuppressGamepadCameraAutoRecenter(
+    const bool replacement_active,
+    const bool main_loop_auto_recenter,
+    const bool gamepad_enabled,
+    const bool modern_controls,
+    const bool camera_yaw_tracking) noexcept {
+    return replacement_active &&
+        main_loop_auto_recenter &&
+        gamepad_enabled &&
+        modern_controls &&
+        camera_yaw_tracking;
+}
+
 GamepadTurnTuning BuildGamepadTurnTuning(
     const float current_yaw_degrees,
     const float target_direction_x,

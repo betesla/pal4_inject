@@ -43,7 +43,7 @@ constexpr std::array<EnumName<ScriptMode>, 3> kScriptModes{{
     {ScriptMode::csb, "csb"},
 }};
 
-constexpr std::array<EnumName<HookId>, 39> kHookIds{{
+constexpr std::array<EnumName<HookId>, 41> kHookIds{{
     {HookId::process_ui_event, "process_ui_event"},
     {HookId::handle_ui_message, "handle_ui_message"},
     {HookId::simulate_key_press_and_release, "simulate_key_press_and_release"},
@@ -62,6 +62,7 @@ constexpr std::array<EnumName<HookId>, 39> kHookIds{{
     {HookId::pal4_main_wndproc, "pal4_main_wndproc"},
     {HookId::handle_player_input_events, "handle_player_input_events"},
     {HookId::player_control_update, "player_control_update"},
+    {HookId::flush_main_camera_tail_yaw, "flush_main_camera_tail_yaw"},
     {HookId::set_camera_mode_script, "set_camera_mode_script"},
     {HookId::combat_console_set_image_position, "combat_console_set_image_position"},
     {HookId::combat_console_set_image_position_2, "combat_console_set_image_position_2"},
@@ -83,6 +84,7 @@ constexpr std::array<EnumName<HookId>, 39> kHookIds{{
     {HookId::movement_collision_check, "movement_collision_check"},
     {HookId::ui_frame_manager_set_cursor, "ui_frame_manager_set_cursor"},
     {HookId::rw_camera_begin_update, "rw_camera_begin_update"},
+    {HookId::main_camera_tail_follow_update, "main_camera_tail_follow_update"},
 }};
 
 template <typename Enum, std::size_t N>

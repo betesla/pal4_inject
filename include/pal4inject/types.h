@@ -63,6 +63,7 @@ enum class HookId : std::uint8_t {
     pal4_main_wndproc,
     handle_player_input_events,
     player_control_update,
+    flush_main_camera_tail_yaw,
     set_camera_mode_script,
     combat_console_set_image_position,
     combat_console_set_image_position_2,
@@ -84,6 +85,7 @@ enum class HookId : std::uint8_t {
     movement_collision_check,
     ui_frame_manager_set_cursor,
     rw_camera_begin_update,
+    main_camera_tail_follow_update,
 };
 
 struct HookDescriptor {

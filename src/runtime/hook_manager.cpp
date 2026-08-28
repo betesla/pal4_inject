@@ -106,6 +106,8 @@ bool HookManager::Initialize(std::string* error) {
         case HookId::update_input_device_state:
         case HookId::initialize_direct_input:
         case HookId::player_control_update:
+        case HookId::main_camera_tail_follow_update:
+        case HookId::flush_main_camera_tail_yaw:
         case HookId::set_camera_mode_script:
         case HookId::gi_talk:
         case HookId::cegui_renderer_constructor_2:
