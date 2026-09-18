@@ -56,6 +56,8 @@ public:
     bool GamepadLogEnabled() const;
     void SetGamepadModernControls(bool enabled);
     bool GamepadModernControls() const;
+    void SetGamepadInvertCameraX(bool enabled);
+    bool GamepadInvertCameraX() const;
     void SetGamepadInvertCameraY(bool enabled);
     bool GamepadInvertCameraY() const;
     void SetGamepadPreserveFreeCamera(bool enabled);
@@ -127,6 +129,7 @@ private:
     bool gamepad_enabled_ = true;
     bool gamepad_log_enabled_ = false;
     bool gamepad_modern_controls_ = true;
+    bool gamepad_invert_camera_x_ = false;
     bool gamepad_invert_camera_y_ = false;
     bool gamepad_preserve_free_camera_ = false;
     float gamepad_run_threshold_ = 0.62F;

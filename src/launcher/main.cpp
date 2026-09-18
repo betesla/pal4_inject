@@ -659,6 +659,7 @@ pal4::inject::InjectPersistedSettings NormalizeInjectSettings(
     normalized.gamepad_enabled = loaded.gamepad_enabled;
     normalized.gamepad_log_enabled = loaded.gamepad_log_enabled;
     normalized.gamepad_modern_controls = loaded.gamepad_modern_controls;
+    normalized.gamepad_invert_camera_x = loaded.gamepad_invert_camera_x;
     normalized.gamepad_invert_camera_y = loaded.gamepad_invert_camera_y;
     normalized.gamepad_preserve_free_camera = loaded.gamepad_preserve_free_camera;
     normalized.gamepad_run_threshold = loaded.gamepad_run_threshold;

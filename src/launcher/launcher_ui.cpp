@@ -728,7 +728,10 @@ void DrawControlsPage(LauncherUiState* const state) {
         360.0F,
         "%.0f 度/秒");
     ImGui::Checkbox(
-        "反转右摇杆纵向",
+        "反转右摇杆横向（X 轴）",
+        &state->inject_settings.gamepad_invert_camera_x);
+    ImGui::Checkbox(
+        "反转右摇杆纵向（Y 轴）",
         &state->inject_settings.gamepad_invert_camera_y);
     ImGui::Checkbox(
         "保持当前自由镜头（忽略脚本模式切换）",

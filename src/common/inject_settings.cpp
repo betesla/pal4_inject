@@ -60,6 +60,8 @@ std::string FormatInjectPersistedSettings(const InjectPersistedSettings& setting
         (settings.gamepad_log_enabled ? "1" : "0") << '\n';
     out << "gamepad_modern_controls=" <<
         (settings.gamepad_modern_controls ? "1" : "0") << '\n';
+    out << "gamepad_invert_camera_x=" <<
+        (settings.gamepad_invert_camera_x ? "1" : "0") << '\n';
     out << "gamepad_invert_camera_y=" <<
         (settings.gamepad_invert_camera_y ? "1" : "0") << '\n';
     out << "gamepad_preserve_free_camera=" <<
@@ -171,6 +173,7 @@ bool ParseInjectPersistedSettings(
         }
         if (key == "gamepad_enabled" || key == "gamepad_log_enabled" ||
             key == "gamepad_modern_controls" ||
+            key == "gamepad_invert_camera_x" ||
             key == "gamepad_invert_camera_y" ||
             key == "gamepad_preserve_free_camera") {
             bool* flag = nullptr;
@@ -180,6 +183,8 @@ bool ParseInjectPersistedSettings(
                 flag = &out->gamepad_log_enabled;
             } else if (key == "gamepad_modern_controls") {
                 flag = &out->gamepad_modern_controls;
+            } else if (key == "gamepad_invert_camera_x") {
+                flag = &out->gamepad_invert_camera_x;
             } else if (key == "gamepad_invert_camera_y") {
                 flag = &out->gamepad_invert_camera_y;
             } else {

@@ -44,6 +44,7 @@ bool SavePersistedRuntimePreferences(std::string* error) {
     settings.gamepad_enabled = GetRuntimeState().GamepadEnabled();
     settings.gamepad_log_enabled = GetRuntimeState().GamepadLogEnabled();
     settings.gamepad_modern_controls = GetRuntimeState().GamepadModernControls();
+    settings.gamepad_invert_camera_x = GetRuntimeState().GamepadInvertCameraX();
     settings.gamepad_invert_camera_y = GetRuntimeState().GamepadInvertCameraY();
     settings.gamepad_preserve_free_camera =
         GetRuntimeState().GamepadPreserveFreeCamera();
@@ -195,6 +196,7 @@ bool LoadPersistedRuntimePreferences(std::string* error) {
     GetRuntimeState().SetGamepadMapping(settings.gamepad_mapping);
     GetRuntimeState().SetGamepadLogEnabled(settings.gamepad_log_enabled);
     GetRuntimeState().SetGamepadModernControls(settings.gamepad_modern_controls);
+    GetRuntimeState().SetGamepadInvertCameraX(settings.gamepad_invert_camera_x);
     GetRuntimeState().SetGamepadInvertCameraY(settings.gamepad_invert_camera_y);
     GetRuntimeState().SetGamepadPreserveFreeCamera(
         settings.gamepad_preserve_free_camera);

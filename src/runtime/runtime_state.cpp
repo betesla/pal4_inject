@@ -278,6 +278,16 @@ bool RuntimeState::GamepadModernControls() const {
     return gamepad_modern_controls_;
 }
 
+void RuntimeState::SetGamepadInvertCameraX(const bool enabled) {
+    std::scoped_lock lock(mutex_);
+    gamepad_invert_camera_x_ = enabled;
+}
+
+bool RuntimeState::GamepadInvertCameraX() const {
+    std::scoped_lock lock(mutex_);
+    return gamepad_invert_camera_x_;
+}
+
 void RuntimeState::SetGamepadInvertCameraY(const bool enabled) {
     std::scoped_lock lock(mutex_);
     gamepad_invert_camera_y_ = enabled;
@@ -501,6 +511,7 @@ RuntimeSnapshot RuntimeState::BuildSnapshotUnlocked(const std::uint32_t current_
     snapshot.gamepad_enabled = gamepad_enabled_;
     snapshot.gamepad_log_enabled = gamepad_log_enabled_;
     snapshot.gamepad_modern_controls = gamepad_modern_controls_;
+    snapshot.gamepad_invert_camera_x = gamepad_invert_camera_x_;
     snapshot.gamepad_invert_camera_y = gamepad_invert_camera_y_;
     snapshot.gamepad_preserve_free_camera = gamepad_preserve_free_camera_;
     snapshot.gamepad_run_threshold = gamepad_run_threshold_;

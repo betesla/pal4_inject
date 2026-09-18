@@ -138,8 +138,9 @@ void UpdateModernCamera(
         ? std::clamp(delta_seconds, 0.0F, 0.1F)
         : 0.0F;
     if (camera_active && safe_delta > 0.0F) {
+        const float yaw_direction = state.GamepadInvertCameraX() ? 1.0F : -1.0F;
         g_controlled_camera_yaw = NormalizeAngle360(
-            g_controlled_camera_yaw - stick.x * sensitivity * safe_delta);
+            g_controlled_camera_yaw + stick.x * sensitivity * safe_delta * yaw_direction);
     }
 
     // PAL4's camera setters synchronously reach Camera_UpdateMatrix. Keep the

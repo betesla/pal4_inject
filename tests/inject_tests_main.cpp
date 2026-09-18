@@ -1271,6 +1271,7 @@ void TestInjectSettingsRoundTrip() {
     settings.gamepad_enabled = true;
     settings.gamepad_log_enabled = true;
     settings.gamepad_modern_controls = true;
+    settings.gamepad_invert_camera_x = true;
     settings.gamepad_invert_camera_y = true;
     settings.gamepad_preserve_free_camera = true;
     settings.gamepad_run_threshold = 0.71F;
@@ -1314,6 +1315,7 @@ void TestInjectSettingsRoundTrip() {
     assert(parsed.gamepad_enabled);
     assert(parsed.gamepad_log_enabled);
     assert(parsed.gamepad_modern_controls);
+    assert(parsed.gamepad_invert_camera_x);
     assert(parsed.gamepad_invert_camera_y);
     assert(parsed.gamepad_preserve_free_camera);
     assert(parsed.gamepad_run_threshold == 0.71F);
@@ -1360,6 +1362,8 @@ void TestInjectSettingsRoundTrip() {
     assert(loaded.gamepad_run_threshold == 0.71F);
     assert(loaded.gamepad_fast_run_threshold == 0.91F);
     assert(loaded.gamepad_camera_sensitivity == 175.0F);
+    assert(loaded.gamepad_invert_camera_x);
+    assert(loaded.gamepad_invert_camera_y);
     assert(loaded.gamepad_preserve_free_camera);
     assert(loaded.borderless_window);
     assert(loaded.borderless_monitor == R"(\\.\DISPLAY2)");
@@ -1374,7 +1378,30 @@ void TestInjectSettingsRoundTrip() {
     assert(legacy.bink_scaling_mode == pal4::inject::BinkScalingMode::fit);
     assert(legacy.gi_talk_volume == pal4::inject::kDefaultGiTalkVolume);
     assert(legacy.gamepad_modern_controls);
+    assert(!legacy.gamepad_invert_camera_x);
+    assert(!legacy.gamepad_invert_camera_y);
     assert(!legacy.gamepad_preserve_free_camera);
+
+    // Older configurations keep their Y inversion without enabling X inversion.
+    assert(pal4::inject::ParseInjectPersistedSettings(
+        "version=11\ngamepad_invert_camera_y=1\n", &legacy, &error));
+    assert(!legacy.gamepad_invert_camera_x);
+    assert(legacy.gamepad_invert_camera_y);
+    for (const bool invert_x : {false, true}) {
+        for (const bool invert_y : {false, true}) {
+            auto combination = settings;
+            combination.gamepad_invert_camera_x = invert_x;
+            combination.gamepad_invert_camera_y = invert_y;
+            assert(pal4::inject::ParseInjectPersistedSettings(
+                pal4::inject::FormatInjectPersistedSettings(combination),
+                &parsed, &error));
+            assert(parsed.gamepad_invert_camera_x == invert_x);
+            assert(parsed.gamepad_invert_camera_y == invert_y);
+        }
+    }
+    assert(!pal4::inject::ParseInjectPersistedSettings(
+        "version=11\ngamepad_invert_camera_x=invalid\n", &parsed, &error));
+    assert(error.find("invalid gamepad_invert_camera_x") != std::string::npos);
     assert(legacy.gamepad_fast_run_threshold == 0.88F);
     assert(pal4::inject::GetGamepadBinding(
         legacy.gamepad_mapping,

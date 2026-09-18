@@ -25,6 +25,7 @@ struct InjectPersistedSettings {
     bool gamepad_enabled = true;
     bool gamepad_log_enabled = false;
     bool gamepad_modern_controls = true;
+    bool gamepad_invert_camera_x = false;
     bool gamepad_invert_camera_y = false;
     bool gamepad_preserve_free_camera = false;
     float gamepad_run_threshold = 0.62F;
