@@ -291,7 +291,7 @@ std::optional<std::string> ExtractJsonStringField(
 
 bool FetchLatestReleaseInfo(
     const wchar_t* const api_url,
-    const wchar_t* const fallback_page_url,
+    const wchar_t* const release_page_url,
     const wchar_t* const source_name,
     ReleaseInfo* const output,
     std::wstring* const error) {
@@ -343,10 +343,9 @@ bool FetchLatestReleaseInfo(
     }
     output->tag_name = *tag_name;
     output->source_name = source_name;
-    const auto html_url = ExtractJsonStringField(payload, "html_url");
-    output->html_url = html_url && !html_url->empty()
-        ? WideFromUtf8(*html_url)
-        : std::wstring(fallback_page_url);
+    // Gitee embeds author.html_url without a release-level html_url. Use the
+    // known repository release page so nested profile URLs cannot be selected.
+    output->html_url = release_page_url;
     return true;
 }
 
