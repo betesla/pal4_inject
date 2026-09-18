@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(pal4_inject VERSION 0.2.2 LANGUAGES CXX)
+project(pal4_inject VERSION 0.2.3 LANGUAGES CXX)
 
 # Public branding is separate from stable internal target, payload, config, and IPC names.
 set(PAL4PLUS_LAUNCHER_BASENAME "PAL4Plus")
@@ -230,6 +230,10 @@ if(PAL4_INJECT_BUILD_TESTS)
     target_link_libraries(pal4_inject_tests PRIVATE pal4_inject_runtime_core)
     add_dependencies(pal4_inject_tests pal4_inject_build_info)
     add_test(NAME pal4_inject_tests COMMAND pal4_inject_tests)
+    add_test(NAME pal4_release_script_tests
+        COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+            -File ${CMAKE_CURRENT_SOURCE_DIR}/tests/release_script_tests.ps1
+    )
 endif()
 
 foreach(target

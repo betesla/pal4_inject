@@ -92,7 +92,19 @@ function Invoke-GitHubJson {
         -Uri $Uri `
         -Headers $Headers `
         -ContentType "application/json; charset=utf-8" `
-        -Body $json
+        -Body ([Text.Encoding]::UTF8.GetBytes($json))
+}
+
+function Assert-ReleaseNotesMatch {
+    param([string]$Expected, [string]$Actual, [string]$Platform)
+
+    # Compare Unicode text after normalizing only line endings. A successful
+    # HTTP request is not proof that a server stored Chinese text intact.
+    $normalizedExpected = $Expected.Replace("`r`n", "`n").TrimEnd([char[]]"`r`n")
+    $normalizedActual = $Actual.Replace("`r`n", "`n").TrimEnd([char[]]"`r`n")
+    if ($normalizedActual -cne $normalizedExpected) {
+        throw "$Platform release notes differ from the UTF-8 source file."
+    }
 }
 
 function Split-RepoName {
@@ -204,7 +216,7 @@ function Get-ReleaseNotes {
     )
 
     if ($ReleaseNotesPath) {
-        return Get-Content -LiteralPath $ReleaseNotesPath -Raw -Encoding UTF8
+        return [IO.File]::ReadAllText((Resolve-Path -LiteralPath $ReleaseNotesPath).Path, [Text.Encoding]::UTF8)
     }
 
     # Keep the UTF-8 Chinese guide encoded so Windows PowerShell 5 can parse
@@ -387,6 +399,18 @@ function Publish-GitHubRelease {
         -ContentType "application/zip" `
         -InFile $AssetPath
 
+    $verifiedRelease = Invoke-GitHubJson `
+        -Method Get `
+        -Uri "https://api.github.com/repos/$Repository/releases/tags/$Version" `
+        -Headers $headers
+    Assert-ReleaseNotesMatch -Expected $ReleaseNotes -Actual $verifiedRelease.body -Platform "GitHub"
+    $verifiedAsset = @($verifiedRelease.assets | Where-Object { $_.name -eq $assetName })
+    if ($verifiedAsset.Count -ne 1 -or
+        $verifiedAsset[0].size -ne (Get-Item -LiteralPath $AssetPath).Length -or
+        $verifiedAsset[0].state -ne "uploaded") {
+        throw "GitHub release asset verification failed."
+    }
+
     return [PSCustomObject]@{
         ReleaseUrl = $release.html_url
         AssetName = $uploaded.name
@@ -457,6 +481,15 @@ function Publish-GiteeRelease {
         -UploadUri "${attachFilesUri}?access_token=$([uri]::EscapeDataString($token))" `
         -AssetPath $AssetPath `
         -AccessToken $token
+    $verifiedRelease = Find-GiteeReleaseByTag -ApiBase $apiBase -Token $token -Version $Version
+    Assert-ReleaseNotesMatch -Expected $ReleaseNotes -Actual $verifiedRelease.body -Platform "Gitee"
+    $verifiedAssets = Invoke-GiteeApi `
+        -Method Get `
+        -Uri "${attachFilesUri}?access_token=$([uri]::EscapeDataString($token))"
+    if (-not @($verifiedAssets | Where-Object { $_.name -eq $assetName -or $_.file_name -eq $assetName }).Count) {
+        throw "Gitee release asset verification failed."
+    }
+
     return [PSCustomObject]@{
         ReleaseUrl = "https://gitee.com/$Repository/releases/tag/$Version"
         AssetName = $assetName
