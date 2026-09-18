@@ -56,7 +56,7 @@ cmake --build I:\PAL4\projects\pal4_inject\build --config Debug
   - “控制”页只读展示固定的 Xbox 360 / XInput 手柄映射，暂不支持用户改键；3D 场景中 Start=F7、LB=M，Back/B 无反应；进入系统 UI 后 Start 无反应、Back/B=Esc，LB/RB 与 LT/RT 分别遍历主/子分页并跳过尚未开放或被禁用的页签。3D 场景中 A=空格、X=V、Y=C、L3=Tab；非战斗 3D 场景十字键直接打开 F1/F4/F2/F3 页面，战斗 UI 中四个方向恢复普通上下左右导航，B=Esc，行动盘可用 X 直接攻击、Y 直接防御。战斗行动盘支持左摇杆五扇区直选物品、仙术、特技、防御和逃跑，回中后自动把选择恢复到中央攻击，进入具体列表后左摇杆改为普通四向导航；v0.2.2 暂不启用战斗右摇杆相机控制，以免覆盖原生角色、敌人和技能镜头焦点。系统 UI 中上下键保持方向导航，左右键在物品、装备和仙术等带角色箭头的页面直接换人，不要求先把焦点移到顶部箭头，其他页面或弹窗中仍按普通左右导航处理。A 键同时同步 Win32 键盘路径和 PAL4 原生 InputManager 状态，可用于主菜单、读档、对话和场景交互；现代控制模式使用左摇杆连续方向，大角度改向会以行走动作平滑转身，并在跑到快跑区间同步线性调节移动与动作速度；普通 3D 场景中右摇杆仍可调整视角，并可实验性保持自由镜头模式
   - 自动检测全部显示器；无边框窗口可选择并记住所用显示器，D3D9 保持窗口呈现并覆盖其完整区域
   - 分辨率列表分为“常用分辨率”和“所选显示器支持”
-  - GUI 打开时会自动检查一次更新，也提供“检查更新”按钮；会优先读取 Gitee 最新 Release，并以 GitHub 作为兜底；有新版时可打开下载页面
+  - GUI 打开时异步检查 Gitee / GitHub 正式 Release；有可安装新版时，在版本号旁显示更新图标。点击可查看说明、下载、校验、更新并重启启动器；离线检查不弹窗，游戏运行时等待玩家自行退出。详见 [自动更新](docs/auto_update.md)
   - GUI 提供“反馈 Bug”页：检测最新崩溃文本，允许预览并选择附带脱敏后的崩溃报告或运行日志末尾；只有用户明确勾选授权后才会把诊断内容带到 Gitee 新建 Issue 页面
   - 第一版不会读取或上传 minidump，也不会在后台自动提交；完整正文会同时复制到剪贴板，最终由用户在 Gitee 页面检查并提交
   - GUI 右上角显示当前版本和作者信息，点击 `B站 @北风7P` 可打开作者主页
@@ -120,7 +120,7 @@ CPK 资源不存在补丁或加载失败时仍可回退原 CPK。CS 模式不同
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1
 ```
 
-脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.2.2` 会生成 tag/release 版本 `v0.2.2`，产物为 `PAL4Plus_v0.2.2_win32.zip`。如只想本地打包、不发布 GitHub Release：
+脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.2.2` 会生成 tag/release 版本 `v0.2.2`。产物包括完整安装包 `PAL4Plus_v0.2.2_win32.zip`，以及 `build/update-release` 中的独立更新包 `PAL4Plus_v0.2.2_update_win32.zip` 和 `update.json`。两个发布源均先上传 ZIP、最后上传清单。如只想本地打包、不发布：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubRelease -SkipGiteeRelease

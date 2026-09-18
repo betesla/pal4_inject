@@ -39,6 +39,9 @@
 
 ## Module Split
 - `src/launcher`
+  - `update_manifest.cpp`：稳定版版本号比较、GitHub/Gitee Release JSON、schema 1 清单、托管路径白名单和 SHA256 校验。
+  - `update_client.cpp`：异步检查、下载、取消、镜像回退和等待游戏退出；通过线程安全状态快照向 ImGui 提供进度。`Transport` 为可注入网络边界，生产使用 WinHTTP，测试使用离线数据。
+  - `update_installer.cpp`：受限 ZIP 解压、同盘 staging、独立 helper、安装互斥、备份日志、回滚与启动确认。启动器复制自身作为 helper，退出后由 helper 替换文件并启动新版；详见 [自动更新设计](auto_update.md)。
   - `imgui_host.cpp`
     - 初始化 Win32 + Direct3D 9 的 ImGui 宿主，并启用标准 XInput 导航；十字键、A 确认与 B 返回直接使用 ImGui 语义，不与游戏进程内的手柄映射共享状态
   - `launcher_ui.cpp`

@@ -7,6 +7,7 @@ build-nopublish/
 pal4Exception.log
 pal4Logfile.log
 dist/
+.pal4plus-update/
 PAL4_inject_v*_win32.zip
 PAL4Plus_v*_win32.zip
 .codex-backups/

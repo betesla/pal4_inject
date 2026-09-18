@@ -231,7 +231,7 @@ function Send-GiteeReleaseAsset {
             $content.Add((New-Object System.Net.Http.StringContent($AccessToken)), "access_token")
         }
         $fileContent = New-Object System.Net.Http.StreamContent($fileStream)
-        $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/zip")
+        $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse($(if ($AssetPath.EndsWith(".json")) { "application/json" } else { "application/zip" }))
         $content.Add($fileContent, "file", (Split-Path -Leaf $AssetPath))
         $response = $client.PostAsync($UploadUri, $content).GetAwaiter().GetResult()
         $payload = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
@@ -317,7 +317,7 @@ function Publish-GitHubRelease {
     param(
         [string]$Repository,
         [string]$Version,
-        [string]$AssetPath,
+        [string[]]$AssetPaths,
         [string]$ReleaseNotes,
         [bool]$Draft,
         [bool]$Prerelease
@@ -365,33 +365,24 @@ function Publish-GitHubRelease {
             -Body $payload
     }
 
-    $assetName = Split-Path -Leaf $AssetPath
-    $assets = Invoke-GitHubJson `
-        -Method Get `
-        -Uri "https://api.github.com/repos/$Repository/releases/$($release.id)/assets" `
-        -Headers $headers
+    $assets = Invoke-GitHubJson -Method Get -Uri "https://api.github.com/repos/$Repository/releases/$($release.id)/assets" -Headers $headers
+    # Remove the old manifest first. Publish the new manifest last, after both ZIPs.
     foreach ($asset in $assets) {
-        if ($asset.name -eq $assetName) {
-            Invoke-RestMethod `
-                -Method Delete `
-                -Uri "https://api.github.com/repos/$Repository/releases/assets/$($asset.id)" `
-                -Headers $headers | Out-Null
+        if ($asset.name -eq "update.json") {
+            Invoke-RestMethod -Method Delete -Uri "https://api.github.com/repos/$Repository/releases/assets/$($asset.id)" -Headers $headers | Out-Null
         }
     }
-
-    $uploadUri = "https://uploads.github.com/repos/$Repository/releases/$($release.id)/assets?name=$([uri]::EscapeDataString($assetName))"
-    $uploaded = Invoke-RestMethod `
-        -Method Post `
-        -Uri $uploadUri `
-        -Headers $headers `
-        -ContentType "application/zip" `
-        -InFile $AssetPath
-
-    return [PSCustomObject]@{
-        ReleaseUrl = $release.html_url
-        AssetName = $uploaded.name
-        AssetSize = $uploaded.size
-        AssetState = $uploaded.state
+    foreach ($AssetPath in $AssetPaths) {
+        $assetName = Split-Path -Leaf $AssetPath
+        foreach ($asset in $assets) {
+            if ($asset.name -eq $assetName -and $asset.name -ne "update.json") {
+                Invoke-RestMethod -Method Delete -Uri "https://api.github.com/repos/$Repository/releases/assets/$($asset.id)" -Headers $headers | Out-Null
+            }
+        }
+        $uploadUri = "https://uploads.github.com/repos/$Repository/releases/$($release.id)/assets?name=$([uri]::EscapeDataString($assetName))"
+        $contentType = if ($AssetPath.EndsWith(".json")) { "application/json" } else { "application/zip" }
+        $uploaded = Invoke-RestMethod -Method Post -Uri $uploadUri -Headers $headers -ContentType $contentType -InFile $AssetPath
+        [PSCustomObject]@{ ReleaseUrl = $release.html_url; AssetName = $uploaded.name; AssetSize = $uploaded.size; AssetState = $uploaded.state }
     }
 }
 
@@ -399,7 +390,7 @@ function Publish-GiteeRelease {
     param(
         [string]$Repository,
         [string]$Version,
-        [string]$AssetPath,
+        [string[]]$AssetPaths,
         [string]$ReleaseNotes,
         [bool]$Prerelease,
         [string]$AccessToken
@@ -440,27 +431,15 @@ function Publish-GiteeRelease {
         throw "Gitee release response did not include a release id."
     }
 
-    $assetName = Split-Path -Leaf $AssetPath
     $attachFilesUri = "$apiBase/releases/$($release.id)/attach_files"
-    $attachFiles = Invoke-GiteeApi `
-        -Method Get `
-        -Uri "${attachFilesUri}?access_token=$([uri]::EscapeDataString($token))"
-    foreach ($asset in $attachFiles) {
-        if ($asset.name -eq $assetName -or $asset.file_name -eq $assetName) {
-            Invoke-GiteeApi `
-                -Method Delete `
-                -Uri "$attachFilesUri/$($asset.id)?access_token=$([uri]::EscapeDataString($token))" | Out-Null
+    foreach ($AssetPath in $AssetPaths) {
+        $assetName = Split-Path -Leaf $AssetPath
+        $uploaded = Send-GiteeReleaseAsset -UploadUri "${attachFilesUri}?access_token=$([uri]::EscapeDataString($token))" -AssetPath $AssetPath -AccessToken $token
+        [PSCustomObject]@{
+            ReleaseUrl = "https://gitee.com/$Repository/releases/tag/$Version"
+            AssetName = $assetName
+            AssetState = if ($uploaded) { "uploaded" } else { "uploaded-empty-response" }
         }
-    }
-
-    $uploaded = Send-GiteeReleaseAsset `
-        -UploadUri "${attachFilesUri}?access_token=$([uri]::EscapeDataString($token))" `
-        -AssetPath $AssetPath `
-        -AccessToken $token
-    return [PSCustomObject]@{
-        ReleaseUrl = "https://gitee.com/$Repository/releases/tag/$Version"
-        AssetName = $assetName
-        AssetState = if ($uploaded) { "uploaded" } else { "uploaded-empty-response" }
     }
 }
 
@@ -472,6 +451,9 @@ if (-not $Version) {
 }
 if ($Version -notmatch "^v[0-9]+\.[0-9]+\.[0-9]+$") {
     throw "Version must look like v0.1.1. Got: $Version"
+}
+if ($Version -ne (Get-ProjectVersion -RepoRoot $repoRoot)) {
+    throw "Release version must match CMakeLists.txt. Bump the project version and rebuild first."
 }
 
 $buildPath = Join-Path $repoRoot $BuildDir
@@ -505,6 +487,11 @@ New-Item -ItemType Directory -Force -Path $payloadPath | Out-Null
 Copy-Item -Force -LiteralPath (Join-Path $buildPath "$Configuration\$LauncherExeName") -Destination (Join-Path $distPath $LauncherExeName)
 Copy-Item -Force -LiteralPath (Join-Path $buildPath "$Configuration\runtime.dll") -Destination (Join-Path $payloadPath "runtime.dll")
 Copy-Item -Force -LiteralPath (Join-Path $buildPath "$Configuration\cli.exe") -Destination (Join-Path $payloadPath "cli.exe")
+$notices = "JSON for Modern C++ (nlohmann/json) v3.11.3`r`n`r`n" +
+    (Get-Content -LiteralPath (Join-Path $repoRoot 'third_party/nlohmann/LICENSE.MIT') -Raw) +
+    "`r`n`r`nDear ImGui`r`n`r`n" +
+    (Get-Content -LiteralPath (Join-Path $repoRoot 'third_party/imgui/LICENSE.txt') -Raw)
+[IO.File]::WriteAllText((Join-Path $payloadPath 'THIRD_PARTY_NOTICES.txt'), $notices, [Text.UTF8Encoding]::new($false))
 if ($preservedGameExe) {
     Copy-Item -LiteralPath $preservedGameExe -Destination $gameExePath -Force
     Remove-Item -LiteralPath $preservedGameExe -Force
@@ -527,6 +514,12 @@ if ($zipListing -contains "PAL4_inject.exe") {
 Write-Host "Created $zipPath"
 $zipListing | ForEach-Object { Write-Host "  $_" }
 
+$notes = Get-ReleaseNotes -Version $Version -ReleaseNotesPath $ReleaseNotesPath
+. (Join-Path $PSScriptRoot "update-package.ps1")
+$updateAssets = New-UpdatePackage -Source $distPath -Output (Join-Path $buildPath "update-release") -Version $Version -Notes $notes
+$releaseAssets = @($zipPath) + $updateAssets
+$updateAssets | ForEach-Object { Write-Host "Created $_" }
+
 $resolvedGiteeToken = ""
 if (-not $SkipGiteeRelease) {
     $resolvedGiteeToken = Get-GiteeToken -ExplicitToken $GiteeAccessToken
@@ -538,7 +531,7 @@ if (-not $SkipGitHubRelease) {
     $result = Publish-GitHubRelease `
         -Repository $Repository `
         -Version $Version `
-        -AssetPath $zipPath `
+        -AssetPaths $releaseAssets `
         -ReleaseNotes $notes `
         -Draft $Draft.IsPresent `
         -Prerelease $Prerelease.IsPresent
@@ -556,7 +549,7 @@ if (-not $SkipGiteeRelease) {
     $result = Publish-GiteeRelease `
         -Repository $GiteeRepository `
         -Version $Version `
-        -AssetPath $zipPath `
+        -AssetPaths $releaseAssets `
         -ReleaseNotes $notes `
         -Prerelease $Prerelease.IsPresent `
         -AccessToken $resolvedGiteeToken
