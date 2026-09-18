@@ -41,6 +41,7 @@ constexpr std::uint32_t kRepeatInitialDelayMs = 300;
 constexpr std::uint32_t kRepeatIntervalMs = 110;
 constexpr std::uint32_t kGamepadToMouseDebounceMs = 250;
 constexpr std::uint32_t kCombatUiQueryIntervalMs = 100;
+constexpr std::uint32_t kStandaloneMenuQueryIntervalMs = 100;
 constexpr std::uint8_t kSystemMenuOpenValidationDelayFrames = 4;
 constexpr std::uint8_t kSystemMenuHiddenConfirmationFrames = 2;
 constexpr int kKeyCodeA = 97;
@@ -62,6 +63,9 @@ struct GamepadRuntime {
     bool load_attempted = false;
     bool connected = false;
     bool system_menu_active = false;
+    StandaloneGamepadMenuState standalone_menu{};
+    DWORD last_menu_ui_query_tick = 0;
+    DirectionRepeatState menu_stick_repeat{};
     std::uint8_t system_menu_validation_delay_frames = 0;
     std::uint8_t system_menu_hidden_frames = 0;
     GamepadInputContext context = GamepadInputContext::gameplay;
@@ -392,13 +396,10 @@ void ReleaseDirectKeyboardHolds(GamepadRuntime* const runtime) {
 }
 
 GamepadInputContext DetermineContext(const GamepadRuntime& runtime) {
-    if (runtime.system_menu_active) {
-        return GamepadInputContext::system_menu;
-    }
-    if (GetRuntimeState().LastPalivEntryObserved() == 0) {
-        return GamepadInputContext::menu;
-    }
-    return GamepadInputContext::gameplay;
+    return ResolveGamepadInputContext(
+        GetRuntimeState().LastPalivEntryObserved() != 0,
+        runtime.system_menu_active,
+        runtime.standalone_menu.visible);
 }
 
 bool IsButtonPressed(
@@ -727,6 +728,26 @@ void ExecutePageAction(
         " dispatched=" + (dispatched ? "1" : "0"));
 }
 
+void RefreshStandaloneMenuState(GamepadRuntime* const runtime, const DWORD now_ms) {
+    StandaloneGamepadMenuState menu{};
+    std::string error;
+    if (QueryStandaloneGamepadMenuState(&menu, &error)) {
+        if (menu.visible != runtime->standalone_menu.visible ||
+            menu.trade_visible != runtime->standalone_menu.trade_visible) {
+            runtime->menu_stick_repeat = {};
+            runtime->dpad_repeat = {};
+            ReleaseGameplayHolds(runtime);
+            LogGamepadEvent(std::string("standalone_menu visible=") +
+                (menu.visible ? "1" : "0") +
+                " trade=" + (menu.trade_visible ? "1" : "0"));
+        }
+        runtime->standalone_menu = menu;
+    } else if (!error.empty()) {
+        GetRuntimeState().SetLastError(error);
+    }
+    runtime->last_menu_ui_query_tick = now_ms;
+}
+
 void UpdateMappedButtons(
     GamepadRuntime* const runtime,
     const XINPUT_STATE& current,
@@ -775,7 +796,9 @@ void UpdateMappedButtons(
                 navigation_state.combat_navigation_visible;
             combat_action_wheel_visible =
                 navigation_state.combat_action_wheel_visible;
-            if (navigation_state.menu.visible) {
+            if (runtime->standalone_menu.visible) {
+                input_context = GamepadInputContext::menu;
+            } else if (navigation_state.menu.visible) {
                 runtime->system_menu_active = true;
                 input_context = GamepadInputContext::system_menu;
             } else if (navigation_state.menu.menu_navigation_visible) {
@@ -803,13 +826,26 @@ void UpdateMappedButtons(
             continue;
         }
         if (IsRepeatingPageAction(action)) {
+            const bool trade_category = runtime->standalone_menu.trade_visible &&
+                (button == Xbox360Button::left_shoulder ||
+                 button == Xbox360Button::right_shoulder);
             const bool repeat = ConsumeGamepadRepeat(
-                pressed && runtime->system_menu_active,
+                pressed && (trade_category || input_context == GamepadInputContext::system_menu),
                 now_ms,
                 kRepeatInitialDelayMs,
                 kRepeatIntervalMs,
                 &runtime->button_repeat[index]);
-            if (repeat) {
+            if (repeat && trade_category) {
+                const bool next = button == Xbox360Button::right_shoulder;
+                std::string error;
+                const bool dispatched = TryActivateTradeCategorySwitch(next, &error);
+                if (!error.empty()) {
+                    GetRuntimeState().SetLastError(error);
+                }
+                LogGamepadEvent(std::string("trade_category direction=") +
+                    (next ? "next" : "previous") +
+                    " dispatched=" + (dispatched ? "1" : "0"));
+            } else if (repeat) {
                 ExecutePageAction(runtime, action);
             }
             continue;
@@ -910,28 +946,15 @@ void DispatchCombatWheelSelection(
         " steps=" + std::to_string(plan.count));
 }
 
-void DispatchCombatStickNavigation(
-    GamepadRuntime* const runtime,
+void DispatchUiStickNavigation(
+    DirectionRepeatState* const repeat,
     const GamepadAnalogStick& stick,
     const DWORD now_ms) {
-    if (!runtime) {
-        return;
-    }
-    constexpr float kNavigationMagnitude = 0.35F;
-    const bool active = stick.magnitude >= kNavigationMagnitude;
-    const bool horizontal = std::fabs(stick.x) > std::fabs(stick.y);
-    const bool up = active && !horizontal && stick.y > 0.0F;
-    const bool down = active && !horizontal && stick.y < 0.0F;
-    const bool left = active && horizontal && stick.x < 0.0F;
-    const bool right = active && horizontal && stick.x > 0.0F;
-    DispatchRepeatedDpad(
-        up, &runtime->combat_stick_repeat.up, VK_UP, now_ms);
-    DispatchRepeatedDpad(
-        down, &runtime->combat_stick_repeat.down, VK_DOWN, now_ms);
-    DispatchRepeatedDpad(
-        left, &runtime->combat_stick_repeat.left, VK_LEFT, now_ms);
-    DispatchRepeatedDpad(
-        right, &runtime->combat_stick_repeat.right, VK_RIGHT, now_ms);
+    const auto axes = BuildGamepadUiNavigationAxes(stick);
+    DispatchRepeatedDpad(axes.up, &repeat->up, VK_UP, now_ms);
+    DispatchRepeatedDpad(axes.down, &repeat->down, VK_DOWN, now_ms);
+    DispatchRepeatedDpad(axes.left, &repeat->left, VK_LEFT, now_ms);
+    DispatchRepeatedDpad(axes.right, &repeat->right, VK_RIGHT, now_ms);
 }
 
 void RefreshCombatAnalogUiState(
@@ -981,7 +1004,7 @@ void UpdateDpadNavigation(
     if (!any_pressed) {
         runtime->dpad_navigation_mode =
             GamepadDpadNavigationMode::gameplay_shortcuts;
-    } else if (!any_was_pressed) {
+    } else if (!any_was_pressed || context != runtime->context) {
         bool system_menu_visible = false;
         bool menu_navigation_visible = false;
         bool combat_navigation_visible = false;
@@ -1100,7 +1123,19 @@ void UpdateAnalogSticks(
     const XINPUT_STATE& current,
     const GamepadInputContext context,
     const DWORD now_ms) {
-    if (!runtime || context != GamepadInputContext::gameplay) {
+    if (!runtime) {
+        return;
+    }
+    if (runtime->standalone_menu.visible) {
+        ReleaseGameplayHolds(runtime);
+        const auto stick = BuildGamepadAnalogStick(
+            current.Gamepad.sThumbLX,
+            current.Gamepad.sThumbLY,
+            XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+        DispatchUiStickNavigation(&runtime->menu_stick_repeat, stick, now_ms);
+        return;
+    }
+    if (context != GamepadInputContext::gameplay) {
         ReleaseGameplayHolds(runtime);
         return;
     }
@@ -1147,7 +1182,7 @@ void UpdateAnalogSticks(
         } else {
             runtime->combat_wheel_sector =
                 GamepadCombatWheelSector::none;
-            DispatchCombatStickNavigation(runtime, left_stick, now_ms);
+            DispatchUiStickNavigation(&runtime->combat_stick_repeat, left_stick, now_ms);
         }
         return;
     }
@@ -1189,6 +1224,9 @@ void UpdateConnectionState(
     ResetSystemMenuState(runtime);
     runtime->context = GamepadInputContext::gameplay;
     runtime->previous_state = {};
+    runtime->standalone_menu = {};
+    runtime->last_menu_ui_query_tick = 0;
+    runtime->menu_stick_repeat = {};
     runtime->dpad_navigation_mode =
         GamepadDpadNavigationMode::gameplay_shortcuts;
     runtime->dpad_repeat = {};
@@ -1253,6 +1291,14 @@ void TickGamepadInputCore() {
     const XINPUT_STATE previous = runtime.previous_state;
 
     SynchronizeSystemMenuShellVisibility(&runtime);
+    // Query standalone menu roots rather than walking the entire UI tree. Refresh on
+    // every input transition so the first press after opening/closing a standalone menu
+    // cannot be routed to a gameplay shortcut during the polling interval.
+    if (runtime.last_menu_ui_query_tick == 0 ||
+        current.dwPacketNumber != previous.dwPacketNumber ||
+        now_ms - runtime.last_menu_ui_query_tick >= kStandaloneMenuQueryIntervalMs) {
+        RefreshStandaloneMenuState(&runtime, now_ms);
+    }
     UpdateMappedButtons(&runtime, current, previous, mapping, now_ms);
     auto context = DetermineContext(runtime);
     UpdateDpadNavigation(&runtime, current, previous, context, now_ms);

@@ -133,6 +133,12 @@ enum class GamepadCursorPresentation : std::uint8_t {
     native_only,
 };
 
+GamepadInputContext ResolveGamepadInputContext(
+    bool gameplay_started,
+    bool system_menu_active,
+    bool standalone_menu_visible) noexcept;
+GamepadDigitalAxes BuildGamepadUiNavigationAxes(const GamepadAnalogStick& stick) noexcept;
+
 const char* ToString(GamepadInputContext context) noexcept;
 const char* ToString(Xbox360Button button) noexcept;
 const char* ToString(GamepadAction action) noexcept;

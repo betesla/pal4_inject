@@ -1367,6 +1367,21 @@ void TestInjectSettingsRoundTrip() {
     assert(loaded.gamepad_preserve_free_camera);
     assert(loaded.borderless_window);
     assert(loaded.borderless_monitor == R"(\\.\DISPLAY2)");
+    // Switching from the Remix launcher must preserve the entire shared
+    // configuration, including input hook modes, gamepad and borderless settings.
+    auto version12_text = text;
+    version12_text.replace(0, version12_text.find('\n'), "version=12");
+    version12_text += "remix_primary_render_target_compatibility=1\n";
+    {
+        std::ofstream version12_file(temp_path, std::ios::binary | std::ios::trunc);
+        version12_file << version12_text;
+    }
+    assert(pal4::inject::LoadInjectPersistedSettings(temp_path, &loaded, &error));
+    assert(error.empty());
+    assert(pal4::inject::FormatInjectPersistedSettings(loaded) == text);
+    assert(!pal4::inject::ParseInjectPersistedSettings(
+        "version=13\n", &parsed, &error));
+    assert(error.find("unsupported settings version: 13") != std::string::npos);
     std::filesystem::remove(temp_path);
 
     pal4::inject::InjectPersistedSettings legacy{};
@@ -1487,6 +1502,88 @@ void TestInjectSettingsRoundTrip() {
         &invalid,
         &error));
     assert(error.find("invalid gamepad_fast_run_threshold") != std::string::npos);
+}
+
+void TestFieldSaveMenuLayoutAndInput() {
+    using namespace pal4::inject;
+    const auto* profile = FindWidescreenUiProfileByRootName("desktop/SaveWindow/Root");
+    assert(profile && profile->pillarbox_policy == WidescreenUiPillarboxPolicy::remove);
+    assert(profile->rule_count == 2);
+    const WidescreenUiWindowRule* background = nullptr;
+    const WidescreenUiWindowRule* corner = nullptr;
+    for (std::size_t index = 0; index < profile->rule_count; ++index) {
+        const auto& rule = profile->rules[index];
+        if (rule.window_name == "SaveWindow/dise") background = &rule;
+        if (rule.window_name == "SaveWindow/youxia") corner = &rule;
+        assert(rule.allow_outside_parent);
+    }
+    assert(background && corner);
+    // Extend the background to both physical screen edges, leaving the list
+    // and page buttons at their native proportions. Restore original 4:3 bounds.
+    for (const auto width : {1440, 1920, 2560}) {
+        const auto viewport = BuildCeguiWidescreenPlan(width, 1080);
+        const auto backdrop = BuildWidescreenUiWindowPlan(
+            viewport, background->horizontal_mode, 0.0F, 800.0F);
+        assert(std::fabs(backdrop.x * viewport.uniform_scale +
+                         viewport.horizontal_bias_pixels) < 0.01F);
+        assert(std::fabs((backdrop.x + backdrop.width) * viewport.uniform_scale +
+                         viewport.horizontal_bias_pixels - width) < 0.01F);
+        const auto close_corner = BuildWidescreenUiWindowPlan(
+            viewport, corner->horizontal_mode, 736.0F, 64.0F);
+        assert(close_corner.width == 64.0F && !close_corner.set_width);
+        assert(std::fabs((close_corner.x + close_corner.width) * viewport.uniform_scale +
+                         viewport.horizontal_bias_pixels - width) < 0.01F);
+    }
+    const auto context = ResolveGamepadInputContext(true, false, true);
+    assert(context == GamepadInputContext::menu);
+    assert(SelectGamepadDpadNavigationMode(context, false, true, false) ==
+           GamepadDpadNavigationMode::plain_ui);
+    assert(ShouldDispatchGamepadCancel(context));
+    const auto mapping = DefaultXbox360GamepadMapping();
+    assert(ResolveGamepadActionForContext(
+        Xbox360Button::start, GetGamepadBinding(mapping, Xbox360Button::start), context) ==
+        GamepadAction::none);
+    assert(ResolveGamepadInputContext(true, false, false) == GamepadInputContext::gameplay);
+}
+
+void TestGamepadTradeMenuNavigation() {
+    using namespace pal4::inject;
+    const auto mapping = DefaultXbox360GamepadMapping();
+    // Shops opened during gameplay must use UI navigation and cancel, even
+    // when a previously opened system-menu flag has not yet been cleared.
+    for (const bool stale_system_menu : {false, true}) {
+        const auto context = ResolveGamepadInputContext(true, stale_system_menu, true);
+        assert(context == GamepadInputContext::menu);
+        assert(SelectGamepadDpadNavigationMode(context, false, true, false) ==
+               GamepadDpadNavigationMode::plain_ui);
+        for (const auto button : {Xbox360Button::b, Xbox360Button::back}) {
+            assert(ResolveGamepadActionForContext(
+                button, GetGamepadBinding(mapping, button), context) == GamepadAction::cancel);
+        }
+        assert(ResolveGamepadActionForContext(
+            Xbox360Button::a, GetGamepadBinding(mapping, Xbox360Button::a), context) ==
+            GamepadAction::confirm);
+        assert(ResolveGamepadActionForContext(
+            Xbox360Button::start, GetGamepadBinding(mapping, Xbox360Button::start), context) ==
+            GamepadAction::none);
+    }
+    assert(ResolveGamepadInputContext(true, false, false) == GamepadInputContext::gameplay);
+    assert(ResolveGamepadInputContext(true, true, false) == GamepadInputContext::system_menu);
+    assert(ResolveGamepadInputContext(false, false, false) == GamepadInputContext::menu);
+
+    // Use the same dominant-axis navigation for trade lists and combat lists.
+    auto axes = BuildGamepadUiNavigationAxes(BuildGamepadAnalogStick(32767, 16000, 7849));
+    assert(axes.right && !axes.left && !axes.up && !axes.down);
+    axes = BuildGamepadUiNavigationAxes(BuildGamepadAnalogStick(-32768, 16000, 7849));
+    assert(axes.left && !axes.right && !axes.up && !axes.down);
+    axes = BuildGamepadUiNavigationAxes(BuildGamepadAnalogStick(10000, 32767, 7849));
+    assert(axes.up && !axes.down && !axes.left && !axes.right);
+    axes = BuildGamepadUiNavigationAxes(BuildGamepadAnalogStick(10000, -32768, 7849));
+    assert(axes.down && !axes.up && !axes.left && !axes.right);
+    axes = BuildGamepadUiNavigationAxes(BuildGamepadAnalogStick(0, 12000, 7849));
+    assert(!axes.down && !axes.up && !axes.left && !axes.right);
+    axes = BuildGamepadUiNavigationAxes({});
+    assert(!axes.down && !axes.up && !axes.left && !axes.right);
 }
 
 void TestGamepadLogic() {
@@ -3305,6 +3402,8 @@ int main() {
     TestInjectFeatureCatalog();
     TestInjectSettingsRoundTrip();
     TestGamepadLogic();
+    TestGamepadTradeMenuNavigation();
+    TestFieldSaveMenuLayoutAndInput();
     TestGiTalkVoiceVolume();
     TestBorderlessWindowPlan();
     TestProtocolRoundTrip();

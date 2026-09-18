@@ -17,7 +17,10 @@ namespace {
 
 constexpr int kSettingsVersion = 11;
 constexpr int kMinSupportedSettingsVersion = 1;
-constexpr int kMaxSupportedSettingsVersion = 11;
+// Version 12 only adds the optional RTX Remix setting. Stable builds can
+// read all shared preferences and ignore that unknown key, so switching back
+// from an experimental build must not disable the entire runtime configuration.
+constexpr int kMaxSupportedSettingsVersion = 12;
 
 std::string TrimAscii(const std::string_view text) {
     std::size_t begin = 0;

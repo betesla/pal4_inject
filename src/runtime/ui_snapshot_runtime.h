@@ -20,6 +20,12 @@ struct GamepadNavigationUiState {
     bool combat_action_wheel_visible = false;
 };
 
+// Standalone in-game menus do not use the system-menu toolbar shell.
+struct StandaloneGamepadMenuState {
+    bool visible = false;
+    bool trade_visible = false;
+};
+
 struct CombatNavigationUiState {
     bool visible = false;
     bool action_wheel_visible = false;
@@ -59,7 +65,9 @@ bool QuerySystemMenuNavigationState(
     SystemMenuNavigationState* state,
     std::string* error);
 bool QuerySystemMenuShellVisible(bool* visible, std::string* error);
+bool QueryStandaloneGamepadMenuState(StandaloneGamepadMenuState* state, std::string* error);
 bool TryActivateSystemMenuRoleSwitch(bool next, std::string* error);
+bool TryActivateTradeCategorySwitch(bool next, std::string* error);
 bool FillCachedUiSnapshotRef(
     std::string_view ref,
     std::string_view text,

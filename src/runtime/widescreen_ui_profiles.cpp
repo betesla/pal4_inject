@@ -71,6 +71,13 @@ constexpr auto kLoadWindowRules = std::to_array<Rule>({
     {"left_center", "loadWindow/zuozhong", "", Mode::left_edge, true},
 });
 
+// The save list and its page buttons remain centered at their native size.
+// Only extend the full-screen tint and move the corner frame (with BtnClose).
+constexpr auto kSaveWindowRules = std::to_array<Rule>({
+    {"background", "SaveWindow/dise", "", Mode::stretch_between_edges, true},
+    {"bottom_right", "SaveWindow/youxia", "", Mode::right_edge, true},
+});
+
 constexpr auto kPicturePreviewRules = std::to_array<Rule>({
     {"top_left", "picturePreviewWindow/zuoshang", "", Mode::left_edge, true},
     {"top_center", "picturePreviewWindow/shang", "", Mode::stretch_between_edges, true},
@@ -267,6 +274,8 @@ constexpr auto kProfiles = std::to_array<WidescreenUiProfile>({
      kMoviePlaybackRules.data(), kMoviePlaybackRules.size()},
     {"title_load", "loadWindow/Root", Policy::remove,
      kLoadWindowRules.data(), kLoadWindowRules.size()},
+    {"ingame_save", "SaveWindow/Root", Policy::remove,
+     kSaveWindowRules.data(), kSaveWindowRules.size()},
     {"title_cast", "CastWindow/Root", Policy::preserve, nullptr, 0},
     {"title_introduction", "IntroductionWindow/Root", Policy::preserve, nullptr, 0},
     {"title_help", "HelpWindow/Root", Policy::preserve, nullptr, 0},

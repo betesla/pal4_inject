@@ -551,7 +551,15 @@ constexpr std::array<std::string_view, 7> kSystemMenuPageRoots{
     "SystemSetting/Root",
 };
 
-constexpr std::array<std::string_view, 10> kPrimaryMenuNavigationRoots{
+constexpr std::array<std::string_view, 2> kTradeMenuRoots{
+    "TradeWindow/Root",
+    "TradeSelectWindow/Root",
+};
+
+constexpr std::string_view kSaveMenuRoot = "SaveWindow/Root";
+
+constexpr std::array<std::string_view, 11> kPrimaryMenuNavigationRoots{
+    kSaveMenuRoot,
     "MainWindow/Root",
     "loadWindow/Root",
     "HelpWindow/Root",
@@ -679,7 +687,8 @@ void PopulateSystemMenuUiState(
         (popup_root && popup_root->visible) ||
         (close_button && close_button->visible && close_button->enabled);
     state->menu_navigation_visible =
-        HasVisibleNamedNode(tree.root, kPrimaryMenuNavigationRoots);
+        HasVisibleNamedNode(tree.root, kPrimaryMenuNavigationRoots) ||
+        HasVisibleNamedNode(tree.root, kTradeMenuRoots);
 }
 
 bool TryDispatchVisiblePushButton(
@@ -735,6 +744,40 @@ bool ClickCachedUiSnapshotRef(const std::string_view ref, std::string* error) {
     return DispatchClientClick(node, error);
 }
 
+bool QueryStandaloneGamepadMenuState(
+    StandaloneGamepadMenuState* const state, std::string* error) {
+    if (!state) {
+        if (error) {
+            *error = "standalone-menu state output pointer is null";
+        }
+        return false;
+    }
+    CeguiBindings bindings{};
+    if (!TryGetCeguiBindings(&bindings, error) ||
+        !bindings.window_is_visible || !bindings.window_get_parent) {
+        return false;
+    }
+    *state = {};
+    for (const auto name : kTradeMenuRoots) {
+        bool root_visible = false;
+        if (!IsNamedWindowVisibleOnActiveGuiSheet(
+                bindings, name.data(), &root_visible, error)) {
+            return false;
+        }
+        state->trade_visible = state->trade_visible || root_visible;
+    }
+    bool save_visible = false;
+    if (!IsNamedWindowVisibleOnActiveGuiSheet(
+            bindings, kSaveMenuRoot.data(), &save_visible, error)) {
+        return false;
+    }
+    state->visible = state->trade_visible || save_visible;
+    if (error) {
+        error->clear();
+    }
+    return true;
+}
+
 bool QuerySystemMenuShellVisible(bool* const visible, std::string* error) {
     if (!visible) {
         if (error) {
@@ -761,6 +804,40 @@ bool QuerySystemMenuShellVisible(bool* const visible, std::string* error) {
         IsWindowAttachedToActiveGuiSheet(bindings, close_button) &&
         bindings.window_is_visible(close_button, false);
     return true;
+}
+
+bool TryActivateTradeCategorySwitch(const bool next, std::string* error) {
+    CeguiBindings bindings{};
+    if (!TryGetCeguiBindings(&bindings, error) ||
+        !bindings.window_is_visible ||
+        !bindings.window_is_disabled ||
+        !bindings.window_get_parent ||
+        !bindings.window_event_args_ctor ||
+        !bindings.window_event_args_dtor ||
+        !bindings.push_button_on_clicked) {
+        if (error && error->empty()) {
+            *error = "CEGUI trade-category dependencies are unavailable";
+        }
+        return false;
+    }
+
+    bool visible = false;
+    if (!IsNamedWindowVisibleOnActiveGuiSheet(
+            bindings, "TradeWindow/Root", &visible, error) || !visible) {
+        return false;
+    }
+    // Let an overlaid dialog handle its own left/right navigation.
+    for (const auto* popup : {"menuWindow/Root", "TradeSelectWindow/Root"}) {
+        bool popup_visible = false;
+        if (!IsNamedWindowVisibleOnActiveGuiSheet(
+                bindings, popup, &popup_visible, error) || popup_visible) {
+            return false;
+        }
+    }
+    return TryDispatchVisiblePushButton(
+        bindings,
+        next ? "TradeWindow/BtnRightArrow" : "TradeWindow/BtnLeftArrow",
+        error);
 }
 
 bool TryActivateSystemMenuRoleSwitch(

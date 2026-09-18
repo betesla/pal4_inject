@@ -139,7 +139,7 @@
   - `widescreen_ui_profiles.cpp` / `hud_layout_fixups.cpp`
     - 前者集中声明每个已识别根界面的黑边策略及子窗口布局规则；规则描述 `preserve / left_edge / right_edge / stretch_between_edges / offset_by_padding_factor`，并可附加纵向偏移，不在运行时钩子中散落页面特判
     - 后者只处理当前活动 `GUISheet` 中的 profile，并在窗口首次出现时捕获原始位置、尺寸、最大尺寸和父级裁剪状态；关闭宽屏时精确恢复，WindowManager 中隐藏或残留页面不会被错误套用
-    - 常驻 `minimap.xml` / `portrait.xml` 使用左右边缘锚点；标题 `MainWindow`、`loadWindow`、`moviePreviewWindow`、`picturePreviewWindow`、`PictureViewWindow` 与 `olInfo` 按既有九宫格部件扩展边框，内容区保持居中；`MoviePlayWindow` 使用同一状态管理机制扩展播放边框。游戏内人物、物品、装备、仙术、锻造、任务、系统七页共用 `sysToolBar`、`frameToolbar`、`decorator` 与 `gameInfo` 外框 profile。`loading` 铺宽背景并补偿子节点位移以保持进度组居中；战斗主 HUD、角色状态栏、行动盘、三类选择窗、通用目标选择窗和结算页各自使用独立 profile。行动条小头像由战斗更新逻辑动态定位，不能和静态条框分开锚定，因此整组保持原位；结算 `PanelRole0..3` 也不进入静态 profile，由原版入场动画从共同起点展开为四列。帮助、制作人员和世界地图等整张/复合贴图 profile 明确保留原比例。项目早期手改 `ui_ab` 只用于比对历史效果，不作为官方布局证据。需要跨出 800×600 父窗口的元素会临时解除父级裁剪，连接条在提高最大宽度后再调用 `setWindowSize`
+    - 常驻 `minimap.xml` / `portrait.xml` 使用左右边缘锚点；标题 `MainWindow`、`loadWindow`、`moviePreviewWindow`、`picturePreviewWindow`、`PictureViewWindow` 与 `olInfo` 按既有九宫格部件扩展边框，内容区保持居中；`MoviePlayWindow` 使用同一状态管理机制扩展播放边框。游戏内人物、物品、装备、仙术、锻造、任务、系统七页共用 `sysToolBar`、`frameToolbar`、`decorator` 与 `gameInfo` 外框 profile。野外 `SaveWindow` 铺宽背景 `dise`，右下 `youxia` 连同关闭按钮右侧锚定，存档列表和底部分页保持居中原比例；`loading` 铺宽背景并补偿子节点位移以保持进度组居中；战斗主 HUD、角色状态栏、行动盘、三类选择窗、通用目标选择窗和结算页各自使用独立 profile。行动条小头像由战斗更新逻辑动态定位，不能和静态条框分开锚定，因此整组保持原位；结算 `PanelRole0..3` 也不进入静态 profile，由原版入场动画从共同起点展开为四列。帮助、制作人员和世界地图等整张/复合贴图 profile 明确保留原比例。项目早期手改 `ui_ab` 只用于比对历史效果，不作为官方布局证据。需要跨出 800×600 父窗口的元素会临时解除父级裁剪，连接条在提高最大宽度后再调用 `setWindowSize`
   - `bink_video_hooks.cpp`
     - `BinkPlayer_UpdateAndRender` seam
     - `fit` 保留完整画面；`fill_width_crop` 按屏幕宽度等比放大并居中裁剪上下区域
@@ -181,6 +181,7 @@
     - 摇杆活动期间以 100 ms 间隔轻量检查当前活动 `Combat*` 根；一旦识别到战斗，空闲期间也继续低频刷新，直到战斗根消失，避免摇杆回中就丢失战斗状态。行动盘把左摇杆量化为五个 72° 外环扇区，并通过原版方向键邻接图收敛到相应类别；摇杆回中时先经“连续向上到仙术、再向下一次”的稳定路径回到中央攻击，然后才清空扇区状态，不读写私有 CEGUI 选择字节。行动盘可见时 B 按真实战斗根分流为 Esc，X/Y 通过可见、启用且仍挂在当前 `GUISheet` 的 `BtnAttack/BtnDefend` 原生点击事件直达攻击/防御；普通 3D 场景仍保留 B 无动作、X=V、Y=C。具体选择列表中左摇杆使用占优轴四向重复。战斗期间不提交右摇杆相机姿态，保留原生角色、敌人、技能特写和脚本切镜焦点；非战斗场景仍由 `PlayerControlUpdate` 处理相机
     - LB/RB 与 LT/RT 的分页键通过游戏线程上的 UI 按键 seam 派发，避免 `SendInput` 的同帧按下/释放被菜单漏采样；派发前从单次 UI snapshot 读取当前主页面和各页签的 `visible/enabled` 状态，循环时跳过尚未开放、隐藏或禁用的主/子页签。纵向当前页由手柄状态连续维护，并在主页面变化时归零，不采用 CEGUI 按钮的 `active/focused` 状态：页面关闭后旧按钮仍可能保持 active，但实际内容已经回到默认子页
     - 产出经过径向死区处理的左右摇杆状态；兼容模式才回写 W/A/S/D
+    - 独立菜单统一按 `TradeWindow/Root`、`TradeSelectWindow/Root` 与 `SaveWindow/Root` 的活动 GUISheet 挂载及有效可见性识别；输入变化时即时检查，空闲时每 100 ms 刷新，避免关闭后残留菜单状态。独立菜单优先于残留系统菜单标记，左右摇杆不提交场景控制，左摇杆复用战斗列表的占优轴四向重复。商店列表的 LB/RB 复用顶部 `BtnLeftArrow/BtnRightArrow` 原生点击事件并支持长按重复，检查活动 UI 树、可见性、禁用状态及覆盖弹窗；不可切换时不派发方向键。十字键左右保留原生数量调整，避免与栏目切换冲突。
     - 根据最近的有效手柄/鼠标输入控制光标；手柄模式维持 CEGUI 与 Win32 光标隐藏，鼠标模式读取 CEGUI `MouseCursor::isVisible()`，UI 中仅保留游戏光标、3D 场景仅保留原生光标，避免两枚指针同时显示
     - 过滤 3D 场景鼠标捕获产生的窗口中心回中消息，并对手柄到鼠标切换做短时去抖，避免把游戏自身的回中动作误判为鼠标接管
     - 在 `uiFrameManager_SetCursor @ 0x4BBB70` 入口拦截手柄模式下的原生 `SetCursor`，消除先显示、后清空造成的单帧闪烁

@@ -153,6 +153,31 @@ GamepadAction GetGamepadBinding(
         : GamepadAction::none;
 }
 
+GamepadInputContext ResolveGamepadInputContext(
+    const bool gameplay_started,
+    const bool system_menu_active,
+    const bool standalone_menu_visible) noexcept {
+    if (standalone_menu_visible) {
+        return GamepadInputContext::menu;
+    }
+    if (system_menu_active) {
+        return GamepadInputContext::system_menu;
+    }
+    return gameplay_started ? GamepadInputContext::gameplay : GamepadInputContext::menu;
+}
+
+GamepadDigitalAxes BuildGamepadUiNavigationAxes(const GamepadAnalogStick& stick) noexcept {
+    constexpr float kNavigationMagnitude = 0.35F;
+    const bool active = stick.magnitude >= kNavigationMagnitude;
+    const bool horizontal = std::fabs(stick.x) > std::fabs(stick.y);
+    GamepadDigitalAxes axes{};
+    axes.up = active && !horizontal && stick.y > 0.0F;
+    axes.down = active && !horizontal && stick.y < 0.0F;
+    axes.left = active && horizontal && stick.x < 0.0F;
+    axes.right = active && horizontal && stick.x > 0.0F;
+    return axes;
+}
+
 GamepadAction ResolveGamepadActionForContext(
     const Xbox360Button button,
     const GamepadAction configured_action,
