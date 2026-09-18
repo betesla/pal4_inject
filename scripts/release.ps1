@@ -378,9 +378,10 @@ function Publish-GitHubRelease {
     }
 
     $assets = Invoke-GitHubJson -Method Get -Uri "https://api.github.com/repos/$Repository/releases/$($release.id)/assets" -Headers $headers
-    # Remove the old manifest first. Publish the new manifest last, after both ZIPs.
+    # Remove the old manifest and retired split package before publishing the
+    # unified ZIP. Publish its manifest last.
     foreach ($asset in $assets) {
-        if ($asset.name -eq "update.json") {
+        if ($asset.name -eq "update.json" -or $asset.name -eq "PAL4Plus_${Version}_update_win32.zip") {
             Invoke-RestMethod -Method Delete -Uri "https://api.github.com/repos/$Repository/releases/assets/$($asset.id)" -Headers $headers | Out-Null
         }
     }
@@ -497,6 +498,9 @@ $zipPath = Join-Path $repoRoot "${ProductName}_${Version}_win32.zip"
 $gameExeName = "PAL4.exe"
 $gameExePath = Join-Path $distPath $gameExeName
 $preservedGameExe = $null
+if (-not (Test-Path -LiteralPath $gameExePath -PathType Leaf)) {
+    throw "The unified release requires dist\PAL4.exe. Restore it before packaging."
+}
 
 if (-not $SkipBuild) {
     Invoke-Checked -FilePath "git" -Arguments @("submodule", "update", "--init", "--recursive") -WorkingDirectory $repoRoot
@@ -529,14 +533,12 @@ $notices = "JSON for Modern C++ (nlohmann/json) v3.11.3`r`n`r`n" +
 if ($preservedGameExe) {
     Copy-Item -LiteralPath $preservedGameExe -Destination $gameExePath -Force
     Remove-Item -LiteralPath $preservedGameExe -Force
-} else {
-    Write-Warning "dist\PAL4.exe was not found, so the release zip will not include PAL4.exe. Copy PAL4.exe into dist before publishing if it should be bundled."
 }
 
-if (Test-Path -LiteralPath $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
-}
-Compress-Archive -Path (Join-Path $distPath "*") -DestinationPath $zipPath -Force
+$notes = Get-ReleaseNotes -Version $Version -ReleaseNotesPath $ReleaseNotesPath
+. (Join-Path $PSScriptRoot "update-package.ps1")
+$releaseAssets = New-UpdatePackage -Source $distPath -Output (Join-Path $buildPath "update-release") `
+    -PackagePath $zipPath -Version $Version -Notes $notes
 
 $zipListing = tar -tf $zipPath
 if ($zipListing -notcontains $LauncherExeName) {
@@ -545,14 +547,8 @@ if ($zipListing -notcontains $LauncherExeName) {
 if ($zipListing -contains "PAL4_inject.exe") {
     throw "Release archive still contains the retired PAL4_inject.exe launcher."
 }
-Write-Host "Created $zipPath"
+$releaseAssets | ForEach-Object { Write-Host "Created $_" }
 $zipListing | ForEach-Object { Write-Host "  $_" }
-
-$notes = Get-ReleaseNotes -Version $Version -ReleaseNotesPath $ReleaseNotesPath
-. (Join-Path $PSScriptRoot "update-package.ps1")
-$updateAssets = New-UpdatePackage -Source $distPath -Output (Join-Path $buildPath "update-release") -Version $Version -Notes $notes
-$releaseAssets = @($zipPath) + $updateAssets
-$updateAssets | ForEach-Object { Write-Host "Created $_" }
 
 $resolvedGiteeToken = ""
 if (-not $SkipGiteeRelease) {

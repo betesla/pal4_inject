@@ -10,6 +10,7 @@ function New-UpdatePackage {
         [Parameter(Mandatory=$true)][string]$Source,
         [Parameter(Mandatory=$true)][string]$Output,
         [Parameter(Mandatory=$true)][string]$Version,
+        [string]$PackagePath = "",
         [string]$Notes = ""
     )
     if ($Version -notmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
@@ -17,14 +18,19 @@ function New-UpdatePackage {
     }
     Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
     [IO.Directory]::CreateDirectory($Output) | Out-Null
-    $package = Join-Path $Output "PAL4Plus_${Version}_update_win32.zip"
+    $package = if ($PackagePath) { $PackagePath } else { Join-Path $Output "PAL4Plus_${Version}_win32.zip" }
     $manifest = Join-Path $Output 'update.json'
-    # This list is intentionally narrower than the full release archive.
-    $paths = @('PAL4Plus.exe', 'pal4_inject/runtime.dll', 'pal4_inject/cli.exe')
+    # Manual installation and automatic updates share this exact archive.
+    $paths = @('PAL4.exe', 'PAL4Plus.exe', 'pal4_inject/runtime.dll', 'pal4_inject/cli.exe')
     if (Test-Path -LiteralPath (Join-Path $Source 'pal4_inject/THIRD_PARTY_NOTICES.txt')) {
         $paths += 'pal4_inject/THIRD_PARTY_NOTICES.txt'
     }
     $files = @()
+    foreach ($relative in $paths) {
+        if (-not (Test-Path -LiteralPath (Join-Path $Source $relative) -PathType Leaf)) {
+            throw "Required release file missing: $relative"
+        }
+    }
     $stream = [IO.File]::Open($package, [IO.FileMode]::Create)
     $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create)
     try {

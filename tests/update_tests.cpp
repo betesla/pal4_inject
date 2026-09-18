@@ -40,9 +40,9 @@ struct Fixture {
     fs::path root,stage; Manifest manifest;
     Fixture() {
         root=CreateStage(fs::temp_directory_path())/L"中文 game space"; fs::create_directories(root); stage=CreateStage(root);
-        manifest.version="9.0.0"; manifest.package_name="PAL4Plus_v9.0.0_update_win32.zip";
+        manifest.version="9.0.0"; manifest.package_name="PAL4Plus_v9.0.0_win32.zip";
         manifest.package_size=1; manifest.package_sha256=std::string(64,'a');
-        for(const std::string p:{"PAL4Plus.exe","pal4_inject/runtime.dll","pal4_inject/cli.exe"}) {
+        for(const std::string p:{"PAL4.exe","PAL4Plus.exe","pal4_inject/runtime.dll","pal4_inject/cli.exe"}) {
             Write(root/p,"old "+p); Write(stage/"payload"/p,"new "+p);
         }
         Write(root/"save/slot.sav","my save"); Write(root/"config.cfg","my display settings");
@@ -50,7 +50,7 @@ struct Fixture {
     }
     void Refresh() {
         manifest.files.clear();
-        for(const std::string p:{"PAL4Plus.exe","pal4_inject/runtime.dll","pal4_inject/cli.exe"}) {
+        for(const std::string p:{"PAL4.exe","PAL4Plus.exe","pal4_inject/runtime.dll","pal4_inject/cli.exe"}) {
             const auto payload=stage/"payload"/p; manifest.files.push_back({p,fs::file_size(payload),Sha256(payload)});
         }
         Write(stage/"manifest.json",FormatManifest(manifest));
@@ -67,14 +67,15 @@ void Parsing() {
     Version v{};
     for(const auto* s:{"","1.2","1.2.3.4","v01.2.3","1.2.-1","1.2.3-beta","1.2.3+build","4294967296.0.0"," 1.2.3"}) assert(!ParseVersion(s,&v));
     assert(!IsNewerVersion("1.0.0","invalid")); Fixture f;
-    const auto original=FormatManifest(f.manifest); assert(ParseManifest(original).files.size()==3);
+    const auto original=FormatManifest(f.manifest); assert(ParseManifest(original).files.size()==4);
     const auto invalid=[&](const auto& mutate) { auto j=Json::parse(original); mutate(j); Reject([&]{ParseManifest(j.dump());}); };
     invalid([](auto& j){j["platform"]="win64";}); invalid([](auto& j){j["schema_version"]=2;});
     invalid([](auto& j){j["channel"]="beta";}); invalid([](auto& j){j["package"]["size"]=-1;});
     invalid([](auto& j){j["package"]["size"]=300ULL*1024*1024;}); invalid([](auto& j){j["package"]["sha256"]="bad";});
-    invalid([](auto& j){j["package"]["name"]="PAL4Plus_v8.0.0_update_win32.zip";});
+    invalid([](auto& j){j["package"]["name"]="PAL4Plus_v8.0.0_win32.zip";});
     invalid([](auto& j){j["files"].push_back(j["files"][0]);}); invalid([](auto& j){j["files"].erase(0);});
-    for(const auto* p:{"../PAL4Plus.exe","C:/PAL4Plus.exe","PAL4.exe","save/a.sav","config.cfg","pal4_inject/inject_settings.ini","PAL4_inject/runtime.dll"}) {
+    invalid([](auto& j){j["remove"]=Json::array({"PAL4.exe"});});
+    for(const auto* p:{"../PAL4Plus.exe","C:/PAL4Plus.exe","launch.exe","save/a.sav","config.cfg","pal4_inject/inject_settings.ini","PAL4_inject/runtime.dll"}) {
         invalid([&](auto& j){j["files"][0]["path"]=p;}); invalid([&](auto& j){j["remove"]=Json::array({p});});
     }
     invalid([](auto& j){j["remove"]=Json::array({"PAL4Plus.exe"});});
@@ -100,8 +101,10 @@ void Transactions() {
     {
         Fixture f; fs::remove(f.root/"pal4_inject/cli.exe"); Write(f.root/"PAL4_inject.exe","legacy");
         f.manifest.remove={"PAL4_inject.exe"}; InstallTransaction(f.root,f.stage,f.manifest);
+        assert(Read(f.root/"PAL4.exe")=="new PAL4.exe");
         assert(Read(f.root/"pal4_inject/runtime.dll")=="new pal4_inject/runtime.dll"); assert(!fs::exists(f.root/"PAL4_inject.exe"));
         RollbackTransaction(f.root,f.stage); assert(Read(f.root/"PAL4Plus.exe")=="old PAL4Plus.exe");
+        assert(Read(f.root/"PAL4.exe")=="old PAL4.exe");
         assert(Read(f.root/"PAL4_inject.exe")=="legacy"); assert(!fs::exists(f.root/"pal4_inject/cli.exe"));
         RollbackTransaction(f.root,f.stage); f.UserData();
     }
@@ -109,6 +112,7 @@ void Transactions() {
         Fixture f; HANDLE locked=CreateFileW((f.root/"PAL4Plus.exe").c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);
         assert(locked!=INVALID_HANDLE_VALUE); Reject([&]{InstallTransaction(f.root,f.stage,f.manifest);}); CloseHandle(locked);
         assert(Read(f.root/"pal4_inject/runtime.dll")=="old pal4_inject/runtime.dll"); assert(Read(f.root/"PAL4Plus.exe")=="old PAL4Plus.exe");
+        assert(Read(f.root/"PAL4.exe")=="old PAL4.exe");
         assert(!fs::exists(f.root/".pal4plus-update/pending.json")); f.UserData();
     }
     {
@@ -126,6 +130,14 @@ void Transactions() {
         Reject([&]{RollbackTransaction(f.root,f.stage);});
         assert(!RecoverInterruptedUpdate(f.root)); assert(!fs::exists(f.stage)); f.UserData();
     }
+    {
+        Fixture f;
+        HANDLE locked=CreateFileW((f.root/"PAL4.exe").c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);
+        assert(locked!=INVALID_HANDLE_VALUE);
+        Reject([&]{InstallTransaction(f.root,f.stage,f.manifest);}); CloseHandle(locked);
+        assert(Read(f.root/"PAL4.exe")=="old PAL4.exe");
+        assert(Read(f.root/"PAL4Plus.exe")=="old PAL4Plus.exe"); f.UserData();
+    }
     std::cout<<"Transactions, locked-file rollback and settings preservation passed\n";
 }
 void DownloadLifecycle(const fs::path& root, const fs::path& zip, const Manifest& manifest);
@@ -136,9 +148,15 @@ void Packages() {
     assert(Finish(Spawn(ps,{L"-NoProfile",L"-ExecutionPolicy",L"Bypass",L"-File",script.wstring(),(f.stage/"payload").wstring(),output.wstring(),
         (fs::path(PAL4_SOURCE_DIR)/"scripts/update-package.ps1").wstring()},f.root))==0);
     auto manifest=ParseManifest(Read(output/"update.json")); const auto stage=CreateStage(f.root);
+    assert(manifest.package_name=="PAL4Plus_v9.0.0_win32.zip");
     DownloadLifecycle(f.root, output / manifest.package_name, manifest);
     fs::copy_file(output/manifest.package_name,stage/"package.zip"); ExtractPackage(stage,manifest,[]{return false;});
+    assert(Read(stage/"payload/PAL4.exe")=="new PAL4.exe");
     assert(Read(stage/"payload/PAL4Plus.exe")=="new PAL4Plus.exe"); Reject([&]{ExtractPackage(stage,manifest,[]{return false;});});
+    fs::remove(f.stage/"payload/PAL4.exe");
+    assert(Finish(Spawn(ps,{L"-NoProfile",L"-ExecutionPolicy",L"Bypass",L"-File",script.wstring(),(f.stage/"payload").wstring(),output.wstring(),
+        (fs::path(PAL4_SOURCE_DIR)/"scripts/update-package.ps1").wstring()},f.root))!=0);
+    Write(f.stage/"payload/PAL4.exe","new PAL4.exe");
     Write(script,"param($Zip,$Entry)\n$ErrorActionPreference='Stop'\nAdd-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem\n$a=[IO.Compression.ZipFile]::Open($Zip,[IO.Compression.ZipArchiveMode]::Update)\ntry { $a.CreateEntry($Entry) | Out-Null } finally { $a.Dispose() }\n");
     for(const auto* entry:{L"../escaped.txt",L"PAL4Plus.exe",L"unlisted.txt"}) {
         const auto bad=CreateStage(f.root); fs::copy_file(output/manifest.package_name,bad/"package.zip");
@@ -165,7 +183,7 @@ void Helpers() {
         assert(Sha256(f.root/"PAL4Plus.exe")==Sha256(fixture)); assert(Read(f.root/"pal4_inject/runtime.dll")=="old pal4_inject/runtime.dll"); f.UserData();
     }
     {
-        Fixture f; fs::copy_file(fixture,f.root/"PAL4.exe"); auto game=Spawn(f.root/"PAL4.exe",{L"--wait"},f.root);
+        Fixture f; fs::copy_file(fixture,f.root/"PAL4.exe",fs::copy_options::overwrite_existing); auto game=Spawn(f.root/"PAL4.exe",{L"--wait"},f.root);
         assert(IsGameRunning(f.root)); Reject([&]{InstallTransaction(f.root,f.stage,f.manifest);});
         assert(WaitForSingleObject(game.hProcess,0)==WAIT_TIMEOUT); TerminateProcess(game.hProcess,0); Finish(game);
         assert(!IsGameRunning(f.root));
@@ -212,7 +230,7 @@ void DownloadLifecycle(const fs::path& root, const fs::path& zip, const Manifest
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     };
-    fs::copy_file(ExecutablePath().parent_path() / "pal4_update_fixture.exe", root / "PAL4.exe");
+    fs::copy_file(ExecutablePath().parent_path() / "pal4_update_fixture.exe", root / "PAL4.exe", fs::copy_options::overwrite_existing);
     auto game = Spawn(root / "PAL4.exe", {L"--wait"}, root);
     fs::path prepared;
     {

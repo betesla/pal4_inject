@@ -10,23 +10,22 @@
 
 ## 文件所有权与校验
 
-- 必需文件：`PAL4Plus.exe`、`pal4_inject/runtime.dll`、`pal4_inject/cli.exe`，必须成套更新。
+- 必需文件：`PAL4.exe`、`PAL4Plus.exe`、`pal4_inject/runtime.dll`、`pal4_inject/cli.exe`，必须成套更新。
 - schema 1 额外托管文件：`pal4_inject/rtx_remix_compatibility.conf`。当前标准发布脚本不打包此可选文件。
 - 随包更新 `pal4_inject/THIRD_PARTY_NOTICES.txt`，包含 JSON 与 ImGui 的完整许可。
 - 允许清理已停用的 `PAL4_inject.exe`。远程清单不能指定白名单以外的覆盖或删除路径。
-- 不更新 `PAL4.exe`、`launch.exe`、存档、`config.cfg`、注入设置、日志或 MOD。安装事务不会改动它们；启动器会按原设置保存流程保存用户本次更改。
+- `PAL4.exe` 随包更新并参与备份和回滚。不更新 `launch.exe`、存档、`config.cfg`、注入设置、日志或 MOD。安装事务不会改动它们；启动器会按原设置保存流程保存用户本次更改。
 - 对压缩包和每个解压文件验证长度与 SHA256。拒绝多余、重复、路径穿越、链接及超限文件。压缩包上限 256 MiB，解压内容总上限 512 MiB。
 - 所有下载使用 HTTPS 和系统证书验证，禁止重定向到 HTTP。SHA256 用于内容完整性校验；本实现没有离线签名或 Authenticode 验签，信任官方 Release 账户及 HTTPS。
 
 ## 发布
 
-正常使用 `scripts/release.ps1`。脚本刷新 `dist`，生成完整安装包，再由 `scripts/update-package.ps1` 从明确列表生成更新 ZIP 和清单；更新 ZIP 永远不包含完整包中可能附带的游戏本体。
+正常使用 `scripts/release.ps1`。脚本要求 `dist/PAL4.exe` 存在并在刷新目录时保留它，再由 `scripts/update-package.ps1` 从明确列表一次性生成完整 ZIP 和清单。手动安装与自动更新使用同一个包含 `PAL4.exe` 的 ZIP。
 
-每个 Release 上传三个附件：
+每个 Release 上传两个附件：
 
-1. `PAL4Plus_vX.Y.Z_win32.zip`：完整安装包。
-2. `PAL4Plus_vX.Y.Z_update_win32.zip`：三个必需程序文件及第三方许可。
-3. `update.json`：最后上传，包含 schema、平台、稳定渠道、版本、说明、ZIP 名称/大小/哈希、逐文件大小/哈希和删除清单。
+1. `PAL4Plus_vX.Y.Z_win32.zip`：含 `PAL4.exe`、增强启动器、运行库、CLI 和第三方许可的统一安装包。
+2. `update.json`：最后上传，包含 schema、平台、稳定渠道、版本、说明、ZIP 名称/大小/哈希、逐文件大小/哈希和删除清单。
 
 本地验证且不发布：
 
@@ -34,7 +33,9 @@
 powershell -ExecutionPolicy Bypass -File scripts/release.ps1 -SkipGitHubRelease -SkipGiteeRelease
 ```
 
-清单和更新 ZIP 输出到 `<BuildDir>/update-release`。首次需要手动安装一个包含此功能的版本；旧版启动器无法凭空获得自动替换能力。之后的发布必须携带更新附件，并提升 `CMakeLists.txt` 中的版本号。仅修改构建号不触发更新。
+统一 ZIP 输出到仓库根目录，清单输出到 `<BuildDir>/update-release`。首次需要手动安装一个包含此功能的版本；旧版启动器无法凭空获得自动替换能力。之后的发布必须携带更新附件，并提升 `CMakeLists.txt` 中的版本号。仅修改构建号不触发更新。
+
+v0.2.4 已改为统一包格式。此前双包版本的启动器不支持此格式，已安装该构建的用户需要重新下载当前完整包覆盖一次；版本号相同不会触发自动更新。
 
 ## 事务与恢复
 
@@ -56,4 +57,4 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-线上完整下载链路仍需首次发布携带清单后实测；测试不创建或修改远程 Release。
+线上发布后另行验证实际客户端的发现、下载、解压与哈希校验；默认测试不创建或修改远程 Release。

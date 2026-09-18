@@ -120,7 +120,7 @@ CPK 资源不存在补丁或加载失败时仍可回退原 CPK。CS 模式不同
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1
 ```
 
-脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.2.4` 会生成 tag/release 版本 `v0.2.4`。产物包括完整安装包 `PAL4Plus_v0.2.4_win32.zip`，以及 `build/update-release` 中的独立更新包 `PAL4Plus_v0.2.4_update_win32.zip` 和 `update.json`。两个发布源均先上传 ZIP、最后上传清单。如只想本地打包、不发布：
+脚本默认从 `CMakeLists.txt` 读取版本号，例如 `0.2.4` 会生成 tag/release 版本 `v0.2.4`。产物只有一个含 `PAL4.exe` 的完整安装包 `PAL4Plus_v0.2.4_win32.zip`，供手动安装与自动更新共用；另在 `build/update-release` 生成配套 `update.json`。两个发布源均先上传 ZIP、最后上传清单。如只想本地打包、不发布：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubRelease -SkipGiteeRelease
@@ -136,7 +136,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -SkipGitHubReleas
 powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 -ReleaseNotesPath .\docs\release_notes_v0.2.4.md
 ```
 
-如果 `dist\PAL4.exe` 已存在，脚本会在刷新 `dist` 时保留它，并把它一同打入发布 zip；不要把 `PAL4.exe` 提交进 git。
+发布前必须准备好 `dist\PAL4.exe`，脚本刷新 `dist` 时保留它，并将其纳入完整安装包和自动更新清单；缺失时停止打包。不要把 `PAL4.exe` 提交进 git。
 
 发布前脚本会要求没有未提交的源码改动；如本地不存在同名 tag，会自动在当前提交创建 tag，并推送当前分支和 tag。Gitee 发布需要设置 `GITEE_TOKEN` 或 `GITEE_ACCESS_TOKEN`，也可以传 `-GiteeAccessToken <token>`；如只发布 GitHub，可加 `-SkipGiteeRelease`。
 
@@ -219,7 +219,7 @@ I:\PAL4\projects\pal4_inject\build\Debug\cli.exe --pid 1234 mem-write-scalar --i
   - `minimap.xml` 可见部件改为靠左下
   - `portrait.xml` 可见部件改为靠右上
   - 标题主界面的左右装饰和按钮分别靠边，中央 Logo 保持居中，只横向扩展上下连接条；背景继续独立铺满宽屏
-  - 标题流程原本绘制的 `PAL4 v1.1` 会在内存中改为 `PAL V1.2.3`，便于从截图直接识别正在使用本修补；补丁先校验原始 12 字节数据槽，不修改磁盘上的 `PAL4.exe`
+  - 标题流程原本绘制的 `PAL4 v1.1` 会在内存中改为 `PAL V1.2.4`，便于从截图直接识别正在使用本修补；补丁先校验原始 12 字节数据槽，不修改磁盘上的 `PAL4.exe`
   - “旧的回忆”读档页只铺宽外围九宫格，中央存档列表和分页控件保持原尺寸居中，关闭按钮随右下框贴近屏幕边缘
   - “前尘忆梦”影片列表的四周边框铺到屏幕边缘，影片缩略图和说明区域保持原尺寸居中，右下关闭按钮继续可点击
   - 图片列表、图片查看器和旧版在线信息页复用同一外框策略：只延展八块外围装饰并移动关闭按钮，图片、文字与查看控件不参与拉伸

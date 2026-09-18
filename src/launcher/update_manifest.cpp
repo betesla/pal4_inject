@@ -60,9 +60,9 @@ bool IsNewerVersion(const std::string_view candidate, const std::string_view ins
 }
 
 bool IsManagedPath(const std::string_view path) noexcept {
-    // Explicit ownership list: never accept game executables, saves, user INIs,
-    // arbitrary DLLs or paths supplied by a remote manifest.
-    return path == "PAL4Plus.exe" ||
+    // PAL4.exe is part of the unified release; saves, user INIs and arbitrary
+    // executables or DLLs remain outside the explicit ownership list.
+    return path == "PAL4.exe" || path == "PAL4Plus.exe" ||
         path == "pal4_inject/runtime.dll" || path == "pal4_inject/cli.exe" ||
         path == "pal4_inject/THIRD_PARTY_NOTICES.txt" ||
         path == "pal4_inject/rtx_remix_compatibility.conf" || path == "PAL4_inject.exe";
@@ -88,7 +88,7 @@ Manifest ParseManifest(const std::string_view text) {
     const auto& package = json.at("package");
     result.package_name = package.at("name").get<std::string>();
     Require(result.package_name == "PAL4Plus_v" + std::to_string(version.major) + "." +
-        std::to_string(version.minor) + "." + std::to_string(version.patch) + "_update_win32.zip",
+        std::to_string(version.minor) + "." + std::to_string(version.patch) + "_win32.zip",
         "更新包名称与版本不匹配。");
     result.package_size = Size(package, "size");
     result.package_sha256 = package.at("sha256").get<std::string>();
@@ -105,8 +105,9 @@ Manifest ParseManifest(const std::string_view text) {
         Require(total <= kMaxInstalledBytes, "更新包解压大小超限。");
         result.files.push_back(std::move(file));
     }
-    Require(seen.contains("PAL4Plus.exe") && seen.contains("pal4_inject/runtime.dll") &&
-        seen.contains("pal4_inject/cli.exe"), "更新包必须包含配套的启动器、运行库和 CLI。");
+    Require(seen.contains("PAL4.exe") && seen.contains("PAL4Plus.exe") &&
+        seen.contains("pal4_inject/runtime.dll") && seen.contains("pal4_inject/cli.exe"),
+        "更新包必须包含配套的 PAL4.exe、增强启动器、运行库和 CLI。");
     for (const auto& entry : json.value("remove", Json::array())) {
         const auto path = entry.get<std::string>();
         Require(IsManagedPath(path) && seen.insert(path).second, "更新清单包含无效删除项。");
