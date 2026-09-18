@@ -61,9 +61,9 @@ struct LauncherUiState {
     std::vector<Resolution> common_resolutions;
     std::vector<Resolution> display_resolutions;
     bool accepted = false;
+    std::filesystem::path update_stage;
 };
 
-using CheckForUpdatesCallback = void (*)(HWND owner, bool quiet_if_current_or_failed);
 using OpenBugReportCallback = bool (*)(
     HWND owner,
     const std::string& title,
@@ -74,7 +74,6 @@ void SynchronizeAutomaticWidescreen(LauncherUiState* state) noexcept;
 
 bool RunLauncherUi(
     LauncherUiState* state,
-    CheckForUpdatesCallback check_for_updates,
     OpenBugReportCallback open_bug_report,
     std::wstring* error);
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(pal4_inject VERSION 0.2.3 LANGUAGES CXX)
+project(pal4_inject VERSION 0.2.4 LANGUAGES CXX)
 
 # Public branding is separate from stable internal target, payload, config, and IPC names.
 set(PAL4PLUS_LAUNCHER_BASENAME "PAL4Plus")
@@ -182,6 +182,15 @@ pal4_inject_add_dev_publish(
     "runtime.dll"
 )
 
+add_library(pal4_update STATIC
+    src/launcher/update_manifest.cpp
+    src/launcher/update_installer.cpp
+    src/launcher/update_client.cpp
+)
+target_include_directories(pal4_update PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/launcher
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+target_link_libraries(pal4_update PUBLIC bcrypt winhttp ole32 user32)
+
 add_executable(pal4_injector_launcher
     src/launcher/imgui_host.cpp
     src/launcher/launcher_ui.cpp
@@ -192,7 +201,7 @@ target_include_directories(pal4_injector_launcher PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/launcher
 )
 target_link_libraries(pal4_injector_launcher PRIVATE pal4_inject_common pal4_inject_imgui)
-target_link_libraries(pal4_injector_launcher PRIVATE gdi32 wininet)
+target_link_libraries(pal4_injector_launcher PRIVATE gdi32 pal4_update)
 set_target_properties(pal4_injector_launcher PROPERTIES
     OUTPUT_NAME "${PAL4PLUS_LAUNCHER_BASENAME}"
     WIN32_EXECUTABLE TRUE
@@ -234,9 +243,20 @@ if(PAL4_INJECT_BUILD_TESTS)
         COMMAND powershell -NoProfile -ExecutionPolicy Bypass
             -File ${CMAKE_CURRENT_SOURCE_DIR}/tests/release_script_tests.ps1
     )
+    add_executable(pal4_update_tests tests/update_tests.cpp)
+    target_include_directories(pal4_update_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+    target_link_libraries(pal4_update_tests PRIVATE pal4_update)
+    target_link_libraries(pal4_update_tests PRIVATE shell32)
+    target_compile_definitions(pal4_update_tests PRIVATE PAL4_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    add_executable(pal4_update_fixture tests/update_fixture.cpp)
+    add_dependencies(pal4_update_tests pal4_update_fixture)
+    add_test(NAME pal4_update_tests COMMAND pal4_update_tests)
+    set_tests_properties(pal4_update_tests PROPERTIES TIMEOUT 180)
 endif()
 
 foreach(target
+    pal4_update
+    pal4_update_tests
     pal4_inject_imgui
     pal4_inject_common
     pal4_inject_runtime_core

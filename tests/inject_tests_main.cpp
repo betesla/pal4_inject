@@ -224,14 +224,14 @@ void TestLooseFileOverlayPaths() {
 void TestMainMenuBrandingPlan() {
     using namespace pal4::inject;
     assert(kOriginalMainMenuVersionText == "PAL4 v1.1");
-    assert(kInjectedMainMenuVersionText == "PAL V1.2.3");
+    assert(kInjectedMainMenuVersionText == "PAL V1.2.4");
     assert(kMainMenuVersionSlotSize == 12);
     assert(kOriginalMainMenuVersionSlot[0] == 'P');
     assert(kOriginalMainMenuVersionSlot[3] == '4');
     assert(kOriginalMainMenuVersionSlot[9] == 0);
     assert(kInjectedMainMenuVersionSlot[3] == ' ');
     assert(kInjectedMainMenuVersionSlot[4] == 'V');
-    assert(kInjectedMainMenuVersionSlot[9] == '3');
+    assert(kInjectedMainMenuVersionSlot[9] == '4');
     assert(kInjectedMainMenuVersionSlot[10] == 0);
     assert(kInjectedMainMenuVersionSlot[11] == 0);
     assert(ida::kMainMenuVersionText == 0x8B9494);

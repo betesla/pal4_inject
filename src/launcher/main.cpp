@@ -19,7 +19,7 @@
 #endif
 #include <windows.h>
 #include <shellapi.h>
-#include <wininet.h>
+#include "update_installer.h"
 
 #include "launcher_ui.h"
 #include "pal4inject/bug_report.h"
@@ -38,29 +38,16 @@ using GameConfig = pal4::inject::launcher::GameDisplayConfig;
 using LauncherUiState = pal4::inject::launcher::LauncherUiState;
 using MonitorDisplayInfo = pal4::inject::launcher::MonitorDisplayInfo;
 
-constexpr const wchar_t kGiteeLatestReleaseUrl[] =
-    L"https://gitee.com/api/v5/repos/betesla/pal4_inject/releases/latest";
-constexpr const wchar_t kGiteeReleasePageUrl[] =
-    L"https://gitee.com/betesla/pal4_inject/releases";
-constexpr const wchar_t kGitHubLatestReleaseUrl[] =
-    L"https://api.github.com/repos/betesla/pal4_inject/releases/latest";
-constexpr const wchar_t kGitHubReleasePageUrl[] =
-    L"https://github.com/betesla/pal4_inject/releases/latest";
 constexpr const char kGiteeNewIssueUrl[] =
     "https://gitee.com/betesla/pal4_inject/issues/new";
 
-struct ReleaseInfo {
-    std::string tag_name;
-    std::wstring html_url;
-    std::wstring source_name;
-};
 
 std::filesystem::path CurrentExecutableDirectory() {
-    char buffer[MAX_PATH]{};
-    const DWORD length = GetModuleFileNameA(nullptr, buffer, MAX_PATH);
-    return length == 0
+    wchar_t buffer[32768]{};
+    const DWORD length = GetModuleFileNameW(nullptr, buffer, 32768);
+    return length == 0 || length >= 32768
         ? std::filesystem::current_path()
-        : std::filesystem::path(std::string(buffer, length)).parent_path();
+        : std::filesystem::path(std::wstring(buffer, length)).parent_path();
 }
 
 std::filesystem::path DefaultRuntimeDllPath() {
@@ -236,172 +223,6 @@ std::vector<pal4::inject::BugReportRedaction> BuildBugReportRedactions(
         }
     }
     return redactions;
-}
-
-std::optional<std::string> ExtractJsonStringField(
-    const std::string& json,
-    const std::string_view key) {
-    const std::string marker = "\"" + std::string(key) + "\"";
-    const auto key_position = json.find(marker);
-    if (key_position == std::string::npos) {
-        return std::nullopt;
-    }
-    const auto colon_position = json.find(':', key_position + marker.size());
-    if (colon_position == std::string::npos) {
-        return std::nullopt;
-    }
-    const auto quote_position = json.find('"', colon_position + 1);
-    if (quote_position == std::string::npos) {
-        return std::nullopt;
-    }
-
-    std::string value;
-    bool escaped = false;
-    for (std::size_t index = quote_position + 1; index < json.size(); ++index) {
-        const char character = json[index];
-        if (escaped) {
-            switch (character) {
-            case 'n':
-                value.push_back('\n');
-                break;
-            case 'r':
-                value.push_back('\r');
-                break;
-            case 't':
-                value.push_back('\t');
-                break;
-            default:
-                value.push_back(character);
-                break;
-            }
-            escaped = false;
-            continue;
-        }
-        if (character == '\\') {
-            escaped = true;
-            continue;
-        }
-        if (character == '"') {
-            return value;
-        }
-        value.push_back(character);
-    }
-    return std::nullopt;
-}
-
-bool FetchLatestReleaseInfo(
-    const wchar_t* const api_url,
-    const wchar_t* const release_page_url,
-    const wchar_t* const source_name,
-    ReleaseInfo* const output,
-    std::wstring* const error) {
-    if (!output) {
-        return false;
-    }
-    const HINTERNET internet = InternetOpenW(
-        pal4::inject::kProductNameWide,
-        INTERNET_OPEN_TYPE_PRECONFIG,
-        nullptr,
-        nullptr,
-        0);
-    if (!internet) {
-        if (error) {
-            *error = L"无法初始化网络连接。";
-        }
-        return false;
-    }
-    const HINTERNET request = InternetOpenUrlW(
-        internet,
-        api_url,
-        L"Accept: application/json\r\nUser-Agent: PAL4Plus-P4P\r\n",
-        0,
-        INTERNET_FLAG_RELOAD | INTERNET_FLAG_SECURE | INTERNET_FLAG_NO_CACHE_WRITE,
-        0);
-    if (!request) {
-        InternetCloseHandle(internet);
-        if (error) {
-            *error = std::wstring(L"无法连接 ") + source_name + L" Releases。";
-        }
-        return false;
-    }
-
-    std::string payload;
-    char buffer[4096]{};
-    DWORD bytes_read = 0;
-    while (InternetReadFile(request, buffer, sizeof(buffer), &bytes_read) && bytes_read != 0) {
-        payload.append(buffer, buffer + bytes_read);
-    }
-    InternetCloseHandle(request);
-    InternetCloseHandle(internet);
-
-    const auto tag_name = ExtractJsonStringField(payload, "tag_name");
-    if (!tag_name || tag_name->empty()) {
-        if (error) {
-            *error = std::wstring(source_name) + L" 未返回有效版本号。";
-        }
-        return false;
-    }
-    output->tag_name = *tag_name;
-    output->source_name = source_name;
-    // Gitee embeds author.html_url without a release-level html_url. Use the
-    // known repository release page so nested profile URLs cannot be selected.
-    output->html_url = release_page_url;
-    return true;
-}
-
-bool TryFetchLatestRelease(ReleaseInfo* const output, std::wstring* const error) {
-    std::wstring gitee_error;
-    if (FetchLatestReleaseInfo(
-            kGiteeLatestReleaseUrl,
-            kGiteeReleasePageUrl,
-            L"Gitee",
-            output,
-            &gitee_error)) {
-        return true;
-    }
-    std::wstring github_error;
-    if (FetchLatestReleaseInfo(
-            kGitHubLatestReleaseUrl,
-            kGitHubReleasePageUrl,
-            L"GitHub",
-            output,
-            &github_error)) {
-        return true;
-    }
-    if (error) {
-        *error = L"无法获取最新版本信息。\n\nGitee: " + gitee_error +
-            L"\nGitHub: " + github_error;
-    }
-    return false;
-}
-
-void CheckForUpdates(const HWND owner, const bool quiet_if_current_or_failed) {
-    ReleaseInfo release{};
-    std::wstring error;
-    if (!TryFetchLatestRelease(&release, &error)) {
-        if (!quiet_if_current_or_failed) {
-            MessageBoxW(owner, error.c_str(), L"检查更新", MB_ICONWARNING | MB_OK);
-        }
-        return;
-    }
-
-    if (release.tag_name == pal4::inject::kPal4InjectVersion) {
-        if (!quiet_if_current_or_failed) {
-            const std::wstring message =
-                L"当前已经是最新版本。\n\n当前版本：" +
-                WideFromUtf8(pal4::inject::kPal4InjectVersion);
-            MessageBoxW(owner, message.c_str(), L"检查更新", MB_ICONINFORMATION | MB_OK);
-        }
-        return;
-    }
-
-    const std::wstring message =
-        L"发现可能的新版本（来源：" + release.source_name + L"）。\n\n当前版本：" +
-        WideFromUtf8(pal4::inject::kPal4InjectVersion) + L"\n最新版本：" +
-        WideFromUtf8(release.tag_name) + L"\n\n是否打开下载页面？";
-    if (MessageBoxW(owner, message.c_str(), L"检查更新", MB_ICONINFORMATION | MB_YESNO) == IDYES) {
-        ShellExecuteW(owner, L"open", release.html_url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    }
 }
 
 std::vector<Resolution> BuildCommonResolutions() {
@@ -770,13 +591,29 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* const options) {
     std::wstring ui_error;
     if (!pal4::inject::launcher::RunLauncherUi(
             &state,
-            &CheckForUpdates,
             &OpenBugReport,
             &ui_error)) {
         ShowGuiError(ui_error);
         return false;
     }
-    if (!state.accepted) {
+    if (!state.accepted && state.update_stage.empty()) {
+        return false;
+    }
+    if (!state.update_stage.empty()) {
+        pal4::inject::launcher::SynchronizeAutomaticWidescreen(&state);
+        std::wstring config_error;
+        state.inject_settings.script_mode = state.script_mode;
+        if (!SaveGameConfig(state.config_path, state.display, &config_error) ||
+            !pal4::inject::SaveInjectPersistedSettings(
+                state.inject_settings_path, state.inject_settings, &settings_error)) {
+            ShowGuiError(L"更新前保存设置失败：\n" + config_error + WideFromUtf8(settings_error));
+            return false;
+        }
+        try {
+            pal4::inject::update::LaunchInstaller(install_directory, state.update_stage);
+        } catch (const std::exception& error) {
+            ShowGuiError(WideFromUtf8(error.what()));
+        }
         return false;
     }
     if (!std::filesystem::exists(state.game_exe)) {
@@ -813,10 +650,27 @@ bool ConfigureGuiLaunch(pal4::inject::LaunchOptions* const options) {
 int main(int argc, char** argv) {
     pal4::inject::LaunchOptions options;
     options.dll_path = DefaultRuntimeDllPath();
-    const bool gui_mode = argc == 1;
-
+    int wide_count = 0;
+    auto* wide_args = CommandLineToArgvW(GetCommandLineW(), &wide_count);
+    const bool update_start = wide_count == 3 && std::wstring_view(wide_args[1]) == L"--update-ready";
+    if (wide_count == 3 && std::wstring_view(wide_args[1]) == L"--apply-update") {
+        const std::filesystem::path job = wide_args[2];
+        LocalFree(wide_args);
+        return pal4::inject::update::RunInstaller(job);
+    }
+    if (update_start) pal4::inject::update::SetReadyEvent(wide_args[2]);
+    if (wide_args) LocalFree(wide_args);
+    const bool gui_mode = argc == 1 || update_start;
+    if (gui_mode && !update_start) {
+        try {
+            if (pal4::inject::update::RecoverInterruptedUpdate(CurrentExecutableDirectory())) return 0;
+        } catch (const std::exception& error) {
+            ShowGuiError(WideFromUtf8(error.what()));
+            return 1;
+        }
+    }
     if (gui_mode && !ConfigureGuiLaunch(&options)) {
-        return 1;
+        return 0;
     }
     if (!gui_mode) {
         for (int index = 1; index < argc; ++index) {

@@ -9,7 +9,7 @@ namespace pal4::inject {
 
 inline constexpr std::size_t kMainMenuVersionSlotSize = 12;
 inline constexpr std::string_view kOriginalMainMenuVersionText = "PAL4 v1.1";
-inline constexpr std::string_view kInjectedMainMenuVersionText = "PAL V1.2.3";
+inline constexpr std::string_view kInjectedMainMenuVersionText = "PAL V1.2.4";
 
 constexpr std::array<std::uint8_t, kMainMenuVersionSlotSize>
 BuildMainMenuVersionSlot(const std::string_view text) noexcept {

@@ -10,6 +10,8 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "imgui_host.h"
+#include "update_client.h"
+#include "update_installer.h"
 #include "pal4inject/inject_feature_catalog.h"
 #include "pal4inject/product_identity.h"
 #include "pal4inject/ui_coordinate_space.h"
@@ -35,7 +37,7 @@ enum class LauncherNavigationRegion {
 
 struct LauncherViewState {
     LauncherUiState* launcher = nullptr;
-    CheckForUpdatesCallback check_for_updates = nullptr;
+    update::Client* updater = nullptr;
     OpenBugReportCallback open_bug_report = nullptr;
     LauncherPage page = LauncherPage::game;
     LauncherNavigationRegion navigation_region =
@@ -128,6 +130,9 @@ void UpdateLauncherGlobalGamepadActions(LauncherViewState* const view) {
 void UpdateLauncherGamepadHierarchy(LauncherViewState* const view) {
     if (!view) {
         return;
+    }
+    if (ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
+        return; // Let the update dialog and other modals own controller navigation.
     }
     if (view->navigation_region == LauncherNavigationRegion::content) {
         const bool popup_open = ImGui::IsPopupOpen(
@@ -1026,11 +1031,64 @@ void DrawSidebarPageItem(
     }
 }
 
-void DrawSidebar(LauncherViewState* const view, const HWND owner) {
+bool IsUpdateBusy(const update::Phase phase) {
+    return phase == update::Phase::downloading || phase == update::Phase::verifying ||
+        phase == update::Phase::waiting_for_game || phase == update::Phase::ready;
+}
+
+void DrawUpdateDialog(LauncherViewState* const view) {
+    const auto status = view->updater->Snapshot();
+    ImGui::SetNextWindowSize(ImVec2(580.0F, 430.0F), ImGuiCond_Appearing);
+    if (!ImGui::BeginPopupModal("更新 PAL4Plus", nullptr, ImGuiWindowFlags_NoResize)) return;
+    ImGui::Text("当前版本 %s  →  新版本 %s", kPal4InjectVersion, status.version.c_str());
+    ImGui::Separator();
+    ImGui::BeginChild("update_notes", ImVec2(0.0F, 210.0F), ImGuiChildFlags_Borders);
+    ImGui::TextWrapped("%s", status.notes.empty() ? "此版本未提供更新说明。" : status.notes.c_str());
+    ImGui::EndChild();
+    if (!status.message.empty()) ImGui::TextWrapped("%s", status.message.c_str());
+    if (status.phase == update::Phase::downloading) ImGui::ProgressBar(status.progress);
+    if (status.phase == update::Phase::available || status.phase == update::Phase::failed) {
+        ImGui::TextWrapped("更新前保存当前设置，完成后重新打开启动器。游戏存档将保留。");
+        if (ImGui::Button(status.phase == update::Phase::failed ? "重试更新" : "更新并重启", ImVec2(150, 32)))
+            view->updater->Download();
+        ImGui::SameLine();
+        if (ImGui::Button("稍后", ImVec2(90, 32))) ImGui::CloseCurrentPopup();
+    } else if (status.phase == update::Phase::ready) {
+        view->launcher->update_stage = view->updater->TakeReadyStage();
+        view->keep_open = false;
+    } else if (IsUpdateBusy(status.phase)) {
+        if (ImGui::Button("取消更新", ImVec2(150, 32))) {
+            view->updater->Cancel();
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    ImGui::EndPopup();
+}
+
+void DrawSidebar(LauncherViewState* const view) {
     ImGui::TextUnformatted("PAL4Plus");
     ImGui::SameLine();
     ImGui::TextDisabled("P4P");
     ImGui::TextDisabled("%s", kPal4InjectVersion);
+    const auto update_status = view->updater->Snapshot();
+    if (!update_status.version.empty() && update_status.phase != update::Phase::checking &&
+        update_status.phase != update::Phase::idle) {
+        ImGui::SameLine();
+        const float size = ImGui::GetFontSize() + 6.0F;
+        if (ImGui::Button("##update_available", ImVec2(size, size))) {
+            ImGui::OpenPopup("更新 PAL4Plus");
+        }
+        const auto min = ImGui::GetItemRectMin();
+        const auto max = ImGui::GetItemRectMax();
+        const float cx = (min.x + max.x) * 0.5F;
+        auto* draw = ImGui::GetWindowDrawList();
+        const auto color = ImGui::GetColorU32(ImGuiCol_Text);
+        draw->AddTriangleFilled(ImVec2(cx, min.y + 4), ImVec2(cx - 5, min.y + 10), ImVec2(cx + 5, min.y + 10), color);
+        draw->AddLine(ImVec2(cx, min.y + 9), ImVec2(cx, max.y - 6), color, 2.0F);
+        draw->AddLine(ImVec2(min.x + 5, max.y - 4), ImVec2(max.x - 5, max.y - 4), color, 2.0F);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("发现新版 %s，点击更新", update_status.version.c_str());
+    }
+    DrawUpdateDialog(view);
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
@@ -1047,9 +1105,6 @@ void DrawSidebar(LauncherViewState* const view, const HWND owner) {
     DrawSidebarPageItem(view, "高级", LauncherPage::advanced);
 
     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 86.0F);
-    if (ImGui::Button("检查更新", ImVec2(-1.0F, 34.0F)) && view->check_for_updates) {
-        view->check_for_updates(owner, false);
-    }
     ImGui::TextDisabled("build %s", kPal4InjectBuildId);
 }
 
@@ -1058,7 +1113,9 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
     if (!view || !view->launcher) {
         return false;
     }
-    UpdateLauncherGlobalGamepadActions(view);
+    const auto update_phase = view->updater->Snapshot().phase;
+    const bool updating = IsUpdateBusy(update_phase);
+    if (!updating) UpdateLauncherGlobalGamepadActions(view);
     UpdateLauncherGamepadHierarchy(view);
 
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -1073,7 +1130,7 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
             ImGuiWindowFlags_NoSavedSettings);
 
     ImGui::BeginChild("sidebar", ImVec2(190.0F, -58.0F), ImGuiChildFlags_Borders);
-    DrawSidebar(view, hwnd);
+    DrawSidebar(view);
     ImGui::EndChild();
     ImGui::SameLine();
     ImGui::BeginChild("content", ImVec2(0.0F, -58.0F), ImGuiChildFlags_Borders);
@@ -1114,11 +1171,14 @@ bool DrawLauncherFrame(const HWND hwnd, void* const context) {
         view->keep_open = false;
     }
     ImGui::SameLine();
+    ImGui::BeginDisabled(updating);
     if (ImGui::Button("启动游戏 [Start]", ImVec2(164.0F, 38.0F))) {
         view->launcher->accepted = true;
         view->keep_open = false;
     }
+    ImGui::EndDisabled();
     ImGui::End();
+    update::SignalReady();
     return view->keep_open;
 }
 
@@ -1137,7 +1197,6 @@ void SynchronizeAutomaticWidescreen(LauncherUiState* const state) noexcept {
 
 bool RunLauncherUi(
     LauncherUiState* const state,
-    const CheckForUpdatesCallback check_for_updates,
     const OpenBugReportCallback open_bug_report,
     std::wstring* const error) {
     if (!state) {
@@ -1148,7 +1207,8 @@ bool RunLauncherUi(
     }
     LauncherViewState view{};
     view.launcher = state;
-    view.check_for_updates = check_for_updates;
+    update::Client updater(state->game_exe.parent_path(), kPal4InjectVersion);
+    view.updater = &updater;
     view.open_bug_report = open_bug_report;
     view.page = LauncherPage::game;
     view.include_crash_report = state->bug_report.HasCrashReport();
