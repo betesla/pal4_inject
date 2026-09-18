@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(pal4_inject VERSION 0.2.4 LANGUAGES CXX)
+project(pal4_inject VERSION 0.2.5 LANGUAGES CXX)
 
 # Public branding is separate from stable internal target, payload, config, and IPC names.
 set(PAL4PLUS_LAUNCHER_BASENAME "PAL4Plus")
